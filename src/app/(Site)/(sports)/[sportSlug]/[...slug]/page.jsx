@@ -1,0 +1,438 @@
+import storeConfig from "base/store.config";
+import { notFound, permanentRedirect } from "next/navigation";
+import { getListingFilterOptions } from "base/services/listingFilterCatalog.service";
+import { mergeAttributeMeta, parseAttrFiltersFromParams } from "@/lib/attributeFilters";
+import SportPageClient from "@/components/templates/sports/SportPageClient";
+import BrandGroupedView from "@/components/templates/sports/BrandGroupedView";
+import SerieGroupedView from "@/components/templates/sports/SerieGroupedView";
+import { getCachedRate } from "@/lib/Exchangerate";
+import { queryBySlugs, resolvePageContext } from "base/services/query.service";
+import { getBrandGroupedSections } from "base/services/brandGrouped.service";
+import { normalizeTargetAudience } from "base/utils/targetAudience";
+import { getSerieGroupedSections } from "base/services/serieGrouped.service";
+import { getSeriesFilterIndex } from "base/services/series.service";
+import { getPublicArticle, resolveArticleEntities } from "base/services/publicArticle.service";
+import { getBrandCategoryArticleBlocks, getSerieArticleBlocks } from "base/services/miniArticle.service";
+import { buildArticlePath } from "base/utils/articleSlug";
+import { articleMetadata } from "@/lib/articleSeo";
+import TaxonomyBreadcrumbs from "@/components/seo/TaxonomyBreadcrumbs";
+import TaxonomyStructuredData from "@/components/seo/TaxonomyStructuredData";
+import { buildTaxonomyMetadata } from "@/lib/seo/taxonomySeo";
+import { BRAND_SECTIONS_PER_BATCH } from "base/utils/groupedProductPagination";
+
+const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000").replace(/\/+$/, "");
+
+// تعداد بخش‌های سری در بارگذاری اولیه‌ی سرور (SSR) — سبک برای SEO و سرعت
+const INITIAL_SECTIONS = 2;
+
+// آیا این صفحه، صفحه‌ی برند است (عمیق‌ترین موجودیت برند است، نه سری/لیمیتد ادیشن/محصول)؟
+function isBrandPage(filters) {
+  return (
+    !!filters?.brand &&
+    !filters?.serie &&
+    !filters?.limitedEdition &&
+    !filters?.product
+  );
+}
+
+// آیا این صفحه، یک سری ریشه (level 0) است که باید به صورت گروه‌بندی‌شده نمایش داده شود؟
+function isParentSeriePage(filters) {
+  return (
+    !!filters?.serie &&
+    filters.serie.level === 0 &&
+    !filters?.product
+  );
+}
+
+// همه‌ی فیلترهای ویژگیِ موجود در URL را می‌سازد (نه فقط ویژگیِ مگامنو) تا صفحه‌ی
+// برند دقیقاً مثل صفحه‌ی دسته به هر پارامترِ ویژگی پاسخ دهد. هر کلیدِ پارامتر که
+// نامِ یکی از ویژگی‌های همین دسته (ثابت یا متغیر) باشد خوانده می‌شود؛ پارامترهای
+// غیرِویژگی (مثلِ page/utm) نادیده گرفته می‌شوند. مقادیرِ چندگانه (?Color=a&Color=b)
+// پشتیبانی می‌شوند. تطبیقِ ثابت‌بودن/متغیربودنِ مقدار در brandGrouped (با بررسیِ هر
+// دو منبع) انجام می‌شود، پس اینجا فقط نام و مقدار لازم است.
+function resolveAttrFilters(category, sp) {
+  if (!category || !sp) return [];
+  const defs = [
+    ...(category.attributes || []),
+    ...(category.variantAttributes || []),
+  ];
+  const seen = new Set();
+  const out = [];
+  for (const def of defs) {
+    if (!def?.name || seen.has(def.name)) continue;
+    const raw = sp[def.name];
+    if (raw == null) continue;
+    const values = (Array.isArray(raw) ? raw : [raw]).filter(
+      (v) => typeof v === "string" && v.trim() !== "",
+    );
+    if (values.length === 0) continue;
+    seen.add(def.name);
+    out.push({ name: def.name, values });
+  }
+  return out;
+}
+
+// پارامترهای ویژگیِ URL را با همان تابعی می‌خواند که کلاینت آن‌ها را می‌نویسد، تا
+// یک لینکِ فیلترشده روی رندرِ سرور همان نما را بدهد. searchParams یک آبجکتِ ساده
+// است، پس اول به URLSearchParams تبدیل می‌شود (مقادیرِ چندگانه هم پشتیبانی می‌شوند).
+function readAttrParams(attrMeta, sp) {
+  const params = new URLSearchParams();
+  for (const [key, raw] of Object.entries(sp || {})) {
+    for (const value of Array.isArray(raw) ? raw : [raw]) {
+      if (typeof value === "string") params.append(key, value);
+    }
+  }
+  return parseAttrFiltersFromParams(params, attrMeta);
+}
+
+// فرادادهٔ فیلتر برای کارتِ سایدبارِ صفحه‌ی برند (برچسب + گزینه‌های تعریف‌شده).
+function buildFilterMeta(category) {
+  const name = category?.megaMenuFilterAttribute;
+  if (!name) return null;
+  const def = [
+    ...(category.attributes || []),
+    ...(category.variantAttributes || []),
+  ].find((a) => a.name === name);
+  if (!def) return null;
+  return {
+    name,
+    label: def.label || name,
+    options: Array.isArray(def.options) ? def.options : [],
+  };
+}
+
+// مینی مقاله‌ی زیرِ هدر (برند+دسته یا سری). رندرکننده‌ی بلوک‌ها ماژولِ سنگینی است،
+// پس — مثلِ صفحه‌ی ریشه‌ی برند — فقط وقتی محتوا وجود دارد بارگذاری می‌شود.
+async function buildMiniArticleSection(blocks, label) {
+  if (!Array.isArray(blocks) || blocks.length === 0) return null;
+  const [{ default: BrandMiniArticleSection }, entities] = await Promise.all([
+    import("@/components/features/brands/BrandMiniArticleSection"),
+    resolveArticleEntities({ blocks }),
+  ]);
+  return <BrandMiniArticleSection blocks={blocks} entities={entities} label={label} />;
+}
+
+/**
+ * هر مینی‌مقاله دو بخش دارد: بالای صفحه (زیرِ هدر) و پایینِ آن. همان تابعِ بالا
+ * برای هر دو اجرا می‌شود، پس رندرِ دو بخش دقیقاً یکی است و هیچ‌کدام نسخه‌ی
+ * دومِ دیگری نیست.
+ */
+async function buildMiniArticleSections(article, label) {
+  const [top, bottom] = await Promise.all([
+    buildMiniArticleSection(article?.top, label),
+    buildMiniArticleSection(article?.bottom, label),
+  ]);
+  return { top, bottom };
+}
+
+// ⚠️ اسلاگ‌های فارسی با هدر x-next-cache-tags ناسازگارند (باگ Next: کاراکتر
+// غیر-ASCII در هدر → ERR_INVALID_CHAR → خطای ۵۰۰). داینامیک رندر می‌شود تا هدر
+// کش روت ساخته نشود؛ کوئری‌ها همچنان با unstable_cache کش می‌مانند.
+export const dynamic = "force-dynamic";
+
+export async function generateMetadata({ params }) {
+  const { sportSlug, slug } = await params;
+  const slugs = [sportSlug, ...(slug || [])];
+
+  const ctx = await resolvePageContext(slugs, { includeBrandStats: false });
+
+  // مسیر باید دقیقاً یکی از ۶ الگوی مجاز باشد؛ در غیر این صورت متادیتای ۴۰۴
+  if (ctx.notFound) {
+    if ((slug || []).length === 1) {
+      const articleResult = await getPublicArticle(sportSlug, slug[0]);
+      if (articleResult?.kind === "article") return articleMetadata(articleResult.article);
+    }
+    return { title: "صفحه پیدا نشد" };
+  }
+
+  const filters = ctx.filters;
+  const activeEntity =
+    filters.limitedEdition ||
+    filters.serie ||
+    filters.brand ||
+    filters.category ||
+    filters.sport;
+  const { title, description } = buildTaxonomyMetadata(filters);
+  const pageUrl = `${SITE_URL}/${slugs.join("/")}`;
+  const rawImage = activeEntity.headImage || activeEntity.image;
+  const imageUrl = rawImage
+    ? rawImage.startsWith("http")
+      ? rawImage
+      : `${SITE_URL}${rawImage}`
+    : null;
+
+  return {
+    title,
+    description,
+    metadataBase: new URL(SITE_URL),
+    alternates: { canonical: pageUrl },
+    openGraph: {
+      title,
+      description,
+      url: pageUrl,
+      siteName: storeConfig.brand.name,
+      locale: "fa_IR",
+      type: "website",
+      ...(imageUrl && {
+        images: [{ url: imageUrl, width: 1200, height: 630, alt: title }],
+      }),
+    },
+    twitter: {
+      card: imageUrl ? "summary_large_image" : "summary",
+      title,
+      description,
+      ...(imageUrl && { images: [imageUrl] }),
+    },
+  };
+}
+
+export default async function SportDynamicSlugPage({ params, searchParams }) {
+  const { sportSlug, slug } = await params;
+  const slugs = [sportSlug, ...(slug || [])];
+
+  // RULE 4: صفحه‌بندی فقط از طریقِ searchParams (?page=2) خوانده می‌شود، هرگز به‌صورت
+  // سگمنتِ مسیر. سگمنتِ اضافیِ مسیر توسطِ validatorِ سخت‌گیر (طول + Mirror) رد می‌شود.
+  const sp = (await searchParams) || {};
+  const page = Math.max(1, Number(sp.page) || 1);
+  // مخاطبِ هدف (navbar audience tabs) — مقدارِ نامعتبر/ناشناخته بی‌سروصدا نادیده
+  // گرفته می‌شود (بدونِ فیلتر)، نه ۵۰۰، دقیقاً مثلِ رفتارِ سایرِ پارامترهای صفحه.
+  const targetAudience = normalizeTargetAudience(sp.targetAudience);
+
+  // اعتبارسنجیِ قطعیِ مسیر — اگر یکی از ۶ الگوی مجاز نباشد، ۴۰۴ سخت
+  const ctx = await resolvePageContext(slugs, { includeBrandStats: false });
+
+  if (ctx.notFound) {
+    if ((slug || []).length === 1) {
+      const articleResult = await getPublicArticle(sportSlug, slug[0]);
+      if (articleResult?.kind === "redirect") permanentRedirect(articleResult.location);
+      if (articleResult?.kind === "article") {
+        permanentRedirect(buildArticlePath(articleResult.article.category.slug, articleResult.article.slug));
+      }
+    }
+    notFound();
+  }
+
+  const filters = ctx.filters;
+  const rate = await getCachedRate();
+
+  // ─── صفحه‌ی برند: نمای گروه‌بندی‌شده بر اساس سری ریشه + infinite scroll ───
+  if (isBrandPage(filters)) {
+    const brandId = filters.brand._id;
+    const sportId = filters.sport?._id || null;
+    const categoryId = filters.category?._id || null;
+
+    // ── فیلترهای ویژگی: همه‌ی پارامترهای ویژگیِ موجود در URL خوانده می‌شوند
+    //    (مثلِ ?capacity=10 یا ?Suitable for=خانم‌ها) و نوعِ هرکدام (ثابت/متغیر)
+    //    برای ساختِ کوئریِ درست در brandGrouped تعیین می‌شود. ──
+    const filterCategories = await getListingFilterOptions({ brandId, sportId, categoryId, targetAudience });
+    const catalogMeta = mergeAttributeMeta(filterCategories);
+    const allAttrFilters = resolveAttrFilters(filters.category, sp);
+    const managedNames = new Set(catalogMeta.map((a) => a.name));
+    const attrFilters = allAttrFilters.filter((f) => !managedNames.has(f.name));
+    const categoryAttributes = categoryId ? readAttrParams(catalogMeta, sp) : {};
+
+    // مینی مقاله‌ی برند+دسته فقط روی /[sport]/[category]/[brand]؛ صفحه‌ی
+    // /[sport]/[brand] (بدونِ دسته) هیچ مقاله‌ای نمی‌گیرد.
+    const [initialData, categoryArticleBlocks] = await Promise.all([
+      getBrandGroupedSections({
+        brandId,
+        sportId,
+        categoryId,
+        attrFilters,
+        categoryAttributes,
+        offset: 0,
+        limit: BRAND_SECTIONS_PER_BATCH,
+        withIndex: true,
+        targetAudience,
+      }),
+      categoryId ? getBrandCategoryArticleBlocks(brandId, categoryId) : [],
+    ]);
+
+    const pageInfo = { ...filters.brand };
+    delete pageInfo.articleBlocks;
+    delete pageInfo.series;
+    const viewFilters = { ...filters, brand: pageInfo };
+    const miniArticle = await buildMiniArticleSections(
+      categoryArticleBlocks,
+      `درباره ${filters.category?.title || ""} ${pageInfo.title || pageInfo.name || ""}`.trim(),
+    );
+
+    return (
+      <>
+        <TaxonomyStructuredData
+          filters={viewFilters}
+          products={initialData}
+          canonical={`${SITE_URL}/${slugs.join("/")}`}
+        />
+        <BrandGroupedView
+          key={JSON.stringify([
+            String(brandId),
+            String(sportId || ""),
+            String(categoryId || ""),
+            allAttrFilters,
+            categoryAttributes,
+            String(targetAudience || ""),
+          ])}
+          pageInfo={pageInfo}
+          filters={viewFilters}
+          rate={rate}
+          brandId={brandId}
+          sportId={sportId}
+          categoryId={categoryId}
+          attrFilters={attrFilters}
+          filterMeta={managedNames.has(filters.category?.megaMenuFilterAttribute) ? null : buildFilterMeta(filters.category)}
+          filterCategories={filterCategories}
+          initialCategoryAttributes={categoryAttributes}
+          initialData={initialData}
+          page={page}
+          targetAudience={targetAudience}
+          title={`${storeConfig.brand.name} – ${pageInfo.title || pageInfo.name || ""}`}
+          belowHero={
+            <>
+              <TaxonomyBreadcrumbs filters={viewFilters} />
+              {miniArticle.top}
+            </>
+          }
+          belowContent={miniArticle.bottom}
+        />
+      </>
+    );
+  }
+
+  // ─── صفحه‌ی سری ریشه (level 0): نمای گروه‌بندی‌شده بر اساس زیرسری‌های مستقیم ───
+  if (isParentSeriePage(filters)) {
+    const serieId = filters.serie._id;
+    const sportId = filters.sport?._id || null;
+    const categoryId = filters.category?._id || null;
+    const brandSlug = filters.brand?.slug || "";
+
+    // دسته‌ها اول لازم‌اند تا بدانیم کدام پارامترهای URL «ویژگی» هستند؛ هر دو
+    // فراخوانی روی یک کش می‌نشینند، پس این ترتیب هزینه‌ی اضافه ندارد.
+    const filterCategories = await getListingFilterOptions({ serieId, sportId, targetAudience });
+    const categoryAttributes = readAttrParams(mergeAttributeMeta(filterCategories), sp);
+
+    const [initialData, serieArticleBlocks] = await Promise.all([
+      getSerieGroupedSections({
+        serieId,
+        sportId,
+        categoryId,
+        categoryAttributes,
+        targetAudience,
+        offset: 0,
+        limit: INITIAL_SECTIONS,
+        withIndex: true,
+      }),
+      getSerieArticleBlocks(serieId),
+    ]);
+
+    const pageInfo = filters.serie;
+    const miniArticle = await buildMiniArticleSections(
+      serieArticleBlocks,
+      `درباره سری ${pageInfo.title || pageInfo.name || ""}`.trim(),
+    );
+
+    return (
+      <>
+        <TaxonomyStructuredData
+          filters={filters}
+          products={initialData}
+          canonical={`${SITE_URL}/${slugs.join("/")}`}
+        />
+        <SerieGroupedView
+          key={JSON.stringify([String(serieId), String(sportId), targetAudience, categoryAttributes])}
+          filterCategories={filterCategories}
+          initialCategoryAttributes={categoryAttributes}
+          pageInfo={pageInfo}
+          filters={filters}
+          rate={rate}
+          serieId={serieId}
+          sportId={sportId}
+          categoryId={categoryId}
+          targetAudience={targetAudience}
+          brandSlug={brandSlug}
+          initialData={initialData}
+          page={page}
+          title={`${storeConfig.brand.name} – ${pageInfo.title || pageInfo.name || ""}`}
+          belowHero={
+            <>
+              <TaxonomyBreadcrumbs filters={filters} />
+              {miniArticle.top}
+            </>
+          }
+          belowContent={miniArticle.bottom}
+        />
+      </>
+    );
+  }
+
+  // ─── سایر صفحات (ورزش، دسته): الگوهای ۲ از این مسیر سرو می‌شوند ───
+  const searchData = await queryBySlugs(slugs, ctx, { targetAudience });
+
+  // محافظِ دوم: اگر بینِ resolve و query وضعیت تغییر کرده باشد (مثلاً حذفِ آخرین
+  // محصولِ یک ترکیب)، باز هم ۴۰۴ سخت می‌دهیم — بدونِ fallbackِ خاموش.
+  if (searchData.notFound) {
+    notFound();
+  }
+
+  const pageInfo =
+    searchData.filters.limitedEdition ||
+    searchData.filters.serie ||
+    searchData.filters.brand ||
+    searchData.filters.category ||
+    searchData.filters.sport;
+
+  // فیلترِ «سری» ریشه‌محور فقط برای صفحه‌های ورزش/دسته — صفحه‌های سری و
+  // لیمیتد ادیشن همان رفتار قبلی سایدبار را نگه می‌دارند.
+  const seriesIndex =
+    !searchData.filters.serie && !searchData.filters.limitedEdition
+      ? await getSeriesFilterIndex()
+      : [];
+
+  // زیرسری‌ها (level > 0) از این مسیر سرو می‌شوند؛ مقاله‌ی خودِ همان سری، نه والدش.
+  const miniArticle = searchData.filters.serie
+    ? await buildMiniArticleSections(
+        await getSerieArticleBlocks(searchData.filters.serie._id),
+        `درباره سری ${searchData.filters.serie.title || searchData.filters.serie.name || ""}`.trim(),
+      )
+    : { top: null, bottom: null };
+
+  return (
+    <>
+      <TaxonomyStructuredData
+        filters={searchData.filters}
+        products={searchData.results}
+        canonical={`${SITE_URL}/${slugs.join("/")}`}
+      />
+      {/* فیلترها همیشه از URL می‌آیند: رفتن به همین مسیر با پارامترهای دیگر
+          (مثلاً از نوبار، بدونِ هیچ پارامتری) کامپوننت را از نو می‌سازد، وگرنه
+          React وضعیتِ فیلترِ قبلیِ کاربر را در جای خودش نگه می‌داشت. */}
+      <SportPageClient
+        key={JSON.stringify([slugs, Object.entries(sp).sort()])}
+        filterCategories={searchData.filters.category ? await getListingFilterOptions({ categoryId: String(searchData.filters.category._id), sportId: searchData.filters.sport?._id ? String(searchData.filters.sport._id) : undefined, targetAudience }) : searchData.filters.serie ? await getListingFilterOptions({ serieId: String(searchData.filters.serie._id), sportId: searchData.filters.sport?._id ? String(searchData.filters.sport._id) : undefined, targetAudience, descendants: false }) : []}
+        pageInfo={pageInfo}
+        filters={searchData.filters}
+        products={searchData.results}
+        totalResults={searchData.totalResults}
+        listingFilter={{
+          sport: searchData.filters.sport?._id,
+          category: searchData.filters.category?._id,
+          brand: searchData.filters.brand?._id,
+          serie: searchData.filters.serie?._id,
+          limitedEdition: searchData.filters.limitedEdition?._id,
+          targetAudience,
+        }}
+        rate={rate}
+        seriesIndex={seriesIndex}
+        page={page}
+        title={`${storeConfig.brand.name} – ${pageInfo.title || pageInfo.name || ""}`}
+        belowHero={
+          <>
+            <TaxonomyBreadcrumbs filters={searchData.filters} />
+            {miniArticle.top}
+          </>
+        }
+        belowContent={miniArticle.bottom}
+      />
+    </>
+  );
+}

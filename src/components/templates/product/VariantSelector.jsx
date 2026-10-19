@@ -1,0 +1,190 @@
+"use client";
+
+import Image from "next/image";
+
+/**
+ * انتخابگرِ مشترکِ واریانت (Change 4) — هم در صفحه محصول (ProductInfo) و هم در
+ * کوییک‌ویو استفاده می‌شود تا منطق و ظاهر یکسان بماند.
+ *
+ * - اگر مقدارِ یک ویژگی تصویر داشته باشد (از variantMeta) دکمه‌اش thumbnail می‌شود؛
+ *   در غیر این صورت دکمه‌ی متنی (رفتارِ قبلی).
+ * - برچسبِ ویژگی و مقدارِ انتخاب‌شده همیشه به‌صورت متن نمایش داده می‌شود
+ *   («رنگ: قرمز») حتی وقتی دکمه تصویری است.
+ * - دکمه‌های تصویری دارای aria-label و title هستند (دسترس‌پذیری).
+ *
+ * props:
+ *   optionKeys     [attrName]
+ *   variantOptions { attrName: [values] }
+ *   labelMap       { attrName: label }
+ *   selection      { attrName: value }
+ *   onSelect       (attrKey, value) => void
+ *   getValueImage  (attrKey, value) => string | null
+ *   getValueLabel  (attrKey, value) => string   // برای چندواحدی (Change 3)، پیش‌فرض خود مقدار
+ *   isValueDisabled (attrKey, value) => bool     // cascade filtering (Bug 2): مقدارِ بدون واریانتِ معتبر غیرفعال می‌شود
+ *   compact        فشرده‌تر برای کوییک‌ویو
+ */
+export default function VariantSelector({
+  optionKeys = [],
+  variantOptions = {},
+  labelMap = {},
+  selection = {},
+  onSelect,
+  getValueImage,
+  getValueLabel,
+  getUnits,
+  getActiveUnit,
+  onUnitChange,
+  isValueDisabled,
+  compact = false,
+}) {
+  if (!optionKeys.length) return null;
+
+  const displayLabel = (attrKey, val) =>
+    (getValueLabel ? getValueLabel(attrKey, val) : null) ?? val;
+
+  // در کوییک‌ویو گزینه‌ها تمیز نمایش داده می‌شوند: بدون متنِ «ناموجود» و بدون خط‌خوردگی.
+  // جلوگیری از انتخاب همچنان با disabled/aria-disabled انجام می‌شود.
+  const titleFor = (text, disabled) =>
+    disabled && !compact ? `${text} (ناموجود برای این انتخاب)` : text;
+
+  return (
+    <div className={compact ? "flex flex-col gap-4 sm:gap-5" : "space-y-5"}>
+      {optionKeys.map((attrKey) => {
+        const values = variantOptions[attrKey] || [];
+        const label = labelMap[attrKey] || attrKey;
+        const selectedValue = selection[attrKey];
+        const units = getUnits ? getUnits(attrKey) : [];
+        const activeUnit = getActiveUnit ? getActiveUnit(attrKey) : undefined;
+
+        return (
+          <div key={attrKey} className="flex flex-col gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                <span className="w-1 h-4 bg-[var(--color-primary)] rounded-full shrink-0" />
+                {label}
+                {selectedValue && (
+                  <span className="mr-1 font-normal text-gray-400">
+                    <span dir="ltr" style={{ direction: "ltr", unicodeBidi: "isolate" }}>
+                      {displayLabel(attrKey, selectedValue)}
+                    </span>
+                  </span>
+                )}
+              </p>
+
+              {/* تعویضِ واحدِ نمایش (چندواحدی) — روی کلِ این ویژگی اعمال می‌شود */}
+              {units.length > 1 && (
+                <div
+                  className="inline-flex rounded-[6px] border border-gray-200 overflow-hidden"
+                  role="group"
+                  aria-label={`واحد نمایشِ ${label}`}
+                >
+                  {units.map((u) => {
+                    const active = activeUnit === u;
+                    return (
+                      <button
+                        key={u}
+                        type="button"
+                        onClick={() => onUnitChange?.(attrKey, u)}
+                        aria-pressed={active}
+                        className={`px-2.5 py-1 text-[11px] font-bold transition-colors ${
+                          active
+                            ? "bg-[var(--color-primary)] text-white"
+                            : "bg-white text-gray-500 hover:bg-gray-50"
+                        }`}
+                      >
+                        {u}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div
+              className="flex flex-wrap gap-4"
+              style={{
+                maxWidth: compact
+                  ? "calc((3.75rem * 5) + (1rem * 4))"
+                  : "calc((4rem * 5) + (1rem * 4))",
+              }}
+            >
+              {values.map((val) => {
+                const isSelected = selectedValue === val;
+                const img = getValueImage ? getValueImage(attrKey, val) : null;
+                const text = displayLabel(attrKey, val);
+                // cascade filtering: مقدارِ بدون واریانتِ معتبر برای انتخابِ جاری
+                // غیرفعال می‌شود (مگر اینکه خودش انتخاب‌شده باشد)
+                const disabled =
+                  !isSelected && isValueDisabled
+                    ? isValueDisabled(attrKey, val)
+                    : false;
+
+                if (img) {
+                  return (
+                    <button
+                      key={val}
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => !disabled && onSelect(attrKey, val)}
+                      title={titleFor(text, disabled)}
+                      aria-label={`${label}: ${text}`}
+                      aria-pressed={isSelected}
+                      aria-disabled={disabled}
+                      className={`relative shrink-0 rounded-lg overflow-hidden border-2 transition-all
+                        ${compact ? "w-12 h-12 sm:w-14 sm:h-14" : "w-14 h-14 sm:w-16 sm:h-16"}
+                        ${
+                          disabled
+                            ? "border-gray-100 opacity-40 grayscale cursor-not-allowed"
+                            : isSelected
+                            ? "border-[var(--color-primary)] shadow-md ring-2 ring-[var(--color-primary)]/30"
+                            : "border-gray-200 hover:border-[var(--color-primary)]/50"
+                        }`}
+                    >
+                      <Image
+                        src={img}
+                        alt={text}
+                        fill
+                        sizes="64px"
+                        className="object-cover"
+                      />
+                    </button>
+                  );
+                }
+
+                return (
+                  <button
+                    key={val}
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => !disabled && onSelect(attrKey, val)}
+                    title={titleFor(text, disabled)}
+                    aria-pressed={isSelected}
+                    aria-disabled={disabled}
+                    className={`relative rounded-lg border-2 text-sm font-medium transition-all select-none
+                      flex items-center justify-center px-1 text-center leading-tight overflow-hidden
+                      ${
+                        compact
+                          ? "w-[52px] sm:w-[60px] h-10"
+                          : "w-[56px] h-11"
+                      }
+                      ${
+                        disabled
+                          ? `border-gray-100 text-gray-300 bg-gray-50 cursor-not-allowed ${compact ? "" : "line-through"}`
+                          : isSelected
+                          ? "border-[var(--color-primary)] bg-[var(--color-primary)]/5 text-[var(--color-primary)] shadow-sm"
+                          : "border-gray-200 text-gray-700 hover:border-[var(--color-primary)]/50"
+                      }`}
+                  >
+                    <span className="block max-w-full break-words" dir="ltr" style={{ direction: "ltr", unicodeBidi: "isolate" }}>
+                      {text}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}

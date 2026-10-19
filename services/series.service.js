@@ -1,0 +1,314 @@
+import "base/models/registerModels";
+import { buildStorefrontAudienceMatch } from "base/utils/targetAudience";
+import { unstable_cache } from "next/cache";
+import connectToDB from "base/configs/db";
+import Product from "base/models/Product";
+import Serie from "base/models/Serie";
+import Sport from "base/models/Sport";
+import {
+  resolveSerieSportContent,
+  resolveSerieSportFlags,
+} from "@/lib/serieSportContent";
+import { getProductSportVisibilityMatch } from "base/services/categorySportVisibility.service";
+
+/**
+ * دریافت سری‌های مرتبط با یک ورزش
+ * فقط سری‌هایی که حداقل یک محصول دارند
+ */
+async function _getSeriesBySport(sportSlug, targetAudience = null) {
+  await connectToDB();
+
+  const sport = await Sport.findOne({
+    slug: sportSlug,
+  })
+    .select("_id")
+    .lean();
+
+  if (!sport) return [];
+
+  const visibilityMatch = await getProductSportVisibilityMatch({
+    sportId: sport._id,
+  });
+
+  const results = await Product.aggregate([
+    // ─────────────────────────────────────────
+    // فقط محصولات این ورزش که سری دارند
+    // ─────────────────────────────────────────
+    {
+      $match: {
+        ...visibilityMatch,
+        targetAudience: buildStorefrontAudienceMatch(targetAudience),
+        isActive: true,
+        serie: {
+          $exists: true,
+          $ne: null,
+        },
+      },
+    },
+
+    // ─────────────────────────────────────────
+    // join serie
+    // ─────────────────────────────────────────
+    {
+      $lookup: {
+        from: "series",
+        localField: "serie",
+        foreignField: "_id",
+        as: "serieDoc",
+      },
+    },
+
+    {
+      $unwind: "$serieDoc",
+    },
+
+    // ─────────────────────────────────────────
+    // فقط سری‌هایی که برای اسلایدرها علامت خورده‌اند
+    // (جدید یا لیمیتد ادیشن) — سطح سری دیگر ملاک نیست
+    // ─────────────────────────────────────────
+    {
+      $addFields: {
+        serieSportEntry: {
+          $first: {
+            $filter: {
+              input: { $ifNull: ["$serieDoc.sportImages", []] },
+              as: "entry",
+              cond: { $eq: ["$$entry.sport", sport._id] },
+            },
+          },
+        },
+      },
+    },
+
+    {
+      $addFields: {
+        serieIsNewForSport: {
+          $ifNull: ["$serieSportEntry.isNewSerie", "$serieDoc.isNewSerie"],
+        },
+        serieIsLimitedForSport: {
+          $ifNull: [
+            "$serieSportEntry.isLimitedEdition",
+            "$serieDoc.isLimitedEdition",
+          ],
+        },
+      },
+    },
+
+    {
+      $match: {
+        $or: [
+          { serieIsNewForSport: true },
+          { serieIsLimitedForSport: true },
+        ],
+      },
+    },
+
+    // ─────────────────────────────────────────
+    // join brand
+    // ─────────────────────────────────────────
+    {
+      $lookup: {
+        from: "brands",
+        localField: "serieDoc.brand",
+        foreignField: "_id",
+        as: "brandDoc",
+      },
+    },
+
+    {
+      $unwind: {
+        path: "$brandDoc",
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+
+    // ─────────────────────────────────────────
+    // join parent serie
+    // ─────────────────────────────────────────
+    {
+      $lookup: {
+        from: "series",
+        localField: "serieDoc.parentSerie",
+        foreignField: "_id",
+        as: "parentSerieDoc",
+      },
+    },
+
+    {
+      $unwind: {
+        path: "$parentSerieDoc",
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+
+    // ─────────────────────────────────────────
+    // group
+    // ─────────────────────────────────────────
+    {
+      $group: {
+        _id: "$serieDoc._id",
+
+        // serie
+        name: { $first: "$serieDoc.name" },
+        title: { $first: "$serieDoc.title" },
+        description: { $first: "$serieDoc.description" },
+        shortDescription: { $first: "$serieDoc.shortDescription" },
+
+        slug: { $first: "$serieDoc.slug" },
+
+        image: { $first: "$serieDoc.image" },
+        headImage: { $first: "$serieDoc.headImage" },
+        sportImages: { $first: "$serieDoc.sportImages" },
+
+        logo: { $first: "$serieDoc.logo" },
+
+        colors: { $first: "$serieDoc.colors" },
+
+        level: { $first: "$serieDoc.level" },
+
+        isLimitedEdition: {
+          $first: "$serieDoc.isLimitedEdition",
+        },
+
+        isNewSerie: {
+          $first: "$serieDoc.isNewSerie",
+        },
+
+        createdAt: { $first: "$serieDoc.createdAt" },
+        updatedAt: { $first: "$serieDoc.updatedAt" },
+
+        // parent serie
+        parentSerie: {
+          $first: {
+            _id: "$parentSerieDoc._id",
+            title: "$parentSerieDoc.title",
+            slug: "$parentSerieDoc.slug",
+            image: "$parentSerieDoc.image",
+            headImage: "$parentSerieDoc.headImage",
+            description: "$parentSerieDoc.description",
+            shortDescription: "$parentSerieDoc.shortDescription",
+            sportImages: "$parentSerieDoc.sportImages",
+          },
+        },
+
+        // brand
+        brand: {
+          $first: {
+            _id: "$brandDoc._id",
+            title: "$brandDoc.title",
+            slug: "$brandDoc.slug",
+            logo: "$brandDoc.logo",
+            monochromeLogo: "$brandDoc.monochromeLogo",
+            image: "$brandDoc.image",
+          },
+        },
+
+        // stats
+        productCount: {
+          $sum: 1,
+        },
+      },
+    },
+
+    // ─────────────────────────────────────────
+    // sort
+    // ─────────────────────────────────────────
+    {
+      $sort: {
+        productCount: -1,
+      },
+    },
+  ]);
+
+  return results.map((serie) => {
+    const resolved = resolveSerieSportContent(serie, sport._id);
+    const flags = resolveSerieSportFlags(serie, sport._id);
+
+    return {
+      _id: serie._id.toString(),
+
+      name: serie.name || "",
+      title: serie.title || "",
+      description: resolved.description,
+      shortDescription: resolved.shortDescription,
+
+      slug: serie.slug || "",
+
+      image: resolved.image,
+      headImage: resolved.headImage,
+
+      logo: serie.logo || "",
+
+      colors: serie.colors || {
+        primary: "",
+        secondary: "",
+      },
+
+      level: serie.level || 0,
+
+      isLimitedEdition: flags.isLimitedEdition,
+
+      isNewSerie: flags.isNewSerie,
+
+      productCount: serie.productCount || 0,
+
+      createdAt: serie.createdAt || null,
+      updatedAt: serie.updatedAt || null,
+
+      parentSerie: serie.parentSerie?._id
+        ? (() => {
+            const parentResolved = resolveSerieSportContent(
+              serie.parentSerie,
+              sport._id
+            );
+
+            return {
+              _id: serie.parentSerie._id.toString(),
+              title: serie.parentSerie.title || "",
+              slug: serie.parentSerie.slug || "",
+              image: parentResolved.image,
+              headImage: parentResolved.headImage,
+              description: parentResolved.description,
+              shortDescription: parentResolved.shortDescription,
+            };
+          })()
+        : null,
+
+      brand: serie.brand?._id
+        ? {
+            _id: serie.brand._id.toString(),
+            title: serie.brand.title || "",
+            slug: serie.brand.slug || "",
+            logo: serie.brand.logo || "",
+            monochromeLogo: serie.brand.monochromeLogo || "",
+            image: serie.brand.image || "",
+          }
+        : null,
+    };
+  });
+}
+
+export const getSeriesBySport = unstable_cache(
+  _getSeriesBySport,
+  ["series-by-sport-kids-separated-v2"],
+  { revalidate: 10800, tags: ["products", "categories", "series", "sports"] }
+);
+
+/**
+ * ایندکسِ سبکِ همه‌ی سری‌ها برای فیلترِ کلاینت‌سایدِ سایدبار:
+ * از روی parentSerie می‌توان هر سری را به سری ریشه‌اش (level 0) رساند تا فیلترِ
+ * «سری» فقط ریشه‌ها را نشان دهد و انتخابِ ریشه کلِ زیرمجموعه را شامل شود.
+ */
+async function _getSeriesFilterIndex() {
+  await connectToDB();
+  const series = await Serie.find({})
+    .select("title name slug parentSerie brand level order")
+    .lean();
+  return JSON.parse(JSON.stringify(series));
+}
+
+export const getSeriesFilterIndex = unstable_cache(
+  _getSeriesFilterIndex,
+  ["series-filter-index"],
+  { revalidate: 10800, tags: ["series"] }
+);

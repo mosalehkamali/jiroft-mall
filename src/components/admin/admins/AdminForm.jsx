@@ -1,0 +1,429 @@
+'use client';
+
+/**
+ * src/components/admin/admins/AdminForm.jsx
+ *
+ * فرم ساخت/ویرایش عضویتِ ادمین — کاربر + نقش + انتخاب دقیق دسترسی‌ها.
+ *
+ * ── فاز ۳ ──────────────────────────────────────────────────────────────────
+ * «ادمین» یک هویتِ جداگانه نیست؛ عضویتِ یک User در پنل است. بنابراین
+ * نام/نام‌کاربری/ایمیل دیگر دستی وارد نمی‌شوند و از روی کاربرِ انتخاب‌شده
+ * مشتق می‌شوند. تنها متنِ آزادِ باقی‌مانده «عنوان/سمت» است.
+ *
+ * نکته معماری: انتخاب نقش، دسترسی‌های آن نقش را به‌صورت قالب روی چک‌باکس‌ها
+ * اعمال می‌کند؛ ولی آنچه در دیتابیس ذخیره می‌شود همیشه آرایه permissions خودِ
+ * ادمین است تا enforcement فقط یک منبع داشته باشد.
+ *
+ * اگر adminId داده شود فرم در حالت ویرایش است (کاربر دیگر تغییر نمی‌کند).
+ */
+
+import { useRef, useState, useEffect } from 'react';
+import useSWR from 'swr';
+import { useRouter } from 'next/navigation';
+import { toast } from 'react-toastify';
+import {
+  UserCog, Save, BadgeCheck, Briefcase, Shield, Power, Wand2, Mail, AtSign,
+} from 'lucide-react';
+
+import PermissionPicker from './PermissionPicker';
+import { useAdminPermissions } from '@/components/admin/AdminPermissionProvider';
+import UserPicker from './UserPicker';
+
+// 🟡 پیکربندیِ دسترسی — پنجره‌ی کوتاه
+const ACL_TTL = { dedupingInterval: 10_000 };
+
+const emptyForm = {
+  title: '',
+  role: '',
+  isActive: true,
+  permissions: [],
+};
+
+export default function AdminForm({ adminId = null }) {
+  const router = useRouter();
+  const isEdit = !!adminId;
+  const { can } = useAdminPermissions();
+
+  // وضعیتِ فعال/غیرفعالِ بارگذاری‌شده — برای تشخیصِ جهتِ تغییر (activate/revoke)
+  const initial = useRef({ isActive: true });
+
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+
+  const [formData, setFormData] = useState(emptyForm);
+  // کاربرِ لینک‌شده — در حالت ساخت انتخاب می‌شود، در حالت ویرایش فقط نمایش.
+  const [linkedUser, setLinkedUser] = useState(null);
+  // هویتِ مشتق‌شده‌ی سرور (فقط خواندنی) — تا کاربر ببیند چه چیزی ذخیره شده.
+  const [derived, setDerived] = useState({ username: '', email: '' });
+
+  // 🟡 رجیستریِ مجوزها و نقش‌ها — مشترک بین صفحات ادمین، پنجره‌ی کوتاه
+  const { data: permissionsData } = useSWR('/api/admin/permissions', ACL_TTL);
+  const { data: rolesData } = useSWR('/api/admin/roles', ACL_TTL);
+  const modules = permissionsData?.modules || [];
+  const roles = rolesData?.roles || [];
+
+  // ─── بارگذاریِ خودِ ادمین در حالت ویرایش (رکوردِ تکی — بدون کش) ───
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const adminData = isEdit
+          ? await (await fetch(`/api/admin/admins/${adminId}`)).json()
+          : null;
+
+        if (isEdit) {
+          if (!adminData?.admin) {
+            toast.error(adminData?.message || 'ادمین یافت نشد');
+            router.replace('/p-admin/users/admins');
+            return;
+          }
+          const a = adminData.admin;
+          setFormData({
+            title: a.title || '',
+            role: a.role?._id || '',
+            isActive: a.isActive ?? true,
+            permissions: a.permissions || [],
+          });
+          setLinkedUser(a.user || null);
+          setDerived({ username: a.username || '', email: a.email || '' });
+          initial.current = { isActive: a.isActive ?? true };
+        }
+      } catch {
+        toast.error('خطا در بارگذاری اطلاعات');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    load();
+  }, [adminId, isEdit]); // eslint-disable-line
+
+  const updateField = (key, value) =>
+    setFormData((prev) => ({ ...prev, [key]: value }));
+
+  /**
+   * در حالتِ ساخت، کلِ payload زیرِ یک کلید (admins.create) می‌رود.
+   * در حالتِ ویرایش، resolveAdminPatchPermissions هر فیلد را جدا می‌سنجد:
+   *   title/role → admins.edit ، permissions → admins.managePermissions ،
+   *   isActive   → admins.activate یا admins.revoke (بسته به جهت).
+   * پس فرستادنِ همیشگیِ هر چهار فیلد یعنی ادمینی با فقط admins.edit هم
+   * برای تغییرِ عنوان ۴۰۳ می‌گرفت.
+   */
+  const canManagePermissions = can('admins.managePermissions');
+  const canEditFields = can('admins.edit');
+  const canToggleActive = (next) => can(next ? 'admins.activate' : 'admins.revoke');
+
+  // انتخاب نقش — دسترسی‌های نقش به‌عنوان قالب روی چک‌باکس‌ها اعمال می‌شود
+  const handleRoleChange = (roleId) => {
+    updateField('role', roleId);
+
+    if (!roleId) return;
+
+    const role = roles.find((r) => r._id === roleId);
+    if (role?.permissions?.length) {
+      setFormData((prev) => ({
+        ...prev,
+        role: roleId,
+        permissions: [...new Set([...prev.permissions, ...role.permissions])],
+      }));
+      toast.info(`دسترسی‌های نقش «${role.name}» اعمال شد — می‌توانید سفارشی‌سازی کنید`);
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    if (!isEdit && !linkedUser) {
+      return toast.error('ابتدا کاربرِ این عضویت را انتخاب کنید');
+    }
+
+    setSubmitting(true);
+
+    // ⚠️ فقط فیلدهایی فرستاده می‌شوند که سرور می‌پذیرد. هر کلیدِ ناشناخته
+    // (از جمله name/username/email که دیگر دستی نیستند) در گیت ۴۰۳ می‌گیرد.
+    let payload;
+    if (!isEdit) {
+      payload = {
+        userId: linkedUser._id,
+        title: formData.title,
+        role: formData.role || null,
+        isActive: formData.isActive,
+        permissions: formData.permissions,
+      };
+    } else {
+      payload = {};
+      if (canEditFields) {
+        payload.title = formData.title;
+        payload.role = formData.role || null;
+      }
+      if (canManagePermissions) payload.permissions = formData.permissions;
+      if (formData.isActive !== initial.current.isActive && canToggleActive(formData.isActive)) {
+        payload.isActive = formData.isActive;
+      }
+
+      if (!Object.keys(payload).length) {
+        setSubmitting(false);
+        toast.info('تغییری برای ذخیره وجود ندارد');
+        return;
+      }
+    }
+
+    try {
+      const res = await fetch(
+        isEdit ? `/api/admin/admins/${adminId}` : '/api/admin/admins',
+        {
+          method: isEdit ? 'PUT' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        }
+      );
+
+      const data = await res.json();
+
+      // تعارضِ عضویتِ موجود — مسیرِ درست را نشان بده، نه فقط خطا
+      if (res.status === 409 && data.adminId) {
+        toast.info(data.message);
+        router.push(`/p-admin/users/admins/edit/${data.adminId}`);
+        return;
+      }
+
+      if (!res.ok) throw new Error(data.message || 'خطا در ذخیره ادمین');
+
+      toast.success(data.message);
+      router.push('/p-admin/users/admins');
+      router.refresh();
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="w-8 h-8 border-2 border-gray-200 border-t-[var(--color-primary)] rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-5" dir="rtl">
+      {/* Header */}
+      <div
+        className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-5 rounded-2xl border"
+        style={{ borderColor: 'var(--color-border)' }}
+      >
+        <div>
+          <h1 className="text-base font-bold text-gray-800 flex items-center gap-2">
+            <UserCog className="text-[var(--color-primary)]" size={20} />
+            {isEdit ? 'ویرایش ادمین' : 'افزودن ادمین جدید'}
+          </h1>
+        </div>
+
+        <button
+          type="submit"
+          disabled={submitting}
+          className="inline-flex items-center justify-center gap-2 text-white text-xs font-bold px-6 py-3 rounded-[var(--radius)] transition-all hover:shadow-lg hover:-translate-y-0.5 active:scale-95 disabled:opacity-50"
+          style={{ background: 'var(--color-primary)' }}
+        >
+          {submitting ? (
+            <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+          ) : (
+            <Save size={14} />
+          )}
+          {isEdit ? 'ذخیره تغییرات' : 'ایجاد ادمین'}
+        </button>
+      </div>
+
+      {/* کاربرِ عضویت */}
+      <div
+        className="bg-white rounded-2xl border p-5 space-y-4"
+        style={{ borderColor: 'var(--color-border)' }}
+      >
+        <h2 className="text-sm font-bold text-gray-800 flex items-center gap-2 border-b pb-3" style={{ borderColor: 'var(--color-surface)' }}>
+          <BadgeCheck size={16} className="text-[var(--color-primary)]" />
+          کاربرِ این عضویت
+        </h2>
+
+        {isEdit ? (
+          <div
+            className="rounded-xl border p-4 bg-gray-50"
+            style={{ borderColor: 'var(--color-border)' }}
+          >
+            {linkedUser ? (
+              <>
+                <p className="text-xs font-bold text-gray-800">
+                  {[linkedUser.name, linkedUser.lastName].filter(Boolean).join(' ') ||
+                    'بدون نام'}
+                </p>
+                <p className="text-[11px] text-gray-500 mt-0.5" dir="ltr">
+                  {linkedUser.phone || linkedUser.email || linkedUser._id}
+                </p>
+              </>
+            ) : (
+              <p className="text-[11px] font-bold text-amber-700">
+                این عضویت به هیچ کاربری متصل نیست (سندِ قدیمی) — تا زمان اتصال،
+                هیچ‌کس نمی‌تواند با آن وارد پنل شود.
+              </p>
+            )}
+            <p className="text-[10px] text-gray-400 mt-2">
+              کاربرِ یک عضویت پس از ساخت تغییر نمی‌کند؛ برای شخصِ دیگر یک عضویت
+              جدید بسازید.
+            </p>
+          </div>
+        ) : (
+          <UserPicker value={linkedUser} onSelect={setLinkedUser} />
+        )}
+
+        {/* هویتِ مشتق‌شده — فقط خواندنی */}
+        {(derived.username || derived.email) && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Field label="نام کاربری (خودکار)" icon={AtSign}>
+              <p className="field-input text-left bg-gray-50 text-gray-500" dir="ltr">
+                {derived.username || '—'}
+              </p>
+            </Field>
+            <Field label="ایمیل (از پروفایل کاربر)" icon={Mail}>
+              <p className="field-input text-left bg-gray-50 text-gray-500" dir="ltr">
+                {derived.email || '—'}
+              </p>
+            </Field>
+          </div>
+        )}
+      </div>
+
+      {/* تنظیماتِ عضویت */}
+      <div
+        className="bg-white rounded-2xl border p-5 space-y-4"
+        style={{ borderColor: 'var(--color-border)' }}
+      >
+        <h2 className="text-sm font-bold text-gray-800 flex items-center gap-2 border-b pb-3" style={{ borderColor: 'var(--color-surface)' }}>
+          <Shield size={16} className="text-[var(--color-primary)]" />
+          نقش و وضعیت
+        </h2>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Field label="عنوان/سمت" icon={Briefcase}>
+            <input
+              type="text"
+              value={formData.title}
+              onChange={(e) => updateField('title', e.target.value)}
+              placeholder="مثلاً مدیر فروش"
+              className="field-input"
+            />
+          </Field>
+
+          {(!isEdit || canEditFields) && (
+          <Field label="نقش (قالب دسترسی)" icon={Shield}>
+            <div className="flex items-center gap-2">
+              <select
+                value={formData.role}
+                onChange={(e) => handleRoleChange(e.target.value)}
+                className="field-input flex-1 cursor-pointer"
+              >
+                <option value="">بدون نقش — دسترسی کاملاً سفارشی</option>
+                {roles.map((role) => (
+                  <option key={role._id} value={role._id}>
+                    {role.name} ({role.permissions?.length || 0} دسترسی)
+                  </option>
+                ))}
+              </select>
+              <span
+                title="با انتخاب نقش، دسترسی‌های آن به انتخاب فعلی اضافه می‌شود"
+                className="w-9 h-9 rounded-xl bg-violet-50 text-violet-500 flex items-center justify-center flex-shrink-0"
+              >
+                <Wand2 size={15} />
+              </span>
+            </div>
+          </Field>
+          )}
+
+          {(!isEdit || canToggleActive(!formData.isActive)) && (
+          <Field label="وضعیت حساب" icon={Power}>
+            <button
+              type="button"
+              onClick={() => updateField('isActive', !formData.isActive)}
+              className={`w-full flex items-center justify-between p-3 rounded-xl border-2 transition-all ${
+                formData.isActive
+                  ? 'bg-emerald-50 border-emerald-200'
+                  : 'bg-red-50 border-red-200'
+              }`}
+            >
+              <span
+                className={`text-xs font-bold ${formData.isActive ? 'text-emerald-700' : 'text-red-500'}`}
+              >
+                {formData.isActive ? 'فعال — امکان استفاده از پنل' : 'غیرفعال — دسترسی معلق'}
+              </span>
+              <span
+                className={`relative w-11 h-6 rounded-full transition-colors ${
+                  formData.isActive ? 'bg-emerald-500' : 'bg-gray-300'
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all ${
+                    formData.isActive ? 'right-0.5' : 'right-[22px]'
+                  }`}
+                />
+              </span>
+            </button>
+          </Field>
+          )}
+        </div>
+      </div>
+
+      {/* Permissions */}
+      {(!isEdit || canManagePermissions) && (
+      <PermissionPicker
+        modules={modules}
+        selected={formData.permissions}
+        onChange={(permissions) => updateField('permissions', permissions)}
+      />
+      )}
+
+      {/* Bottom submit (برای فرم‌های بلند) */}
+      <button
+        type="submit"
+        disabled={submitting}
+        className="w-full inline-flex items-center justify-center gap-2 text-white text-sm font-bold px-6 py-4 rounded-2xl transition-all hover:shadow-lg active:scale-[0.99] disabled:opacity-50"
+        style={{ background: 'var(--color-text)' }}
+      >
+        {submitting ? (
+          <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+        ) : (
+          <Save size={15} style={{ color: 'var(--color-secondary)' }} />
+        )}
+        {isEdit ? 'ذخیره تغییرات ادمین' : 'ایجاد ادمین با دسترسی‌های انتخاب‌شده'}
+      </button>
+
+      <style jsx>{`
+        .field-input {
+          width: 100%;
+          border: 2px solid #e5e7eb;
+          border-radius: var(--radius);
+          background: #fff;
+          padding: 10px 14px;
+          font-size: 12px;
+          font-weight: 700;
+          transition: all 0.2s;
+        }
+        .field-input:focus {
+          outline: none;
+          border-color: var(--color-primary);
+        }
+      `}</style>
+    </form>
+  );
+}
+
+function Field({ label, icon: Icon, required = false, children }) {
+  return (
+    <div className="space-y-1.5">
+      <label className="text-[11px] font-bold text-gray-500 flex items-center gap-1.5">
+        <Icon size={12} className="text-gray-400" />
+        {label}
+        {required && <span className="text-red-500">*</span>}
+      </label>
+      {children}
+    </div>
+  );
+}

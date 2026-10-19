@@ -1,0 +1,374 @@
+/**
+ * services/query.service.js
+ *
+ * Direct (no HTTP) implementation of the /api/query logic.
+ * Replaces server-to-self fetch calls in SSR pages with a cached function call.
+ */
+
+import "base/models/registerModels";
+import connectToDB from "base/configs/db";
+import Brand from "base/models/Brand";
+import Sport from "base/models/Sport";
+import Athlete from "base/models/Athlete";
+import Product from "base/models/Product";
+import Category from "base/models/Category";
+import Serie from "base/models/Serie";
+import LimitedEdition from "base/models/LimitedEdition";
+import { getProductListingPage } from "base/services/productListing.service";
+import { withResolvedSerieSportContent } from "@/lib/serieSportContent";
+import { buildCategorySportMatch } from "base/utils/categorySportVisibility";
+import { applyProductSportVisibility } from "base/services/categorySportVisibility.service";
+import { applyCategorySubtree } from "base/services/categorySubtree.service";
+import { isFeatureEnabled } from "@/lib/features";
+
+// سنتینل واحد برای ۴۰۴ — صفحه‌ی کنترلر با بررسی res.notFound === true تابع
+// notFound() نکست را صدا می‌زند.
+const NOT_FOUND = Object.freeze({ notFound: true });
+
+/**
+ * Deterministic Path Validator (ضدِ تله‌ی Soft-404 / Duplicate-Content).
+ *
+ * فقط ۷ الگوی دقیقِ زیر مجاز است؛ هر انحراف، سگمنتِ اضافی، یا جفتِ والد-فرزندِ
+ * نامعتبر → notFound (بدونِ fallbackِ خاموش):
+ *   1. /[sport]
+ *   2. /[sport]/[category]            — ورزش اصلی یا نمایشیِ صریحِ category
+ *   3. /[brand]                        — برندِ سراسری
+ *   4. /[sport]/[brand]               — برند در این ورزش محصولِ فعال دارد
+ *   5. /[sport]/[category]/[brand]    — دسته در ورزش قابل‌نمایش است + برند محصول دارد
+ *   6. /[sport]/[brand]/[serie]       — serie.brand === brand._id و در این ورزش محصول دارد
+ *   7. /[brand]/[limitedEdition]      — limitedEdition.brand === brand._id و محصولِ فعال دارد
+ *   8. /[category]                     — دسته‌ی ریشه (بدونِ دپارتمان)
+ *   9. /[category]/[brand]             — برند در زیردرختِ این دسته محصول دارد
+ *  10. /[brand]/[serie]                — فقط وقتی قابلیت «دپارتمان‌ها» خاموش است
+ *
+ * الگوهای ۱، ۲، ۴، ۵ و ۶ فقط با قابلیت «دپارتمان‌ها» (Sport) وجود دارند؛ الگوهای
+ * برند/سری/لیمیتد ادیشن با خاموش‌بودنِ قابلیتِ خودشان resolve نمی‌شوند.
+ *
+ * نکته‌ی معماری: اعتبارسنجی مستقیماً روی مدل‌ها (موجودیت‌هایی که SlugRegistry به
+ * آن‌ها اشاره می‌کند) انجام می‌شود، نه صرفاً روی اسلاگِ سراسریِ SlugRegistry؛ چون
+ * اسلاگِ «دسته» اکنون per-sport است و جستجوی فقط-بر-اساس-اسلاگ در رجیستری مبهم
+ * می‌شود. این تضمین می‌کند جفتِ والد-فرزند قطعی و بدونِ ابهام اعتبارسنجی شود.
+ *
+ * Serie فیلدِ sport ندارد؛ «مرتبط‌بودنِ سری با ورزش» از طریقِ وجودِ محصولِ
+ * { sport, brand, serie } اثبات می‌شود (همان منطقِ «محصول در این ترکیب» برای
+ * الگوهای ۴ و ۵).
+ *
+ * @returns موجودیت‌های resolve‌شده { sport?, brand?, category?, serie? } یا NOT_FOUND.
+ */
+/**
+ * شناسه‌ی یک سریِ ریشه به‌علاوه‌ی شناسه‌ی همه‌ی فرزندانِ زیردرختش (در همین برند) را
+ * برمی‌گرداند. همه‌ی سری‌های برند یک‌بار خوانده و زیردرخت با BFS پیمایش می‌شود تا
+ * بررسیِ وجودِ محصول، محصولاتِ زیرسری‌ها را هم پوشش دهد.
+ */
+async function _collectSerieSubtreeIds(rootSerieId, brandId) {
+  const all = await Serie.find({ brand: brandId })
+    .select("_id parentSerie")
+    .lean();
+
+  const ids = [rootSerieId];
+  const queue = [String(rootSerieId)];
+  while (queue.length > 0) {
+    const cur = queue.shift();
+    for (const s of all) {
+      if (s.parentSerie && String(s.parentSerie) === cur) {
+        ids.push(s._id);
+        queue.push(String(s._id));
+      }
+    }
+  }
+  return ids;
+}
+
+async function _validatePath(slugs) {
+  // RULE 1: Array Length Hard Guard
+  if (!Array.isArray(slugs) || slugs.length === 0 || slugs.length > 3) {
+    return NOT_FOUND;
+  }
+
+  const normalizedSlugs = slugs.map((slug) => String(slug));
+  if (normalizedSlugs.some((slug) => !slug || slug.length > 160)) {
+    return NOT_FOUND;
+  }
+
+  await connectToDB();
+  const [s1, s2, s3] = normalizedSlugs;
+
+  let resolved = NOT_FOUND;
+
+  // قابلیت‌های خاموش اصلاً resolve نمی‌شوند (داده‌شان می‌ماند، آدرسشان ۴۰۴ است).
+  const findSport = (slug) =>
+    isFeatureEnabled("departments") ? Sport.findOne({ slug }).lean() : null;
+  const findBrand = (slug) =>
+    isFeatureEnabled("brands") ? Brand.findOne({ slug }).lean() : null;
+  // دسته‌ی ریشه (بدونِ دپارتمان): /[category] و /[category]/[brand]. با دپارتمان‌های
+  // روشن فقط دسته‌ای که دپارتمان ندارد اینجا می‌نشیند؛ با دپارتمان‌های خاموش هر دسته.
+  const findRootCategory = (slug) =>
+    Category.findOne(
+      isFeatureEnabled("departments") ? { slug, sport: null } : { slug },
+    ).lean();
+
+  // RULE 2: State-Machine Resolution
+  if (slugs.length === 1) {
+    // ریشه: SPORT (الگوی ۱)، دسته‌ی ریشه، یا BRAND (الگوی ۳)
+    const sport = await findSport(s1);
+    const category = sport ? null : await findRootCategory(s1);
+    if (sport) {
+      resolved = { sport };
+    } else if (category) {
+      resolved = { category };
+    } else {
+      const brand = await findBrand(s1);
+      if (brand) resolved = { brand };
+    }
+  } else if (slugs.length === 2) {
+    // s1 معمولاً SPORT است (الگوهای ۲ و ۴). در غیر این صورت ممکن است دسته‌ی ریشه
+    // (/[category]/[brand]) یا برندی باشد که لیمیتد ادیشنِ خود را سرو می‌کند
+    // (الگوی ۷: /[brand]/[limitedEdition]).
+    const sport = await findSport(s1);
+    const rootCategory = sport ? null : await findRootCategory(s1);
+    if (rootCategory) {
+      const brand = await findBrand(s2);
+      if (
+        brand &&
+        (await Product.exists(await applyCategorySubtree(
+          { brand: brand._id, isActive: true },
+          { categoryId: rootCategory._id, category: rootCategory },
+        )))
+      ) {
+        resolved = { category: rootCategory, brand };
+      }
+    } else if (sport) {
+      // دسته در محدوده‌ی همین ورزش (الگوی ۲)
+      const category = await Category.findOne({
+        slug: s2,
+        ...buildCategorySportMatch(sport._id),
+      }).lean();
+      if (category) {
+        resolved = { sport, category };
+      } else {
+        // برند با محصولِ فعال در این ورزش (الگوی ۴)
+        const brand = await findBrand(s2);
+        if (
+          brand &&
+          (await Product.exists(await applyProductSportVisibility(
+            { brand: brand._id, isActive: true },
+            { sportId: sport._id },
+          )))
+        ) {
+          resolved = { sport, brand };
+        }
+      }
+    } else {
+      // الگوی ۷: /[brand]/[limitedEdition] — لیمیتد ادیشنِ متعلق به همین برند با
+      // حداقل یک محصولِ فعال. لیمیتد ادیشن‌ها برند-محور هستند (مستقل از ورزش).
+      const brand = await findBrand(s1);
+      const limitedEdition =
+        brand && isFeatureEnabled("limitedEditions")
+          ? await LimitedEdition.findOne({ brand: brand._id, slug: s2 }).lean()
+          : null;
+      if (
+        limitedEdition &&
+        (await Product.exists({
+          brand: brand._id,
+          limitedEdition: limitedEdition._id,
+          isActive: true,
+        }))
+      ) {
+        resolved = { brand, limitedEdition };
+      } else if (brand && !isFeatureEnabled("departments") && isFeatureEnabled("series")) {
+        // فروشگاهِ بدونِ دپارتمان: سری زیرِ خودِ برند می‌نشیند — /[brand]/[serie]
+        // (با دپارتمان‌ها همان سری فقط در /[sport]/[brand]/[serie] است، نه هر دو).
+        const serie = await Serie.findOne({ slug: s2, brand: brand._id }).lean();
+        if (serie) {
+          const serieIds = await _collectSerieSubtreeIds(serie._id, brand._id);
+          if (await Product.exists({ brand: brand._id, serie: { $in: serieIds }, isActive: true })) {
+            resolved = { brand, serie };
+          }
+        }
+      }
+    }
+  } else {
+    // slugs.length === 3 — s1 باید حتماً SPORT باشد
+    const sport = await findSport(s1);
+    if (sport) {
+      const category = await Category.findOne({
+        slug: s2,
+        ...buildCategorySportMatch(sport._id),
+      }).lean();
+      if (category) {
+        // Branch A (الگوی ۵): s3 باید BRAND باشد با محصول در ترکیبِ ورزش+دسته
+        const brand = await findBrand(s3);
+        if (
+          brand &&
+          (await Product.exists(await applyCategorySubtree(
+            {
+              brand: brand._id,
+              isActive: true,
+            },
+            { sportId: sport._id, categoryId: category._id, category },
+          )))
+        ) {
+          resolved = { sport, category, brand };
+        }
+      } else {
+        // Branch B (الگوی ۶): s2 باید BRAND و s3 باید SERIE متعلق به این برند+ورزش
+        const brand = isFeatureEnabled("series") ? await findBrand(s2) : null;
+        if (brand) {
+          const serie = await Serie.findOne({ slug: s3 }).lean();
+          if (serie && String(serie.brand) === String(brand._id)) {
+            // یک سریِ ریشه ممکن است محصولِ مستقیم نداشته باشد و همه‌ی محصولاتش روی
+            // زیرسری‌ها باشند. پس «مرتبط‌بودنِ سری با این ورزش» با وجودِ محصول روی
+            // کلِ زیردرختِ سری (خودش + همه‌ی فرزندان) اثبات می‌شود، نه فقط خودِ سری —
+            // وگرنه صفحه‌ی سریِ والدِ بدونِ محصولِ مستقیم به‌اشتباه ۴۰۴ می‌شد.
+            const serieIds = await _collectSerieSubtreeIds(serie._id, brand._id);
+            if (
+              await Product.exists(await applyProductSportVisibility(
+                {
+                  brand: brand._id,
+                  serie: { $in: serieIds },
+                  isActive: true,
+                },
+                { sportId: sport._id },
+              ))
+            ) {
+              const resolvedSerie = withResolvedSerieSportContent(
+                serie,
+                sport._id
+              );
+              resolved = { sport, brand, serie: resolvedSerie };
+            }
+          }
+        }
+      }
+    }
+  }
+
+  if (resolved.notFound) return NOT_FOUND;
+
+  // RULE 3: Mirror Reconstruction Test — مسیرِ بازساخته از موجودیت‌های resolve‌شده
+  // باید کاراکتر-به-کاراکتر برابرِ مسیرِ درخواستی باشد. هر اختلاف (سگمنتِ کم/زیاد،
+  // ترتیب، یا اسلاگِ غیرکانونیک) → ۴۰۴، بدونِ fallbackِ خاموش.
+  const canonical = _canonicalSegments(resolved);
+  if (slugs.join("/") !== canonical.join("/")) return NOT_FOUND;
+
+  return resolved;
+}
+
+/**
+ * بازساختِ سگمنت‌های کانونیکِ URL از موجودیت‌های resolve‌شده، به ترتیبِ دقیقِ الگو.
+ */
+function _canonicalSegments(r) {
+  const segs = [];
+  if (r.sport) segs.push(r.sport.slug);
+  if (r.category) segs.push(r.category.slug);
+  if (r.brand) segs.push(r.brand.slug); // الگوهای ۳، ۴، ۵ و /[category]/[brand]
+  if (r.serie) segs.push(r.serie.slug);
+  if (r.limitedEdition) segs.push(r.limitedEdition.slug); // الگوی ۷: /[brand]/[limitedEdition]
+  return segs;
+}
+
+/**
+ * Adapter: نتیجه‌ی validatorِ سخت‌گیر را به شکلِ { search, filters } برای مصرف‌کننده‌ها
+ * در می‌آورد (یا NOT_FOUND). search داکیومنت‌های خام با ObjectId است؛ filters شیِ
+ * نمایشی (با brandStats روی برند). فقط موجودیت‌هایی پر می‌شوند که بخشی از الگوی
+ * معتبر باشند — athlete/product در الگوهای مجاز جایی ندارند. limitedEdition فقط در
+ * الگوی ۷ (/[brand]/[limitedEdition]) پر می‌شود.
+ */
+async function _resolveContext(slugs, { includeBrandStats = true } = {}) {
+  const resolved = await _validatePath(slugs);
+  if (resolved.notFound) return NOT_FOUND;
+
+  const search = {
+    brand: resolved.brand || null,
+    sport: resolved.sport || null,
+    athlete: null,
+    category: resolved.category || null,
+    serie: resolved.serie || null,
+    limitedEdition: resolved.limitedEdition || null,
+    product: null,
+  };
+
+  // آمار برند (سری‌ها + تعداد محصول) — برای هدرِ صفحاتِ برند/سری
+  let brandStats = null;
+  if (search.brand && includeBrandStats) {
+    const [totalBrandProducts, fullBrand, seriesCounts] = await Promise.all([
+      Product.countDocuments({ brand: search.brand._id, isActive: true }),
+      Brand.findById(search.brand._id)
+        .populate({ path: "series", options: { sort: { order: 1, createdAt: -1 } } })
+        .lean(),
+      Product.aggregate([
+        { $match: { brand: search.brand._id, isActive: true, serie: { $ne: null } } },
+        { $group: { _id: "$serie", count: { $sum: 1 } } },
+      ]),
+    ]);
+
+    const countMap = new Map(seriesCounts.map((item) => [String(item._id), item.count]));
+    const seriesWithCounts = (fullBrand?.series || []).map((serie) => ({
+      ...withResolvedSerieSportContent(serie, search.sport?._id),
+      productCount: countMap.get(String(serie._id)) || 0,
+    }));
+
+    brandStats = { ...search.brand, totalProductCount: totalBrandProducts, series: seriesWithCounts };
+  }
+
+  const filters = {
+    brand: brandStats || search.brand,
+    sport: search.sport,
+    athlete: null,
+    category: search.category,
+    serie: search.serie,
+    limitedEdition: search.limitedEdition,
+    product: null,
+  };
+
+  return { notFound: false, search, filters };
+}
+
+async function _queryBySlugs(slugs, resolvedContext = null, extraFilter = {}) {
+  const ctx = resolvedContext || await _resolveContext(slugs);
+  if (ctx.notFound) return NOT_FOUND;
+
+  const filters = ctx.filters || {};
+  // resolvePageContext intentionally exposes only the serializable `filters`
+  // shape. When that already-resolved context is reused by the page, derive
+  // the database filter from it instead of assuming the private `search`
+  // object is present.
+  const search = ctx.search || filters;
+
+  const finalFilter = {};
+  if (search.brand) finalFilter.brand = search.brand._id;
+  if (search.sport) finalFilter.sport = search.sport._id;
+  if (search.category) finalFilter.category = search.category._id;
+  if (search.serie) finalFilter.serie = search.serie._id;
+  if (search.limitedEdition) finalFilter.limitedEdition = search.limitedEdition._id;
+  // مخاطبِ هدف (navbar audience tabs) — مستقلِ کاملِ فیلترهای موجودیتی بالا
+  if (extraFilter.targetAudience) finalFilter.targetAudience = extraFilter.targetAudience;
+
+  const listing = await getProductListingPage({ filter: finalFilter });
+
+  return JSON.parse(
+    JSON.stringify({
+      notFound: false,
+      filters,
+      results: listing.products,
+      totalResults: listing.totalResults,
+    })
+  );
+}
+
+// Do not cache arbitrary URL segments. Crawlers can otherwise turn every
+// unique 404 into a permanent ISR write.
+export async function queryBySlugs(slugs, resolvedContext = null, extraFilter = {}) {
+  return _queryBySlugs(slugs, resolvedContext, extraFilter);
+}
+
+/**
+ * فقط موجودیت‌های صفحه (filters) — بدون بارگذاری محصولات.
+ * برای صفحه‌ی برند (نمای گروه‌بندی‌شده + infinite scroll) استفاده می‌شود تا
+ * بارِ اولیه سبک بماند و همه‌ی محصولات یک‌جا لود نشوند.
+ */
+export async function resolvePageContext(slugs, options = {}) {
+  const ctx = await _resolveContext(slugs, options);
+  if (ctx.notFound) return { notFound: true };
+  return JSON.parse(JSON.stringify({ notFound: false, filters: ctx.filters }));
+}

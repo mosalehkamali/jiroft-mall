@@ -1,0 +1,217 @@
+import storeConfig from "base/store.config";
+import { notFound } from "next/navigation";
+import connectToDB from "base/configs/db";
+import Event from "base/models/Event";
+import { resolveEventProducts } from "base/services/eventProductResolver";
+import { getCachedRate } from "@/lib/Exchangerate";
+import EventThemeWrapper from "@/components/features/events/EventThemeWrapper";
+import EventCountdown from "@/components/features/events/EventCountdown";
+import EventCardOverlay from "@/components/features/events/EventCardOverlay";
+import SportPageClient from "@/components/templates/sports/SportPageClient";
+
+const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000").replace(/\/+$/, "");
+
+// رویدادها با تگ‌های events/limited-editions کش و در تغییرِ ادمین باطل می‌شوند؛
+// TTL زمان‌محور → ۱ساعت برای کاهشِ ISR Writes.
+export const revalidate = 3600;
+
+// Resolve the single header image with graceful fallback to the legacy fields so
+// old events (which only had heroImage/coverImage) keep rendering correctly.
+function resolveHeaderImage(vi = {}) {
+  return vi.headerImage || vi.heroImage || vi.coverImage || "";
+}
+
+export async function generateMetadata({ params }) {
+  const { collectionSlug } = await params;
+  await connectToDB();
+  const event = await Event.findOne({
+    slug: collectionSlug,
+    status: "active",
+  })
+    .select("name slug shortDescription description seo social visualIdentity")
+    .lean();
+
+  if (!event) return {};
+
+  const title = event.seo?.title || event.name;
+  const description =
+    event.seo?.description ||
+    event.shortDescription ||
+    event.description ||
+    `مشاهده و خرید محصولات منتخب کالکشن ${event.name} با بررسی قیمت، مشخصات و موجودی در ${storeConfig.brand.name}.`;
+  const ogImage = event.social?.ogImage || resolveHeaderImage(event.visualIdentity);
+  const canonical = `${SITE_URL}/collection/${event.slug}`;
+
+  return {
+    title,
+    description,
+    keywords: event.seo?.keywords || [],
+    alternates: { canonical },
+    robots: { index: true, follow: true },
+    openGraph: {
+      title: event.social?.ogTitle || title,
+      description: event.social?.ogDescription || description,
+      url: canonical,
+      siteName: storeConfig.brand.name,
+      locale: "fa_IR",
+      type: "website",
+      images: ogImage ? [ogImage] : [],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: event.social?.twitterTitle || title,
+      description: event.social?.twitterDescription || description,
+      images: ogImage ? [ogImage] : [],
+    },
+  };
+}
+
+export default async function EventPage({ params }) {
+  const { collectionSlug } = await params;
+  await connectToDB();
+
+  const event = await Event.findOne({
+    slug: collectionSlug,
+    status: "active",
+  }).lean();
+
+  if (!event) notFound();
+
+  const serialized = JSON.parse(JSON.stringify(event));
+
+  // Resolve + price products server-side (resolver attaches Toman prices), plus
+  // the exchange rate for the shared ProductCard's local fallback. Not separately
+  // cached — this page is ISR (revalidate = 300) so the whole output is cached.
+  const [products, rate] = await Promise.all([
+    resolveEventProducts(serialized.productSelection),
+    getCachedRate(),
+  ]);
+
+  const canonical = `${SITE_URL}/collection/${serialized.slug}`;
+  const collectionDescription =
+    serialized.seo?.description ||
+    serialized.shortDescription ||
+    serialized.description ||
+    `مشاهده و خرید محصولات منتخب کالکشن ${serialized.name} با بررسی قیمت، مشخصات و موجودی در ${storeConfig.brand.name}.`;
+  const collectionItems = products
+    .filter((product) => product?.slug)
+    .slice(0, 24)
+    .map((product, index) => ({
+      "@type": "ListItem",
+      position: index + 1,
+      url: `${SITE_URL}/products/${product.slug}`,
+      name: product.name || product.title,
+    }));
+  const collectionSchema = {
+    "@context": "https://schema.org",
+    "@type": "CollectionPage",
+    "@id": `${canonical}#collection`,
+    url: canonical,
+    name: serialized.seo?.title || serialized.name,
+    description: collectionDescription,
+    isPartOf: {
+      "@type": "WebSite",
+      "@id": `${SITE_URL}/#website`,
+      name: storeConfig.brand.name,
+      url: SITE_URL,
+    },
+    ...(collectionItems.length > 0 && {
+      mainEntity: {
+        "@type": "ItemList",
+        numberOfItems: collectionItems.length,
+        itemListElement: collectionItems,
+      },
+    }),
+  };
+
+  // pageInfo mirrors the Sport page's shape — title + header image + slug.
+  const pageInfo = {
+    title: serialized.name,
+    headImage: resolveHeaderImage(serialized.visualIdentity),
+    slug: serialized.slug,
+  };
+
+  // Event flair: ribbon/sticker render via the ProductCard `overlay` slot
+  // (decoration), while the campaign BADGE renders inside the card's own badge
+  // stack (exact discount-badge style) using the admin's text + color.
+  const customization = serialized.cardCustomization;
+  const cardOverlay = customization ? (
+    <EventCardOverlay customization={customization} />
+  ) : null;
+
+  const badgeCfg = customization?.badge;
+  const campaignBadge =
+    badgeCfg?.enabled && badgeCfg?.text
+      ? {
+          text: badgeCfg.text,
+          bgColor: badgeCfg.bgColor,
+          textColor: badgeCfg.textColor,
+        }
+      : null;
+
+  return (
+    <EventThemeWrapper theme={serialized.theme}>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(collectionSchema).replace(/</g, "\\u003c"),
+        }}
+      />
+      {/*
+        The Event page is a THEMED INSTANCE of the Sport slug page — same layout,
+        filter sidebar, search bar, product grid and cards. Differences:
+        • theme colors come from the event (re-pointed --color-* tokens)
+        • series={[]} → no series/limited-edition sliders in/under the header
+        • a small countdown sits under the title (headerExtra)
+        • the event's full description sits below the header (belowHero)
+        • no "back to events" button
+      */}
+      <SportPageClient
+        pageInfo={pageInfo}
+        products={products}
+        rate={rate}
+        series={[]}
+        titleOverride={serialized.name}
+        cardOverlay={cardOverlay}
+        campaignBadge={campaignBadge}
+        headerExtra={
+          serialized.endDate ? (
+            <div className="mt-2 flex justify-center">
+              <EventCountdown endDate={serialized.endDate} style="minimal" />
+            </div>
+          ) : null
+        }
+        belowHero={
+          serialized.description ? (
+            <section className="max-w-[1440px] mx-auto px-4 lg:px-8 pt-8">
+              {/* Themed, glassy description block sitting on the campaign
+                  background — uses the event's heading + body text colors. */}
+              <div
+                className="rounded-[var(--radius)] border p-6 backdrop-blur-sm"
+                style={{
+                  background: "color-mix(in srgb, var(--event-primary, var(--color-primary)) 10%, transparent)",
+                  borderColor: "color-mix(in srgb, var(--event-primary, var(--color-primary)) 25%, transparent)",
+                }}
+              >
+                {/* Section heading → Title Color (textPrimary / --event-text) */}
+                <p
+                  className="text-xs font-black mb-2"
+                  style={{ color: "var(--event-text, #fff)" }}
+                >
+                  درباره Collection
+                </p>
+                {/* Full description → Body Text Color (textSecondary / --event-text-muted) */}
+                <div
+                  className="leading-8 whitespace-pre-line"
+                  style={{ color: "var(--event-text-muted, rgba(255,255,255,0.65))" }}
+                >
+                  {serialized.description}
+                </div>
+              </div>
+            </section>
+          ) : null
+        }
+      />
+    </EventThemeWrapper>
+  );
+}

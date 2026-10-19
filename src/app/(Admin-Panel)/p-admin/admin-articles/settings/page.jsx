@@ -1,0 +1,7 @@
+import ArticleTaxonomies from "@/components/admin/articles/ArticleTaxonomies";
+
+export const metadata = { title: "دسته‌ها و برچسب‌های مقاله | پنل مدیریت" };
+
+export default function ArticleSettingsPage() {
+  return <ArticleTaxonomies />;
+}

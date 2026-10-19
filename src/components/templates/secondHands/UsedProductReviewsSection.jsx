@@ -1,0 +1,151 @@
+"use client";
+
+import { useState } from "react";
+import Link from "next/link";
+import { FaCheckCircle, FaQuoteRight, FaStar } from "react-icons/fa";
+import CommentImageLightbox from "@/components/ui/CommentImageLightbox";
+
+function formatDate(value) {
+  try {
+    return new Intl.DateTimeFormat("fa-IR", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    }).format(new Date(value));
+  } catch {
+    return "";
+  }
+}
+
+function Stars({ value }) {
+  if (!value) return null;
+
+  return (
+    <div
+      className="flex items-center gap-0.5 text-[var(--color-secondary)]"
+      aria-label={`امتیاز ${value} از ۵`}
+    >
+      {Array.from({ length: 5 }, (_, index) => (
+        <FaStar
+          key={index}
+          className={index < value ? "text-[var(--color-secondary)]" : "text-gray-200"}
+          size={13}
+        />
+      ))}
+    </div>
+  );
+}
+
+export default function UsedProductReviewsSection({ reviews = [] }) {
+  const [lightboxImage, setLightboxImage] = useState(null);
+
+  if (reviews.length === 0) return null;
+
+  return (
+    <section className="bg-white pb-20 pt-4 text-black md:pb-20 md:pt-6" dir="rtl">
+      <div className="container mx-auto px-4 md:px-12 lg:px-16 xl:px-20">
+        <div className="relative mb-12">
+          <h2 className="text-2xl font-black leading-tight text-gray-900 md:text-4xl">
+            <span className="text-[var(--color-primary)]">تجربه‌ی خرید </span>
+            <span>واقعی</span>
+          </h2>
+          <p className="mt-2 max-w-md border-r-2 border-[var(--color-primary)]/20 pr-3 text-sm font-light italic text-gray-500 md:mt-4 md:border-r-4 md:pr-4 md:text-lg">
+            نظر خریداران محصولات دست دوم
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {reviews.map((review) => (
+            <article
+              key={review.id}
+              className="flex h-full flex-col rounded-xl border border-black/5 bg-white p-5 shadow-[0_8px_30px_rgba(32,35,42,0.05)]"
+            >
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  {review.avatar ? (
+                    <img
+                      src={review.avatar}
+                      alt=""
+                      className="h-10 w-10 flex-shrink-0 rounded-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-sm font-black text-[var(--color-primary)]">
+                      {review.author?.trim()?.[0] || "ت"}
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-black text-gray-900">
+                      {review.author}
+                    </p>
+                    <span className="mt-1 inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700">
+                      <FaCheckCircle />
+                      خریدار تأییدشده
+                    </span>
+                  </div>
+                </div>
+                <FaQuoteRight className="flex-shrink-0 text-xl text-[var(--color-primary)]/15" />
+              </div>
+
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <Stars value={review.rating} />
+                <time className="text-[11px] text-gray-400">
+                  {formatDate(review.createdAt)}
+                </time>
+              </div>
+
+              <p className="flex-1 whitespace-pre-line text-sm leading-7 text-gray-700">
+                {review.text}
+              </p>
+
+              {review.images.length > 0 && (
+                <div className="mt-4 grid grid-cols-4 gap-2">
+                  {review.images.map((imageUrl, index) => (
+                    <button
+                      key={`${imageUrl}-${index}`}
+                      type="button"
+                      onClick={() => setLightboxImage(imageUrl)}
+                      className="aspect-square overflow-hidden rounded-lg border border-gray-100 bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
+                      aria-label={`نمایش تصویر محصول ${index + 1}`}
+                    >
+                      <img
+                        src={imageUrl}
+                        alt={`تصویر ارسالی خریدار ${index + 1}`}
+                        className="h-full w-full object-cover transition-transform duration-300 hover:scale-105"
+                      />
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <Link
+                href={
+                  review.product.slug
+                    ? `/second-hand/${review.product.slug}`
+                    : "/second-hand"
+                }
+                className="mt-4 flex items-center gap-2 border-t border-gray-100 pt-4"
+              >
+                {review.product.image && (
+                  <img
+                    src={review.product.image}
+                    alt=""
+                    className="h-9 w-9 rounded-md object-cover"
+                  />
+                )}
+                <span className="truncate text-xs font-bold text-gray-500 transition-colors hover:text-[var(--color-primary)]">
+                  {review.product.name}
+                </span>
+              </Link>
+            </article>
+          ))}
+        </div>
+      </div>
+
+      <CommentImageLightbox
+        src={lightboxImage}
+        onClose={() => setLightboxImage(null)}
+        alt="تصویر ارسالی خریدار"
+      />
+    </section>
+  );
+}

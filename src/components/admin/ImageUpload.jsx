@@ -1,0 +1,227 @@
+'use client';
+
+import { useEffect, useRef, useState } from 'react';
+import { FiUpload } from 'react-icons/fi';
+import { showError } from '@/lib/swal';
+
+export default function ImageUpload({
+  label,
+  value,
+  onChange,
+  folder = 'product',
+  required = false,
+  multiple = false,
+  accept = 'image/*',
+  className = '',
+  // اختیاری — فرم‌ها با این پرچم دکمه‌ی ذخیره را تا پایانِ آپلود غیرفعال می‌کنند.
+  // بدونش ادمین می‌توانست وسطِ آپلود ثبت کند و فرم بدونِ تصویر ارسال شود.
+  onUploadingChange,
+  // نسخه‌ی فشرده برای فرم‌های بلوکِ مقاله: کادر و پیش‌نمایشِ کوچک‌تر، بدونِ حاشیه‌ی پایین.
+  // پیش‌فرض false است، پس بقیه‌ی فرم‌ها دقیقاً مثلِ قبل‌اند.
+  compact = false,
+}) {
+  const [uploading, setUploading] = useState(false);
+  const [preview, setPreview] = useState(value || (multiple ? [] : null));
+  const uploadingRef = useRef(false);
+  // والدها این را به‌صورت arrow inline پاس می‌دهند؛ نگه‌داشتنش در ref باعث
+  // می‌شود cleanup به نسخه‌ی کهنه‌ی closure وابسته نباشد.
+  const notifyRef = useRef(onUploadingChange);
+  notifyRef.current = onUploadingChange;
+
+  const markUploading = (busy) => {
+    if (uploadingRef.current === busy) return;
+    uploadingRef.current = busy;
+    setUploading(busy);
+    notifyRef.current?.(busy);
+  };
+
+  // اگر کامپوننت وسطِ آپلود unmount شود (مثلاً تغییرِ key در والد)، شمارنده‌ی
+  // والد باید آزاد شود وگرنه دکمه‌ی ذخیره برای همیشه غیرفعال می‌ماند.
+  useEffect(() => () => { if (uploadingRef.current) notifyRef.current?.(false); }, []);
+
+  const handleFileChange = async (e) => {
+    const files = Array.from(e.target.files);
+    if (files.length === 0) return;
+
+    markUploading(true);
+
+    try {
+      const uploadedUrls = [];
+
+      for (const file of files) {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('folder', folder);
+
+        const res = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData,
+        });
+
+        const data = await res.json().catch(() => ({}));
+
+        // اگر سرور خطا برگرداند، نامِ فایل را هم در پیام بیاوریم تا ادمین دقیقاً بداند
+        // کدام تصویر و چرا آپلود نشده است.
+        if (!res.ok) {
+          throw new Error(
+            `آپلودِ «${file.name}» ناموفق بود: ${data.error || 'خطای نامشخصِ سرور'}`
+          );
+        }
+
+        // تأییدِ نهایی سمتِ کلاینت: حتی با وضعیتِ ۲۰۰ باید مطمئن شویم آدرس و شناسه‌ی
+        // معتبر برگشته‌اند؛ در غیر این صورت یک URL خراب واردِ فرم و سپس دیتابیس می‌شود
+        // در حالی که فایلی روی Cloudinary وجود ندارد.
+        if (!data.url || !data.publicId) {
+          throw new Error(
+            `آپلودِ «${file.name}» ناموفق بود: آدرسِ معتبرِ تصویر از سرور دریافت نشد.`
+          );
+        }
+
+        uploadedUrls.push(data.url);
+      }
+
+      if (multiple) {
+        const newUrls = [...(preview || []), ...uploadedUrls];
+        setPreview(newUrls);
+        onChange(newUrls);
+      } else {
+        setPreview(uploadedUrls[0]);
+        onChange(uploadedUrls[0]);
+      }
+    } catch (error) {
+      console.error('Upload error:', error);
+      showError('خطا در آپلود', error.message || 'خطا در آپلود فایل');
+    } finally {
+      markUploading(false);
+      // بدون این، انتخابِ دوبارهٔ همان فایل پس از خطا هیچ رویدادی نمی‌داد
+      e.target.value = '';
+    }
+  };
+
+  const removeImage = (index) => {
+    if (multiple) {
+      const newUrls = preview.filter((_, i) => i !== index);
+      setPreview(newUrls);
+      onChange(newUrls);
+    } else {
+      setPreview(null);
+      onChange('');
+    }
+  };
+
+  return (
+    <div className={`${compact ? "" : "mb-6 "}${className}`}>
+      {label && (
+        <label className="block text-sm font-semibold text-gray-700 mb-2">
+          {label}
+          {required && <span className="text-red-500 mr-1">*</span>}
+        </label>
+      )}
+      
+      <div className={compact ? "space-y-2" : "space-y-4"}>
+        {/* فشرده: همان input، پنهان داخلِ یک دکمه‌ی برچسب‌دار (be-upload در
+            admin-theme.css) به‌جای ظاهرِ پیش‌فرضِ مرورگر. رفتار و رویدادها یکی است. */}
+        {compact ? (
+          <label className={`be-upload${uploading ? " pointer-events-none opacity-60" : ""}`}>
+            <input type="file" accept={accept} onChange={handleFileChange} disabled={uploading} multiple={multiple} className="sr-only" />
+            <FiUpload aria-hidden="true" />
+            {uploading ? 'در حال آپلود…' : multiple ? 'افزودن تصویر' : preview ? 'تعویض تصویر' : 'انتخاب تصویر'}
+          </label>
+        ) : <div className="relative">
+          <input
+            type="file"
+            accept={accept}
+            onChange={handleFileChange}
+            disabled={uploading}
+            multiple={multiple}
+            className="w-full px-4 py-3 file:mr-4 file:py-2 file:px-4 file:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors bg-white text-gray-900 file:rounded-lg file:border-0 file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed"
+          />
+          {uploading && (
+            <div className="absolute left-4 top-1/2 transform -translate-y-1/2">
+              <svg
+                className="animate-spin h-5 w-5 text-blue-600"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle
+                  className="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="4"
+                />
+                <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                />
+              </svg>
+            </div>
+          )}
+        </div>}
+
+        {uploading && !compact && (
+          <p className="text-sm text-gray-500">در حال آپلود...</p>
+        )}
+
+        {preview && (
+          <div className={`grid ${compact ? "gap-2" : "gap-4"} ${multiple ? (compact ? "grid-cols-3 sm:grid-cols-6" : "grid-cols-2 md:grid-cols-4") : ""}`}>
+            {multiple ? (
+              preview.map((url, index) => (
+                <div key={index} className="relative group">
+                  <img
+                    src={url}
+                    alt={`Preview ${index + 1}`}
+                    className={`w-full ${compact ? "h-20" : "h-32"} object-cover rounded-lg border border-gray-300`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeImage(index)}
+                    className="absolute top-2 left-2 bg-red-500 text-white rounded-full w-8 h-8 flex items-center justify-center text-lg opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity hover:bg-red-600"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))
+            ) : (
+              <div className="relative group">
+                <img
+                  src={preview}
+                  alt="Preview"
+                  className={`w-full max-w-md ${compact ? "h-24 p-1" : "h-64 p-2"} object-contain rounded-lg border border-gray-300 bg-white`}
+                />
+                <button
+                  type="button"
+                  onClick={() => removeImage()}
+                  aria-label="حذف تصویر"
+                  // فشرده: همیشه دیده می‌شود (روی لمس هاوری نیست) و کوچک‌تر است.
+                  className={compact
+                    ? "absolute top-1.5 left-1.5 bg-white/90 text-red-600 border border-gray-200 rounded-full w-6 h-6 flex items-center justify-center text-sm hover:bg-red-50"
+                    : "absolute top-2 left-2 bg-red-500 text-white rounded-full w-8 h-8 flex items-center justify-center text-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"}
+                >
+                  ×
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+

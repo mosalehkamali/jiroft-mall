@@ -1,0 +1,126 @@
+import ProductTemplate from "@/components/templates/product/ProductTemplate";
+import { getProductBySlug } from "base/services/product.service";
+import { getApprovedReviews } from "base/services/comment.service";
+import { getCachedRate, eurToToman } from "@/lib/Exchangerate";
+import { generateProductMetadata } from "@/lib/seo/productSeo";
+import { generateProductSchema } from "@/lib/seo/productSchema";
+import { generateBreadcrumbSchema } from "@/lib/seo/breadcrumbSchema";
+import { resolveSerieSportContent } from "@/lib/serieSportContent";
+import { notFound } from "next/navigation";
+import { isFeatureEnabled } from "@/lib/features";
+
+// ⚠️ اسلاگ‌های فارسی در URL با کش روتِ Next ناسازگارند: Next مسیرِ دیکدشده را
+// خام داخل هدر x-next-cache-tags می‌گذارد و کاراکتر غیر-ASCII باعث
+// «ERR_INVALID_CHAR / Invalid character in header content» و خطای ۵۰۰ می‌شود
+// (باگ Next در lib/implicit-tags.js). راه‌حل: این مسیر داینامیک رندر شود تا هدر
+// کش روت ساخته نشود. هزینه‌ی دیتابیس همچنان با unstable_cache در لایه‌ی سرویس
+// کش می‌ماند، پس مشکلِ اتصال برنمی‌گردد.
+export const dynamic = "force-dynamic";
+
+// --------------------
+// Dynamic Metadata
+// --------------------
+export async function generateMetadata({ params }) {
+  const { productSlug } = await params;
+
+  // از همان سرویس کش‌شده استفاده می‌شود تا کوئری دوباره به دیتابیس نخورد
+  const product = await getProductBySlug(productSlug);
+
+  if (!product || product.error) {
+    return { title: "محصول پیدا نشد" };
+  }
+
+  return generateProductMetadata(product);
+}
+
+export default async function ProductPage({ params }) {
+  const { productSlug } = await params;
+
+  if (!productSlug) {
+    notFound();
+  }
+
+  const fetchProduct = await getProductBySlug(productSlug);
+  if (!fetchProduct || fetchProduct.error) {
+    notFound();
+  }
+
+  // نظرهای تأییدشده (کش‌شده با تگ comments) — موازی با نرخ تبدیل
+  const [rate, { reviews, stats: reviewStats }] = await Promise.all([
+    getCachedRate(),
+    isFeatureEnabled("reviews")
+      ? getApprovedReviews(fetchProduct._id)
+      : { reviews: [], stats: { count: 0, average: 0 } },
+  ]);
+
+  // تبدیل قیمت پایه محصول
+  const priceInToman = eurToToman(fetchProduct.basePrice, rate);
+
+  // تبدیل قیمت تمام واریانت‌ها
+  const convertedVariants =
+    fetchProduct.variants?.map((variant) => ({
+      ...variant,
+      price: eurToToman(variant.price, rate),
+    })) || [];
+
+  // محصول نهایی با قیمت‌های تبدیل شده
+  const product = {
+    ...fetchProduct,
+    basePrice: priceInToman,
+    variants: convertedVariants,
+  };
+
+  const productHeaderImage =
+    resolveSerieSportContent(product.serie, product.sport?._id || product.sport)
+      .headImage ||
+    product.brand?.image ||
+    product.category?.image ||
+    null;
+
+  const productHeaderAlt =
+    product.serie?.title ||
+    product.serie?.name ||
+    product.brand?.title ||
+    product.brand?.name ||
+    product.category?.title ||
+    product.category?.name ||
+    product.name;
+
+  const productSchema = generateProductSchema(product, reviewStats);
+  const breadcrumbSchema = generateBreadcrumbSchema(product);
+
+  return (
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(productSchema),
+        }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(breadcrumbSchema),
+        }}
+      />
+
+      {productHeaderImage ? (
+        <div className="hidden md:block relative h-[200px] w-full overflow-hidden">
+          <img
+            src={productHeaderImage}
+            alt={productHeaderAlt}
+            className="w-full h-full object-cover scale-105"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent z-10" />
+        </div>
+      ) : null}
+
+      <ProductTemplate
+        product={product}
+        reviews={reviews}
+        reviewStats={reviewStats}
+        rate={rate}
+      />
+    </>
+  );
+}

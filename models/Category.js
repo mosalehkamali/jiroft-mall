@@ -1,0 +1,272 @@
+import mongoose from "mongoose";
+import { createSlug } from "base/utils/slugify";
+import { TARGET_AUDIENCE_VALUES } from "base/utils/targetAudience";
+
+const AttributeSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true, trim: true },
+    label: { type: String, required: true },
+
+    // توضیح اختیاری برای این ویژگی — در صفحه‌ی محصول (تب مشخصات فنی) کنار نام ویژگی
+    // به‌صورت آیکون راهنما/تولتیپ نمایش داده می‌شود. اختیاری و سازگار با داده‌ی قبلی.
+    description: { type: String, trim: true, default: "" },
+
+    // این فیلد حالا هم نوع نمایش را تعیین می‌کند و هم به طور ضمنی نوع داده را
+    uiType: {
+      type: String,
+      enum: [
+        "text-input",
+        "number-input",
+        "dropdown",
+        "swatch",
+        "button-toggle",
+      ],
+      default: "text-input",
+    },
+
+    // Required before the product can be published (drafts may be incomplete).
+    required: { type: Boolean, default: true },
+
+    // false = internal data: kept in the admin, never sent to the storefront
+    // (and therefore never a filter or a search term).
+    isPublic: { type: Boolean, default: true },
+
+    // Matched by the storefront search.
+    searchable: { type: Boolean, default: false },
+
+    // Optional validation (number-input: min/max; text: pattern = a RegExp source).
+    min: { type: Number, default: null },
+    max: { type: Number, default: null },
+    pattern: { type: String, trim: true, default: "" },
+
+    // آیا این ویژگی در صفحه‌ی محصولات به‌عنوان فیلتر متنی قابل استفاده است؟
+    // پیش‌فرض false؛ ادمین باید آن را صریحاً فعال کند.
+    filterable: { type: Boolean, default: false },
+
+    // همیشه آرایه‌ای از String
+    options: { type: [String], default: [] },
+
+    prompt: { type: String, trim: true },
+
+    // مخاطب‌های هدفی که این ویژگی برایشان معنی دارد — مثلاً «بالانس» فقط روی
+    // راکتِ بزرگسال. آرایه‌ی خالی (پیش‌فرض) یعنی «بدونِ محدودیت»، پس هر ویژگیِ
+    // موجود دقیقاً رفتارِ قبلی‌اش را بدونِ هیچ مهاجرتی نگه می‌دارد.
+    // قاعده‌ی تطبیق در utils/targetAudience.js#attributeAppliesToAudience است و
+    // همان قاعده‌ی فیلترهاست: «یونی سکس» یعنی بزرگسال، نه بچگانه.
+    // فعلاً فقط روی attributes (ویژگی‌های ثابت) اعمال می‌شود؛ variantAttributes
+    // همین اسکیما را دارد اما هیچ مسیری آن را نمی‌خواند.
+    targetAudiences: {
+      type: [String],
+      enum: TARGET_AUDIENCE_VALUES,
+      default: [],
+    },
+
+    // ویژگیِ چندواحدی (Change 3): مثلاً سایز با واحدهای ["EU", "سانتی‌متر"].
+    // مقدارِ اصلی (primary) همان واحدِ اول است؛ سایر واحدها فقط برای نمایش‌اند و
+    // در product.variantMeta[attr][value].units نگه‌داری می‌شوند.
+    multiUnit: { type: Boolean, default: false },
+    units: { type: [String], default: [] },
+  },
+  { _id: false },
+);
+
+const TechnicalStatSchema = new mongoose.Schema(
+  {
+    name: {
+      type: String,
+      required: true, // مثلا: power
+    },
+    label: {
+      type: String,
+      required: true, // مثلا: قدرت
+    },
+    description: {
+      type: String,
+    },
+
+    min: { type: Number, default: 0 },
+    max: { type: Number, default: 100 },
+  },
+  { _id: false },
+);
+
+const CustomTabItemSchema = new mongoose.Schema({
+  title: {
+    type: String,
+    required: true,
+    trim: true,
+  },
+  description: {
+    type: String,
+    trim: true,
+    default: "",
+  },
+  image: {
+    type: String,
+    trim: true,
+    default: "",
+  },
+  link: {
+    type: String,
+    trim: true,
+    default: "",
+  },
+});
+
+const CategorySchema = new mongoose.Schema(
+  {
+    title: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    name: {
+      type: String,
+      required: true,
+      trim: true,
+      validate: {
+        validator: function (v) {
+          // بررسی اینکه فقط حروف انگلیسی و اعداد باشد
+          return /^[a-zA-Z0-9\s\-_]+$/.test(v);
+        },
+        message:
+          "نام باید فقط شامل حروف انگلیسی، اعداد، فاصله، خط تیره و زیرخط باشد",
+      },
+    },
+
+    slug: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    // ورزشِ صاحبِ این دسته — اسلاگ دسته فقط در محدوده‌ی همین ورزش یکتاست
+    // (ساختار سئو: /[sportSlug]/[categorySlug] مثل /tennis/racket و /padel/racket)
+    // null = دسته‌ی ریشه (بدونِ دپارتمان) — آدرس /[categorySlug].
+    // با خاموش‌بودنِ قابلیت departments همه‌ی دسته‌ها همین‌طورند.
+    sport: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Sport",
+      default: null,
+      index: true,
+    },
+
+    // ورزش‌های ثانویه‌ای که همین دسته و تمام محصولات آن باید در ویترینشان
+    // نمایش داده شوند. نبودن/خالی‌بودن این فیلد دقیقاً رفتار قدیمی را حفظ می‌کند.
+    additionalSports: {
+      type: [
+        {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Sport",
+        },
+      ],
+      default: [],
+      validate: {
+        validator(values) {
+          const ids = (values || []).map(String);
+          return (
+            ids.length === new Set(ids).size &&
+            !ids.includes(String(this.sport || ""))
+          );
+        },
+        message: "ورزش اصلی نباید در ورزش‌های نمایشی تکرار شود",
+      },
+    },
+
+    prompts: [
+      {
+        field: String,
+        context: String,
+      },
+    ],
+    
+    icon: {
+      type: String,
+      default: "",
+    },
+    
+    image: {
+      type: String,
+      default: "",
+    },
+
+    attributes: {
+      type: [AttributeSchema],
+      default: [],
+    },
+
+    variantAttributes: {
+      type: [AttributeSchema],
+      default: [],
+    },
+
+    // ویژگیِ انتخاب‌شده برای فیلترِ مگامنو — نامِ یکی از ویژگی‌های همین دسته
+    // (از attributes یا variantAttributes). مقادیرِ این ویژگی به‌صورتِ تب‌های فیلتر
+    // در مگامنو نمایش داده می‌شوند و لینکِ برند را با ?[name]=[value] می‌سازند.
+    // null = این دسته در مگامنو فیلتری ندارد.
+    megaMenuFilterAttribute: {
+      type: String,
+      default: null,
+    },
+
+    technicalStats: {
+      type: [TechnicalStatSchema],
+      default: [],
+    },
+
+    technicalStatsPrompt: {
+      type: String,
+    },
+
+    customTab: {
+      enabled: { type: Boolean, default: false },
+      name: { type: String, trim: true, default: "" },
+      icon: { type: String, default: "" },
+      items: { type: [CustomTabItemSchema], default: [] },
+    },
+
+    parent: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Category",
+      default: null,
+    },
+
+    order: {
+      type: Number,
+      default: 0,
+      index: true,
+    },
+  },
+  { timestamps: true },
+);
+
+// اسلاگ فقط در محدوده‌ی هر ورزش یکتاست (نه سراسری). دو ورزش مختلف می‌توانند
+// دسته‌ای با اسلاگ یکسان (مثلاً "racket") داشته باشند.
+CategorySchema.index({ sport: 1, slug: 1 }, { unique: true });
+// شاخه‌ی ثانویه‌ی lookup مسیر /[sport]/[category] و دریافت شناسه‌ی دسته‌های
+// مشترک. روی Product تغییری ایجاد نمی‌شود و دو شاخه‌ی product.sport/category
+// می‌توانند از ایندکس‌های فعلی Product استفاده کنند.
+CategorySchema.index({ additionalSports: 1, slug: 1 });
+CategorySchema.index({ sport: 1, order: 1, createdAt: 1 });
+CategorySchema.index({ additionalSports: 1, order: 1, createdAt: 1 });
+
+// ایجاد اسلاگ اتوماتیک — یکتایی فقط درونِ همان ورزش بررسی می‌شود
+CategorySchema.pre("validate", async function () {
+  if (!this.slug && this.name) {
+    const baseSlug = createSlug(this.name);
+    let slug = baseSlug;
+    let counter = 1;
+
+    while (
+      await mongoose.models.Category.findOne({ slug, sport: this.sport || null })
+    ) {
+      slug = `${baseSlug}-${counter++}`;
+    }
+
+    this.slug = slug;
+  }
+});
+
+export default mongoose.models.Category ||
+  mongoose.model("Category", CategorySchema);

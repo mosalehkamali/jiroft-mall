@@ -1,0 +1,933 @@
+import storeConfig from "base/store.config";
+/**
+ * services/priceEngine.js
+ *
+ * موتور مرکزی قیمت‌گذاری — تنها مرجع معتبر برای محاسبه قیمت نهایی
+ *
+ * مسئولیت‌ها:
+ *  1. دریافت نرخ ارز (یورو → تومان) از cache
+ *  2. اعمال FlashSale
+ *  3. اعمال DiscountRule (product / category / serie / brand / global / userRole / userLevel / cartValue)
+ *  4. اعمال کوپن (با بررسی محدودیت استفاده)
+ *  5. محاسبه کردیت مربی بر اساس CoachCredit
+ *
+ * ⚠️  این فایل فقط سمت سرور اجرا می‌شود. هرگز در client import نشود.
+ */
+
+import { discountWindowFilter } from "base/utils/discountWindow";
+import mongoose from "mongoose";
+import connectToDB from "base/configs/db";
+import { getCachedRate, eurToToman } from "@/lib/Exchangerate";
+import DiscountRule from "base/models/DiscountRule";
+import FlashSale from "base/models/FlashSale";
+import Coupon from "base/models/Coupon";
+import Order from "base/models/Order";
+import QuantityDiscount from "base/models/QuantityDiscount";
+import { ruleBrandFilterPasses } from "base/utils/discountMatch";
+import { resolveServiceSelection } from "@/lib/serviceConfig";
+import { resolveOrderedSelections } from "@/lib/flowConditions";
+import { buildStepSequence } from "@/lib/flowTraversal";
+import { isFeatureEnabled } from "@/lib/features";
+import { purchaseStatus, toPublicProduct } from "@/lib/productRules";
+import { rulesResolver } from "base/services/productRules.service";
+
+// Discount rules, flash sales, quantity tiers and coupons all belong to the
+// "discounts" feature: switched off, prices are simply the base prices.
+const discountsOn = () => isFeatureEnabled("discounts");
+
+/**
+ * What a customer may learn about purchasability: yes/no, the store mode, and
+ * "sold out". The detailed reasons can name internal fields, so they stay on
+ * the server (and in the admin).
+ */
+export function publicPurchase(status) {
+  return {
+    purchasable: status.purchasable,
+    mode: status.mode,
+    soldOut: status.reasons.includes("ناموجود"),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 1. نرخ ارز
+// ---------------------------------------------------------------------------
+
+/**
+ * دریافت نرخ ارز با fallback صفر
+ * @returns {Promise<number>}
+ */
+export async function getRate() {
+  const rate = await getCachedRate();
+  if (!rate || rate <= 0) throw new Error("نرخ ارز در دسترس نیست");
+  return rate;
+}
+
+// ---------------------------------------------------------------------------
+// 2. بارگذاری قوانین تخفیف مرتبط با یک محصول
+// ---------------------------------------------------------------------------
+
+/**
+ * @param {Object} product  - lean product document (باید brand, category, serie داشته باشد)
+ * @param {Object|null} user - decoded token payload (role, level, userId)
+ * @param {number} cartValueToman - مجموع سبد خرید به تومان (برای نوع cartValue)
+ * @returns {Promise<Object[]>} - قوانین تخفیف مرتبط مرتب‌شده بر اساس priority
+ */
+export async function loadActiveRules(product, user = null, cartValueToman = 0) {
+  if (!discountsOn()) return [];
+  const now = new Date();
+
+  const toId = (v) => (v ? new mongoose.Types.ObjectId(v.toString()) : null);
+  const productId = toId(product._id);
+  const brandId = toId(product.brand?._id ?? product.brand);
+  const categoryId = toId(product.category?._id ?? product.category);
+  const serieId = product.serie ? toId(product.serie?._id ?? product.serie) : null;
+
+  // ساخت کوئری‌های $or برای نوع‌های مختلف
+  const typeQueries = [{ type: "global" }];
+
+  if (productId) typeQueries.push({ type: "product", targets: { $in: [productId] } });
+  if (brandId)   typeQueries.push({ type: "brand",   targets: { $in: [brandId]   } });
+  if (categoryId)typeQueries.push({ type: "category",targets: { $in: [categoryId]} });
+  if (serieId)   typeQueries.push({ type: "serie",   targets: { $in: [serieId]   } });
+
+  // قوانین مرتبط با نقش کاربر
+  if (user?.role) {
+    typeQueries.push({ type: "userRole", targetRoles: { $in: [user.role] } });
+  }
+
+  // قوانین مرتبط با سطح کاربر
+  if (user?.level != null && user.level > 0) {
+    typeQueries.push({ type: "userLevel", targetLevels: { $in: [user.level] } });
+  }
+
+  // قوانین مرتبط با حداقل سبد
+  if (cartValueToman > 0) {
+    typeQueries.push({ type: "cartValue", "conditions.minCartValue": { $lte: cartValueToman } });
+  }
+
+  const rules = await DiscountRule.find({
+    active: true,
+    ...discountWindowFilter(now),
+    $or: typeQueries,
+  })
+    .sort({ priority: 1 }) // عدد کمتر = اولویت بالاتر
+    .lean();
+
+  // زیرفیلتر برند برای قوانین category — منطقِ مشترک در utils/discountMatch
+  return rules.filter((r) => ruleBrandFilterPasses(r, brandId));
+}
+
+// ---------------------------------------------------------------------------
+// 3. محاسبه تخفیف پایه (FlashSale + DiscountRules)
+// ---------------------------------------------------------------------------
+
+/**
+ * محاسبه تخفیف پایه روی یک محصول
+ *
+ * @param {Object} product       - lean product (basePrice به یورو)
+ * @param {number} rate          - نرخ تبدیل یورو → تومان
+ * @param {Object|null} user     - اطلاعات کاربر
+ * @param {number} cartValueToman
+ * @returns {Promise<{
+ *   basePriceToman: number,
+ *   finalPriceToman: number,
+ *   discountAmount: number,
+ *   discountPercent: number,
+ *   appliedRules: Array<{id: string, type: string, title: string}>
+ * }>}
+ */
+export async function computeProductPrice(product, rate, user = null, cartValueToman = 0) {
+  const basePriceToman = eurToToman(product.basePrice || 0, rate);
+
+  // --- FlashSale (بالاترین اولویت) ---
+  const now = new Date();
+  const flash = !discountsOn() ? null : await FlashSale.findOne({
+    productId: product._id,
+    active: true,
+    startsAt: { $lte: now },
+    endsAt:   { $gte: now },
+  }).lean();
+
+  if (flash) {
+    const flashPriceToman = eurToToman(flash.flashPrice, rate);
+    const discountAmount  = Math.max(0, basePriceToman - flashPriceToman);
+    return {
+      basePriceToman,
+      finalPriceToman: flashPriceToman,
+      discountAmount,
+      discountPercent: basePriceToman > 0 ? Math.round((discountAmount / basePriceToman) * 100) : 0,
+      appliedRules: [{ id: flash._id.toString(), type: "flash", title: flash.title || "حراج فوری" }],
+    };
+  }
+
+  // --- DiscountRules ---
+  const rules = await loadActiveRules(product, user, cartValueToman);
+
+  if (!rules.length) {
+    return {
+      basePriceToman,
+      finalPriceToman: basePriceToman,
+      discountAmount: 0,
+      discountPercent: 0,
+      appliedRules: [],
+    };
+  }
+
+  // محاسبه مقدار تخفیف هر قانون
+  const candidates = rules.map((r) => {
+    const amt =
+      r.discount.kind === "percent"
+        ? Math.min(
+            Math.floor(basePriceToman * (r.discount.value / 100)),
+            r.discount.maxAmount ?? Infinity
+          )
+        : eurToToman(r.discount.value, rate); // مقادیر ثابت هم به تومان تبدیل می‌شوند
+    return { rule: r, amount: Math.max(0, amt) };
+  });
+
+  // اعمال اولین قانون + قوانین combinable
+  let totalDiscount = 0;
+  const appliedRules = [];
+
+  candidates.forEach((c, idx) => {
+    if (idx === 0 || c.rule.combinable) {
+      totalDiscount += c.amount;
+      appliedRules.push({
+        id:    c.rule._id.toString(),
+        type:  c.rule.type,
+        title: c.rule.title,
+      });
+    }
+  });
+
+  // سقف تخفیف = قیمت پایه
+  totalDiscount = Math.min(totalDiscount, basePriceToman);
+  const finalPriceToman = basePriceToman - totalDiscount;
+
+  return {
+    basePriceToman,
+    finalPriceToman,
+    discountAmount: totalDiscount,
+    discountPercent: basePriceToman > 0 ? Math.round((totalDiscount / basePriceToman) * 100) : 0,
+    appliedRules,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 3.5 قیمت‌گذاری دسته‌ای برای لیست‌ها (server-side, anonymous)
+// ---------------------------------------------------------------------------
+
+/**
+ * آیا این قانون تخفیف روی این محصول اعمال می‌شود؟ (نسخه in-memory)
+ */
+function ruleMatchesProduct(rule, product) {
+  if (rule.type === "global") return true;
+  const targets = (rule.targets || []).map((t) => t.toString());
+  if (rule.type === "product")  return targets.includes(product._id.toString());
+  if (rule.type === "brand")    return targets.includes(String(product.brand?._id ?? product.brand));
+  if (rule.type === "category") {
+    if (!targets.includes(String(product.category?._id ?? product.category))) return false;
+    // زیرفیلتر برند — منطقِ مشترک در utils/discountMatch
+    return ruleBrandFilterPasses(rule, product.brand?._id ?? product.brand);
+  }
+  if (rule.type === "serie")    return targets.includes(String(product.serie?._id ?? product.serie));
+  return false;
+}
+
+/**
+ * قیمت نهایی (تومان) را برای یک *لیست* محصول به صورت دسته‌ای محاسبه می‌کند و
+ * فیلدهای basePriceToman / finalPriceToman / discountAmount / discountPercent را
+ * به هر محصول می‌چسباند.
+ *
+ * ⚠️ این تابع قیمتِ «کاربر مهمان» را محاسبه می‌کند (FlashSale + قوانین
+ * global/product/brand/category/serie). تخفیف‌های مخصوص نقش/سطح کاربر اینجا
+ * اعمال نمی‌شوند چون نتیجه روی همه‌ی بازدیدکننده‌ها cache می‌شود؛ صفحه‌ی جزئیات
+ * محصول در صورت لاگین‌بودن کاربر قیمت دقیق را از price API می‌گیرد.
+ *
+ * هدف اصلی: حذف N درخواست price-API به ازای N کارت محصول — کل لیست با فقط
+ * ۲ کوئری (FlashSale + DiscountRule) قیمت‌گذاری می‌شود.
+ *
+ * @param {Object[]} products - lean products (basePrice به یورو، با brand/category/serie)
+ * @param {number} rate - نرخ یورو → تومان
+ * @returns {Promise<Object[]>}
+ */
+export async function attachListingPrices(products, rate) {
+  if (!Array.isArray(products) || products.length === 0) return products || [];
+
+  const now = new Date();
+  const toId = (v) => new mongoose.Types.ObjectId(v.toString());
+
+  const productIds = products.map((p) => toId(p._id));
+  const collect = (key) => [
+    ...new Set(
+      products
+        .map((p) => p[key]?._id ?? p[key])
+        .filter(Boolean)
+        .map(String)
+    ),
+  ];
+  const brandIds    = collect("brand").map(toId);
+  const categoryIds = collect("category").map(toId);
+  const serieIds    = collect("serie").map(toId);
+
+  const [flashes, rules, quantityDiscountMap, rulesOf] = await Promise.all([
+    !discountsOn() ? [] : FlashSale.find({
+      productId: { $in: productIds },
+      active: true,
+      startsAt: { $lte: now },
+      endsAt:   { $gte: now },
+    }).lean(),
+    !discountsOn() ? [] : DiscountRule.find({
+      active: true,
+      ...discountWindowFilter(now),
+      $or: [
+        { type: "global" },
+        { type: "product",  targets: { $in: productIds } },
+        { type: "brand",    targets: { $in: brandIds } },
+        { type: "category", targets: { $in: categoryIds } },
+        { type: "serie",    targets: { $in: serieIds } },
+      ],
+    })
+      .sort({ priority: 1 })
+      .lean(),
+    loadQuantityDiscountMap(products),
+    rulesResolver(),
+  ]);
+
+  const flashByProduct = new Map(flashes.map((f) => [f.productId.toString(), f]));
+
+  return products.map((p) => {
+    const basePriceToman = eurToToman(p.basePrice || 0, rate);
+    const flash = flashByProduct.get(p._id.toString());
+
+    let finalPriceToman = basePriceToman;
+    let discountAmount = 0;
+
+    if (flash) {
+      const flashPriceToman = eurToToman(flash.flashPrice, rate);
+      finalPriceToman = flashPriceToman;
+      discountAmount = Math.max(0, basePriceToman - flashPriceToman);
+    } else {
+      const matched = rules.filter((r) => ruleMatchesProduct(r, p));
+      let total = 0;
+      matched.forEach((r, idx) => {
+        if (idx === 0 || r.combinable) {
+          const amt =
+            r.discount.kind === "percent"
+              ? Math.min(
+                  Math.floor(basePriceToman * (r.discount.value / 100)),
+                  r.discount.maxAmount ?? Infinity
+                )
+              : eurToToman(r.discount.value, rate);
+          total += Math.max(0, amt);
+        }
+      });
+      total = Math.min(total, basePriceToman);
+      finalPriceToman = basePriceToman - total;
+      discountAmount = total;
+    }
+
+    // listings leave the server here: strip internal fields, attach "can it be bought"
+    const productRules = rulesOf(p.category);
+    return {
+      ...toPublicProduct(p, productRules),
+      purchase: publicPurchase(purchaseStatus(p, productRules)),
+      basePriceToman,
+      finalPriceToman,
+      discountAmount,
+      discountPercent:
+        basePriceToman > 0 ? Math.round((discountAmount / basePriceToman) * 100) : 0,
+      // برای بج «ویژه» روی کارت محصول — محصول تخفیف تعدادی فعال دارد
+      hasQuantityDiscount: quantityDiscountMap.has(p._id.toString()),
+    };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// 3.7 تخفیف تعدادی (پلکانی) — مدیریت‌شده در بخش «تخفیف‌ها»ی ادمین
+// ---------------------------------------------------------------------------
+
+/**
+ * بارگذاری تخفیف‌های تعدادی فعال و تطبیق با هر محصول از لیست.
+ *
+ * قوانین تخفیف تعدادی مانند قوانین تخفیف معمولی بر اساس نوع هدف
+ * (global / product / brand / serie / category) اعمال می‌شوند.
+ * مشخص‌ترین قانون (product > serie > brand > category > global) انتخاب می‌شود.
+ *
+ * @param {Object[]} products  لیست اشیاء محصول (با brand / category / serie پر‌شده یا خام ObjectId)
+ * @returns {Promise<Map<string, Object>>} productId → بهترین سند QuantityDiscount منطبق
+ */
+export async function loadQuantityDiscountMap(products) {
+  const items = (products || []).filter(Boolean);
+  if (!items.length || !discountsOn()) return new Map();
+
+  const now = new Date();
+  const rules = await QuantityDiscount.find({
+    active: true,
+    $and: [
+      { $or: [{ startAt: null }, { startAt: { $lte: now } }] },
+      { $or: [{ endAt: null }, { endAt: { $gte: now } }] },
+    ],
+  }).lean();
+
+  const validRules = rules.filter((r) => Array.isArray(r.tiers) && r.tiers.length > 0);
+  if (!validRules.length) return new Map();
+
+  // مشخص‌ترین نوع = کمترین عدد اولویت
+  const SPECIFICITY = { product: 0, serie: 1, brand: 2, category: 3, global: 4 };
+  validRules.sort((a, b) => (SPECIFICITY[a.type] ?? 5) - (SPECIFICITY[b.type] ?? 5));
+
+  const map = new Map();
+  for (const p of items) {
+    const pid = p._id.toString();
+    const bid = (p.brand?._id ?? p.brand)?.toString() || null;
+    const cid = (p.category?._id ?? p.category)?.toString() || null;
+    const sid = p.serie ? (p.serie?._id ?? p.serie)?.toString() || null : null;
+
+    const matched = validRules.find((r) => {
+      if (r.type === "global") return true;
+      const targets = (r.targets || []).map((t) => t.toString());
+      if (r.type === "product")   return targets.includes(pid);
+      if (r.type === "serie")     return sid  && targets.includes(sid);
+      if (r.type === "brand")     return bid  && targets.includes(bid);
+      if (r.type === "category")  return cid  && targets.includes(cid);
+      return false;
+    });
+
+    if (matched) map.set(pid, matched);
+  }
+
+  return map;
+}
+
+/**
+ * بهترین پله‌ای که این تعداد به آن رسیده است (بزرگ‌ترین minQty ≤ qty)
+ */
+export function quantityTierFor(qd, qty) {
+  if (!qd || !Array.isArray(qd.tiers) || !qd.tiers.length) return null;
+  let best = null;
+  for (const t of qd.tiers) {
+    if (qty >= t.minQty && (!best || t.minQty > best.minQty)) best = t;
+  }
+  return best;
+}
+
+/**
+ * مبلغ تخفیف تعدادی به ازای هر واحد (تومان) — روی قیمت واحدِ پس از سایر
+ * تخفیف‌ها اعمال می‌شود و هرگز از خود قیمت بیشتر نمی‌شود.
+ */
+export function quantityDiscountPerUnit(tier, unitPriceToman) {
+  if (!tier || unitPriceToman <= 0) return 0;
+  const amt =
+    tier.discount.kind === "percent"
+      ? Math.floor(unitPriceToman * (tier.discount.value / 100))
+      : Math.floor(tier.discount.value); // مبلغ ثابت به تومان
+  return Math.max(0, Math.min(amt, unitPriceToman));
+}
+
+// ---------------------------------------------------------------------------
+// 4. اعمال کوپن
+// ---------------------------------------------------------------------------
+
+/**
+ * @param {string} couponCode
+ * @param {string} userId
+ * @param {number} cartTotalToman - مجموع قیمت نهایی سبد قبل از کوپن (به تومان)
+ * @param {Object[]} cartItems    - [{ productId, categoryId, brandId, quantity }]
+ * @returns {Promise<{valid: boolean, discount: number, coupon: Object|null, reason: string}>}
+ */
+export async function validateCoupon(couponCode, userId, cartTotalToman, cartItems = []) {
+  if (!couponCode?.trim()) return { valid: false, discount: 0, coupon: null, reason: "کد خالی" };
+  if (!discountsOn()) return { valid: false, discount: 0, coupon: null, reason: "کد تخفیف در این فروشگاه فعال نیست" };
+
+  const now = new Date();
+  const coupon = await Coupon.findOne({
+    code: couponCode.trim().toUpperCase(),
+    active: true,
+    ...discountWindowFilter(now),
+  }).lean();
+
+  if (!coupon) return { valid: false, discount: 0, coupon: null, reason: "کد تخفیف معتبر نیست" };
+
+  if (coupon.createdByCoach && coupon.usedAt) return { valid: false, discount: 0, coupon: null, reason: "این کد تخفیف قبلاً استفاده شده است" };
+
+  // بررسی حداقل سبد خرید
+  if ((coupon.minCartValue || 0) > cartTotalToman) {
+    return {
+      valid: false, discount: 0, coupon: null,
+      reason: `حداقل خرید برای این کد ${coupon.minCartValue.toLocaleString("fa-IR")} ${storeConfig.commerce.currency.label} است`,
+    };
+  }
+
+  // بررسی محدودیت کل استفاده
+  if (coupon.usageLimit != null) {
+    const usedCount = await Order.countDocuments({ "coupon.code": couponCode.trim().toUpperCase() });
+    if (usedCount >= coupon.usageLimit) {
+      return { valid: false, discount: 0, coupon: null, reason: "ظرفیت کد تخفیف تمام شده است" };
+    }
+  }
+
+  // بررسی محدودیت per-user
+  if (userId && coupon.perUserLimit != null) {
+    const userUsed = await Order.countDocuments({
+      user: new mongoose.Types.ObjectId(userId),
+      "coupon.code": couponCode.trim().toUpperCase(),
+    });
+    if (userUsed >= coupon.perUserLimit) {
+      return { valid: false, discount: 0, coupon: null, reason: "شما قبلاً از این کد استفاده کرده‌اید" };
+    }
+  }
+
+  // بررسی قابلیت اعمال روی محصولات سبد
+  let applicableTotal = 0;
+  for (const item of cartItems) {
+    let applicable = coupon.applicableTo === "all";
+    if (!applicable && coupon.targets?.length) {
+      const targets = coupon.targets.map((t) => t.toString());
+      if (coupon.applicableTo === "product"  && targets.includes(item.productId?.toString()))  applicable = true;
+      if (coupon.applicableTo === "category" && targets.includes(item.categoryId?.toString())) applicable = true;
+      if (coupon.applicableTo === "brand"    && targets.includes(item.brandId?.toString()))    applicable = true;
+    }
+    if (applicable) applicableTotal += item.lineTotalToman || 0;
+  }
+
+  if (coupon.applicableTo !== "all" && applicableTotal === 0) {
+    return { valid: false, discount: 0, coupon: null, reason: "این کد برای محصولات سبد شما قابل استفاده نیست" };
+  }
+
+  const base = coupon.applicableTo === "all" ? cartTotalToman : applicableTotal;
+  let discountAmount =
+    coupon.discount.kind === "percent"
+      ? Math.floor(base * (coupon.discount.value / 100))
+      : coupon.discount.value;
+
+  discountAmount = Math.min(discountAmount, base);
+
+  return { valid: true, discount: discountAmount, coupon, reason: "" };
+}
+
+// ---------------------------------------------------------------------------
+// 5. محاسبه کردیت مربی
+// ---------------------------------------------------------------------------
+
+/**
+ * محاسبه مبلغ کردیتی که باید به مربی پرداخت شود
+ *
+ * @param {string} coachId
+ * @param {Object[]} items  - [{ productId, categoryId, serieId, lineTotalToman }]
+ * @returns {Promise<number>} مبلغ کردیت به تومان
+ */
+export { computeCoachCredit } from "base/services/coachCreditCalculation";
+
+// ---------------------------------------------------------------------------
+// 5.5 افزوده‌ی قیمتِ فرایند سفارش (خدمات + محصولات انتخاب‌شده)
+// ---------------------------------------------------------------------------
+
+/**
+ * سازنده‌ی resolver برای محاسبه‌ی افزوده‌ی قیمتِ فرایند سفارش به ازای هر آیتم سبد.
+ * داده‌های لازم (محصولات/واریانت‌های انتخاب‌شده و تعریف فرایندها) را یک‌بار به‌صورت
+ * batch واکشی می‌کند و یک تابع برمی‌گرداند که برای هر آیتم { addonToman, enriched } می‌دهد.
+ *
+ * ⚠️ قیمت خدمات (priceModifier) از روی تعریف فرایند بازخوانی می‌شود، نه از کلاینت.
+ *
+ * @param {Object[]} cartItems  آیتم‌های سبد (می‌توانند flowSelections داشته باشند)
+ * @param {Map} productMap      نقشه‌ی محصولات اصلی (id → product با category)
+ * @param {number} rate         نرخ تبدیل یورو → تومان
+ * @returns {Promise<(ci:Object)=>{addonToman:number, enriched:Object[]}>}
+ */
+export async function buildFlowAddonResolver(cartItems, productMap, rate) {
+  const { default: Product } = await import("base/models/Product");
+  const { default: Variant } = await import("base/models/Variant");
+  const { default: OrderFlow } = await import("base/models/OrderFlow");
+
+  const addonProductIds = new Set();
+  const addonVariantIds = new Set();
+  const flowCategoryIds = new Set();
+
+  for (const ci of cartItems) {
+    if (!Array.isArray(ci.flowSelections) || ci.flowSelections.length === 0) continue;
+    for (const sel of ci.flowSelections) {
+      if (sel?.nodeType === "category") {
+        if (sel.selectedProductId) addonProductIds.add(String(sel.selectedProductId));
+        if (sel.selectedVariantId) addonVariantIds.add(String(sel.selectedVariantId));
+      }
+    }
+    const p = productMap.get(ci.productId);
+    const catId = p?.category?._id ?? p?.category;
+    if (catId) flowCategoryIds.add(String(catId));
+  }
+
+  // هیچ آیتمی فرایند ندارد → resolver خنثی
+  if (!addonProductIds.size && !addonVariantIds.size && !flowCategoryIds.size) {
+    return () => ({ addonToman: 0, enriched: [], errors: [] });
+  }
+
+  const [addonProducts, addonVariants, orderFlows] = await Promise.all([
+    addonProductIds.size
+      ? Product.find({ _id: { $in: [...addonProductIds] } })
+          .select("_id name mainImage basePrice")
+          .lean()
+      : Promise.resolve([]),
+    addonVariantIds.size
+      ? Variant.find({ _id: { $in: [...addonVariantIds] } })
+          .select("_id price attributes")
+          .lean()
+      : Promise.resolve([]),
+    flowCategoryIds.size
+      ? OrderFlow.find({ rootCategory: { $in: [...flowCategoryIds] }, isActive: true }).lean()
+      : Promise.resolve([]),
+  ]);
+
+  const addonProductMap = new Map(addonProducts.map((p) => [p._id.toString(), p]));
+  const addonVariantMap = new Map(addonVariants.map((v) => [v._id.toString(), v]));
+  const flowByCategory = new Map(orderFlows.map((f) => [f.rootCategory.toString(), f]));
+
+  return (ci) => {
+    if (!Array.isArray(ci.flowSelections) || ci.flowSelections.length === 0) {
+      return { addonToman: 0, enriched: [], errors: [] };
+    }
+    const p = productMap.get(ci.productId);
+    const catId = p ? String(p.category?._id ?? p.category) : null;
+    const flow = catId ? flowByCategory.get(catId) : null;
+
+    let addonToman = 0;
+    const enriched = [];
+    const errors = [];
+
+    // مرحله‌ی نامرئی (شرطش برقرار نیست) هیچ انتخاب و هیچ قیمتی به سفارش نمی‌دهد.
+    // این تصمیم اینجا هم گرفته می‌شود، نه فقط در UI — کلاینت قابلِ اعتماد نیست.
+    //
+    // و برعکس: مرحله‌ی خدمتِ اجباری که *مرئی* است، حتی اگر کلاینت آن را نفرستد
+    // ساخته می‌شود تا هزینه‌ی خدمتِ اجباری با حذفِ یک ردیف از سبد دور زده نشود.
+    // «اجباری» فقط برای مراحلِ مرئی معنا دارد، پس روی visibleNodes حلقه می‌زنیم.
+    const kept = flow
+      ? resolveOrderedSelections(buildStepSequence(flow), ci.flowSelections)
+      : ci.flowSelections;
+
+    for (const sel of kept) {
+      if (sel?.nodeType === "service") {
+        const node = flow?.nodes?.find((n) => n.id === sel.nodeId && n.type === "service");
+        // تنها مرجعِ قیمت و اعتبارسنجیِ خدمت — قیمتِ کلاینت هرگز خوانده نمی‌شود
+        const resolved = resolveServiceSelection(node, sel);
+        addonToman += resolved.addonToman;
+        errors.push(...resolved.errors);
+        enriched.push({
+          nodeId: sel.nodeId,
+          nodeType: "service",
+          nodeLabel: node?.label ?? sel.nodeLabel ?? "",
+          serviceName: node?.serviceName ?? sel.serviceName ?? "",
+          required: Boolean(node?.required),
+          serviceConfig: resolved.config,
+          addonToman: resolved.addonToman,
+        });
+      } else if (sel?.nodeType === "category") {
+        const node = flow?.nodes?.find(
+          (n) => n.id === sel.nodeId && n.type === "category"
+        );
+        const ap = sel.selectedProductId
+          ? addonProductMap.get(String(sel.selectedProductId))
+          : null;
+        const av = sel.selectedVariantId
+          ? addonVariantMap.get(String(sel.selectedVariantId))
+          : null;
+        // قیمت ۰ یا خالی واریانت → قیمت پایه محصول انتخاب‌شده
+        const eur = av?.price || ap?.basePrice || 0;
+        const toman = eurToToman(eur, rate);
+        addonToman += toman;
+        enriched.push({
+          nodeId: sel.nodeId,
+          nodeType: "category",
+          nodeLabel: node?.label ?? sel.nodeLabel ?? "",
+          required: Boolean(node?.required),
+          selectedProductId: sel.selectedProductId ?? null,
+          selectedVariantId: sel.selectedVariantId ?? null,
+          selectedProductName: ap?.name ?? sel.selectedProductName ?? "",
+          selectedProductImage: ap?.mainImage ?? sel.selectedProductImage ?? null,
+          selectedVariantLabel: sel.selectedVariantLabel ?? null,
+          addonToman: toman,
+        });
+      }
+    }
+
+    return { addonToman, enriched, errors };
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 6. تابع اصلی — محاسبه قیمت کامل سبد خرید (server-side)
+// ---------------------------------------------------------------------------
+
+/**
+ * محاسبه کامل قیمت سبد خرید — این تابع باید در سرور صدا زده شود
+ *
+ * @param {Object[]} cartItems  - [{ productId, variantId?, quantity }]
+ * @param {Object|null} user    - decoded token (userId, role, level)
+ * @param {string|null} couponCode
+ * @returns {Promise<{
+ *   items: Array,
+ *   subtotalToman: number,
+ *   discountToman: number,
+ *   couponDiscountToman: number,
+ *   finalTotalToman: number,
+ *   coupon: Object|null,
+ *   couponError: string,
+ *   rate: number
+ * }>}
+ */
+export async function computeCartPrice(cartItems, user = null, couponCode = null) {
+  await connectToDB();
+
+  const rate = await getRate();
+
+  // import داینامیک برای جلوگیری از circular dependency
+  const { default: Product } = await import("base/models/Product");
+  const { default: Variant  } = await import("base/models/Variant");
+  const { default: UsedProduct } = await import("base/models/UsedProduct"); // 💡 اضافه شدن مدل دست دوم
+
+  // تفکیک و بارگذاری شناسه محصولات، واریانت‌ها و محصولات دست دوم
+  const productIds = [...new Set(cartItems.map((i) => i.productId))];
+  const variantIds = cartItems.filter((i) => i.variantId).map((i) => i.variantId);
+  
+  // استخراج شناسه‌های محصولات دست دوم
+  const usedProductIds = cartItems
+    .filter((i) => i.itemType === "used_product" || i.usedProductId)
+    .map((i) => i.usedProductId || i.productId);
+
+  const [products, variants, usedProducts] = await Promise.all([
+    Product.find({ _id: { $in: productIds } })
+      .populate("brand", "_id")
+      .populate("category", "_id")
+      .populate("serie", "_id")
+      .lean(),
+    variantIds.length ? Variant.find({ _id: { $in: variantIds } }).lean() : Promise.resolve([]),
+    usedProductIds.length ? UsedProduct.find({ _id: { $in: usedProductIds } }).lean() : Promise.resolve([]), // 💡 واکشی موازی دست دوم‌ها
+  ]);
+
+  const productMap = new Map(products.map((p) => [p._id.toString(), p]));
+  const variantMap = new Map(variants.map((v) => [v._id.toString(), v]));
+  const usedProductMap = new Map(usedProducts.map((up) => [up._id.toString(), up])); // 💡 مپ کردن دست دوم‌ها
+
+  // ─── قابلیتِ خرید (store.config.js + قوانین محصول) — تنها نقطه‌ی تصمیم برای
+  // سبد و چک‌اوت. آیتمِ غیرقابل‌خرید از قیمت‌گذاری کنار می‌رود و در
+  // `unavailable` گزارش می‌شود؛ چک‌اوت با وجودِ هر کدام سفارش را رد می‌کند.
+  const rulesOf = await rulesResolver();
+  const unavailable = [];
+  const blocked = new Set();
+  const qtyByStockKey = new Map();
+  cartItems.forEach((ci, idx) => {
+    const isUsed = ci.itemType === "used_product" || !!ci.usedProductId;
+    if (isUsed) {
+      if (!isFeatureEnabled("secondHand")) {
+        unavailable.push({ index: idx, productId: ci.productId, reasons: ["فروش کالای دست دوم فعال نیست"] });
+        blocked.add(idx);
+      }
+      return;
+    }
+    const p = productMap.get(String(ci.productId));
+    if (!p) return;
+    const v = ci.variantId ? variantMap.get(String(ci.variantId)) : null;
+    if (ci.variantId && (!v || String(v.productId) !== String(p._id))) {
+      unavailable.push({ index: idx, productId: ci.productId, variantId: ci.variantId, reasons: ["این گزینه‌ی محصول دیگر موجود نیست"] });
+      blocked.add(idx);
+      return;
+    }
+    const status = purchaseStatus(p, rulesOf(p.category), { variant: v });
+    if (!status.purchasable) {
+      unavailable.push({ index: idx, productId: ci.productId, variantId: ci.variantId ?? null, name: p.name, ...publicPurchase(status) });
+      blocked.add(idx);
+      return;
+    }
+    const tracked = v ? v.stock : p.stock;
+    if (rulesOf(p.category).inventory === "stock" && tracked != null) {
+      const key = v ? `v:${v._id}` : `p:${p._id}`;
+      const want = (qtyByStockKey.get(key) || 0) + Math.max(1, Math.floor(ci.quantity || 1));
+      qtyByStockKey.set(key, want);
+      if (want > Number(tracked)) {
+        unavailable.push({ index: idx, productId: ci.productId, variantId: ci.variantId ?? null, name: p.name, purchasable: false, mode: "cart", soldOut: false, available: Number(tracked) });
+        blocked.add(idx);
+      }
+    }
+  });
+  cartItems = cartItems.filter((_, idx) => !blocked.has(idx));
+
+  // تخفیف‌های تعدادی فعال (یک‌بار batch — با اشیاء کامل محصول برای تطبیق نوع هدف)
+  const quantityDiscountMap = await loadQuantityDiscountMap(Array.from(productMap.values()));
+
+  // resolver افزوده‌ی فرایند سفارش (یک‌بار batch می‌گیرد)
+  const resolveFlowAddon = await buildFlowAddonResolver(cartItems, productMap, rate);
+
+  // محاسبه موقت subtotal برای قوانین cartValue
+  let subtotalToman = 0;
+  for (const ci of cartItems) {
+    const isUsed = ci.itemType === "used_product" || !!ci.usedProductId;
+
+    if (isUsed) {
+      const usedId = ci.usedProductId || ci.productId;
+      const up = usedProductMap.get(usedId);
+      if (!up) continue;
+      const eurPrice = up.price ?? 0;
+      subtotalToman += eurToToman(eurPrice, rate) * 1; // تعداد دست دوم همیشه ۱ است
+    } else {
+      const p = productMap.get(ci.productId);
+      if (!p) continue;
+      const v = ci.variantId ? variantMap.get(ci.variantId) : null;
+      // قیمت ۰ یا خالی واریانت → قیمت پایه محصول (پشتیبانی از داده‌های قدیمی)
+      const eurPrice = v?.price || p.basePrice || 0;
+      const { addonToman } = resolveFlowAddon(ci);
+      subtotalToman += (eurToToman(eurPrice, rate) + addonToman) * (ci.quantity || 1);
+    }
+  }
+
+  // محاسبه قیمت هر آیتم
+  const enrichedItems = [];
+  // خطاهای اعتبارسنجیِ پیکربندیِ خدمت — نمایش در سبد، ردِ قطعی در چک‌اوت
+  const flowConfigErrors = [];
+  let totalDiscount = 0;
+
+  for (const ci of cartItems) {
+    const isUsed = ci.itemType === "used_product" || !!ci.usedProductId;
+
+    if (isUsed) {
+      // ─── حالت الف: پردازش محصول دست دوم ───
+      const usedId = ci.usedProductId || ci.productId;
+      const up = usedProductMap.get(usedId);
+      if (!up) continue;
+
+      // دریافت اطلاعات محصول پدر (برای استخراج دسته‌بندی/برند جهت اعمال احتمالی کوپن)
+      const parentId = up.product?.toString() || ci.productId;
+      const p = productMap.get(parentId);
+
+      const eurPrice = up.price ?? 0;
+      const basePriceToman = eurToToman(eurPrice, rate); // 💎 تبدیل بومی قیمت یورو به تومان با نرخ موتور
+
+      enrichedItems.push({
+        productId:     parentId,
+        usedProductId: usedId,
+        variantId:     null,
+        productName:   up.name || p?.name || "محصول دست دوم",
+        sku:           p?.sku || "",
+        quantity:      1,
+        basePriceToman,
+        unitFinalPrice: basePriceToman, // محصولات دست دوم مشمول قوانین تخفیف داینامیک انبار نمی‌شوند
+        unitDiscount:   0,
+        lineTotalToman: basePriceToman,
+        appliedRules:  [],
+        itemType:      "used_product",
+        categoryId:    p ? (p.category?._id ?? p.category)?.toString() ?? null : null,
+        brandId:       p ? (p.brand?._id ?? p.brand)?.toString() ?? null : null,
+        serieId:       p ? (p.serie?._id ?? p.serie)?.toString() ?? null : null,
+      });
+
+    } else {
+      // ─── حالت ب: پردازش محصول معمولی (کد اصلی خودتان بدون تغییر) ───
+      const p = productMap.get(ci.productId);
+      if (!p) continue;
+
+      const v = ci.variantId ? variantMap.get(ci.variantId) : null;
+      // قیمت ۰ یا خالی واریانت → قیمت پایه محصول (پشتیبانی از داده‌های قدیمی)
+      const eurPrice = v?.price || p.basePrice || 0;
+      const basePriceToman = eurToToman(eurPrice, rate);
+      const qty = Math.max(1, ci.quantity || 1);
+
+      const priceResult = await computeProductPrice(p, rate, user, subtotalToman);
+
+      let unitFinalPrice = priceResult.finalPriceToman;
+      let unitDiscount   = priceResult.discountAmount;
+      const appliedRules = [...priceResult.appliedRules];
+      if (v?.price) {
+        const variantBase = eurToToman(v.price, rate);
+        unitDiscount   = Math.min(
+          Math.floor(variantBase * (priceResult.discountPercent / 100)),
+          variantBase
+        );
+        unitFinalPrice = variantBase - unitDiscount;
+      }
+
+      // تخفیف تعدادی — روی قیمت واحدِ پس از سایر تخفیف‌ها (قبل از افزوده‌ی فرایند)
+      const qd = quantityDiscountMap.get(ci.productId);
+      const tier = quantityTierFor(qd, qty);
+      const qtyDiscountPerUnit = quantityDiscountPerUnit(tier, unitFinalPrice);
+      if (qtyDiscountPerUnit > 0) {
+        unitFinalPrice -= qtyDiscountPerUnit;
+        unitDiscount += qtyDiscountPerUnit;
+        appliedRules.push({
+          id: qd._id.toString(),
+          type: "quantity",
+          title: qd.title || `تخفیف تعدادی (${tier.minQty}+ عدد)`,
+        });
+      }
+
+      // افزوده‌ی فرایند سفارش روی قیمت واحد (بدون تخفیف)
+      const {
+        addonToman: flowAddonToman,
+        enriched: flowSelectionsEnriched,
+        errors: flowErrors,
+      } = resolveFlowAddon(ci);
+      unitFinalPrice += flowAddonToman;
+      if (flowErrors?.length) flowConfigErrors.push(...flowErrors);
+
+      const lineTotal  = unitFinalPrice * qty;
+      const lineDiscount = unitDiscount * qty;
+      totalDiscount += lineDiscount;
+
+      enrichedItems.push({
+        productId:     p._id.toString(),
+        variantId:     v?._id?.toString() ?? null,
+        productName:   p.name,
+        sku:           v?.sku ?? p.sku,
+        quantity:      qty,
+        basePriceToman,
+        unitFinalPrice,
+        unitDiscount,
+        lineTotalToman: lineTotal,
+        appliedRules,
+        itemType:      "product",
+        categoryId:    (p.category?._id ?? p.category)?.toString() ?? null,
+        brandId:       (p.brand?._id ?? p.brand)?.toString() ?? null,
+        serieId:       (p.serie?._id ?? p.serie)?.toString() ?? null,
+        flowAddonToman,
+        flowSelections: flowSelectionsEnriched,
+      });
+    }
+  }
+
+  const subtotalAfterRules = enrichedItems.reduce((s, i) => s + i.lineTotalToman, 0);
+
+  // اعمال کوپن
+  let couponDiscount = 0;
+  let appliedCoupon  = null;
+  let couponError    = "";
+
+  if (couponCode) {
+    const couponResult = await validateCoupon(
+      couponCode,
+      user?.userId ?? null,
+      subtotalAfterRules,
+      enrichedItems
+    );
+    if (couponResult.valid) {
+      couponDiscount = couponResult.discount;
+      appliedCoupon  = { code: couponResult.coupon.code, _id: couponResult.coupon._id, createdByCoach: couponResult.coupon.createdByCoach, coachName: couponResult.coupon.coachName };
+    } else {
+      couponError = couponResult.reason;
+    }
+  }
+
+  const finalTotalToman = Math.max(0, subtotalAfterRules - couponDiscount);
+
+  return {
+    items:               enrichedItems,
+    subtotalToman:        enrichedItems.reduce(
+      (s, i) => s + (i.basePriceToman + (i.flowAddonToman || 0)) * i.quantity,
+      0
+    ),
+    discountToman:        totalDiscount,
+    couponDiscountToman:  couponDiscount,
+    finalTotalToman,
+    coupon:               appliedCoupon,
+    couponError,
+    flowConfigErrors:     [...new Set(flowConfigErrors)],
+    unavailable,
+    rate,
+  };
+}

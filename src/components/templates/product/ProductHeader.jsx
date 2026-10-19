@@ -1,0 +1,103 @@
+"use client";
+import { motion } from "framer-motion";
+
+const ProductHeader = ({ name, shortDescription, logo = null }) => {
+  // تابع هوشمند برای جدا کردن فارسی از انگلیسی و پرانتزها
+  const splitName = (text) => {
+    if (!text) return { farsi: "", english: "" };
+    
+    // پیدا کردن اولین جایی که متن انگلیسی یا پرانتز شروع می‌شود
+    const match = text.match(/[a-zA-Z\(].*/);
+    if (match) {
+      const firstPart = text.substring(0, match.index).trim();
+      const secondPart = match[0].trim();
+      return { farsi: firstPart, english: secondPart };
+    }
+    return { farsi: text, english: "" };
+  };
+
+  const { farsi, english } = splitName(name);
+
+  return (
+    <div className="mb-6 sm:mb-8 md:mb-10 relative rtl text-right" dir="rtl">
+      {/* Product Name + Brand logo — یک ردیف */}
+      <div className="mb-4 flex items-start justify-between gap-3 sm:gap-4 md:mb-6">
+      <motion.h1
+        // initial={false} → عنوان با opacity:1 در HTML سرور رندر می‌شود.
+        // با initial={{opacity:0}} اگر هیدریشن انجام نشود، عنوان نامرئی می‌ماند.
+        initial={false}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.1 }}
+        className="
+          min-w-0
+          flex-1
+          break-words
+          text-[var(--color-dark)]
+          text-2xl
+          sm:text-3xl
+          md:text-4xl
+          lg:text-5xl
+          font-bold
+          leading-[1.3]
+          md:leading-[1.1]
+          tracking-tight
+        "
+      >
+        <span className="block">{farsi}</span>
+        {english && (
+          <span 
+            className="block mt-1 sm:mt-2 text-lg sm:text-3xl
+          md:text-4xl
+          lg:text-5xl  font-bold" 
+            dir="ltr"
+          >
+            {english}
+          </span>
+        )}
+      </motion.h1>
+
+        {logo}
+      </div>
+
+      {/* Short Description Container — تمام‌عرضِ نام و لوگو */}
+      {shortDescription && (
+        <motion.div
+          // مانند عنوان — توضیح کوتاه نباید تا زمان هیدریشن نامرئی بماند
+          initial={false}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.2 }}
+          className="relative"
+        >
+          {/* تزئین سمت راست (خط عمودی مدرن) */}
+          <div className="absolute right-0 top-0 bottom-0 w-[3px] bg-gray-200 md:bg-gray-100 rounded-full" />
+
+          <p
+            className="
+              pr-4
+              sm:pr-5
+              text-sm
+              sm:text-base
+              md:text-lg
+              leading-7
+              sm:leading-8
+              md:leading-9
+              text-gray-500
+              font-medium
+              max-w-full
+              md:max-w-2xl
+              lg:max-w-3xl
+            "
+          >
+            {/* تمیز کردن تگ‌های HTML اگر وجود داشته باشند */}
+            <span
+              dangerouslySetInnerHTML={{ __html: shortDescription }}
+              className="block"
+            />
+          </p>
+        </motion.div>
+      )}
+    </div>
+  );
+};
+
+export default ProductHeader;

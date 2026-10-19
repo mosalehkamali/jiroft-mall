@@ -1,0 +1,3352 @@
+"use client";
+
+import storeConfig from "base/store.config";
+import { couponDisplayCode } from "@/lib/couponLabel";
+import AdminInput from "@/components/admin/AdminInput";
+import { getUserFullName } from "base/utils/userName";
+
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
+import { motion, AnimatePresence } from "framer-motion";
+import Swal from "sweetalert2";
+import { toast } from "react-toastify";
+import {
+  ShoppingCart, ChevronRight, Eye, CheckCircle, XCircle,
+  Clock, Package, Truck, Home, AlertCircle, RefreshCw,
+  Receipt, CreditCard, Users, BadgeCheck, X, Image as ImageIcon,
+  Edit3, Save, DollarSign, Ban, Loader2, ReceiptText,
+  ExternalLink, MapPin, Phone, Mail, Hash, Calendar, Tag,
+  Scan, QrCode, Barcode, CheckSquare, Square,
+  ShoppingBag, Warehouse, Plus, Trash2, AlertTriangle,
+  ChevronDown, ChevronUp, GraduationCap, Euro, Wallet,
+  Search, Minus, Pencil, Printer,
+} from "lucide-react";
+import SenderAddressModal from "@/components/admin/orders/SenderAddressModal";
+import ManualTrackingEditor from "@/components/admin/orders/ManualTrackingEditor";
+import OrderPrintOverlay from "@/components/print/OrderPrintOverlay";
+import FlowProductIdentity from "@/components/order/FlowProductIdentity";
+import OrderFlowSelectionsView from "@/components/order/OrderFlowSelectionsView";
+import { buildStepSequence } from "@/lib/flowTraversal";
+import VariantSummary from "@/components/order/VariantSummary";
+import InstallmentChecksPanel from "@/components/admin/financial/InstallmentChecksPanel";
+import { useAdminPermissions } from "@/components/admin/AdminPermissionProvider";
+
+const OrderFlowModal = dynamic(() => import("@/components/modules/orderFlow/OrderFlowModal"));
+
+/* ─── Constants ─────────────────────────────────────────────────────── */
+
+const PAYMENT_STATUS = {
+  UNPAID: { label: "پرداخت نشده", color: "bg-red-50 text-red-600 border-red-200", dot: "bg-red-500", icon: XCircle },
+  PARTIALLY_PAID: { label: "پرداخت ناقص", color: "bg-amber-50 text-amber-600 border-amber-200", dot: "bg-amber-500", icon: Clock },
+  PAID: { label: "پرداخت کامل", color: "bg-green-50 text-green-600 border-green-200", dot: "bg-green-500", icon: CheckCircle },
+};
+
+const FULFILLMENT_STATUS = {
+  WAITING: { label: "در انتظار", color: "bg-gray-50 text-gray-500 border-gray-200", dot: "bg-gray-400", icon: Clock },
+  NEEDS_PURCHASE: { label: "باید خریداری شود", color: "bg-amber-50 text-amber-600 border-amber-200", dot: "bg-amber-500", icon: ShoppingBag },
+  PROCESSING: { label: "در حال پردازش", color: "bg-blue-50 text-blue-600 border-blue-200", dot: "bg-blue-500", icon: Package },
+  SENT: { label: "ارسال شده", color: "bg-purple-50 text-purple-600 border-purple-200", dot: "bg-purple-500", icon: Truck },
+  DELIVERED: { label: "تحویل داده شد", color: "bg-teal-50 text-teal-600 border-teal-200", dot: "bg-teal-500", icon: Home },
+  CANCELED: { label: "لغو شده", color: "bg-red-50 text-red-500 border-red-200", dot: "bg-red-400", icon: Ban },
+};
+
+const PAYMENT_METHOD = {
+  ONLINE: { label: "پرداخت آنلاین", icon: CreditCard },
+  BANK_RECEIPT: { label: "رسید بانکی", icon: Receipt },
+  WALLET: { label: "کیف پول", icon: Wallet },
+  INSTALLMENT: { label: "اقساطی", icon: Calendar },
+};
+
+const RECEIPT_STATUS = {
+  PENDING: { label: "در انتظار بررسی", color: "bg-amber-50 text-amber-600 border-amber-200" },
+  APPROVED: { label: "تأیید شده", color: "bg-green-50 text-green-600 border-green-200" },
+  REJECTED: { label: "رد شده", color: "bg-red-50 text-red-600 border-red-200" },
+};
+
+const TRACKING_STATUS_LABELS = {
+  FR_WAREHOUSE: "انبار فرانسه",
+  READY_TO_SHIP: "آماده ارسال",
+  IN_TRANSIT: "در راه",
+  CUSTOMS_HOLD: "گمرک",
+  IR_WAREHOUSE: "انبار ایران",
+  SOLD: "فروخته شده",
+  DELIVERED: "تحویل داده شده",
+  RETURNED: "مرجوعی",
+};
+
+/*
+ * ⚠️ اینجا قبلاً `downloadAddressPdf` بود: یک `window.open("", "_blank")` که با
+ * `document.write` سندِ چاپ را می‌ساخت. آن پنجره هم‌مبدأ و بدونِ noopener بود،
+ * یعنی در همان browsing-context گروهِ پنل می‌نشست؛ `print()` داخلش کلِ آن گروه
+ * را قفل می‌کرد و بعد از بستنِ دیالوگ، صفحه‌ی ادمین نیمه‌مرده می‌ماند
+ * (انیمیشن‌ها متوقف، رویدادها بی‌پاسخ).
+ *
+ * جایگزینش وصله نیست، معماری است — و چاپ روی *همین* صفحه انجام می‌شود، بدونِ
+ * هیچ تب یا پنجره‌ی جدید:
+ *
+ *   دکمه → SenderAddressModal (انتخابِ فرستنده + A4/A5) → OrderPrintOverlay
+ *
+ * حالتِ چاپ یک کامپوننتِ معمولیِ React است که با `createPortal` به body می‌رود
+ * و بقیه‌ی سند را *فقط با CSS* (visibility، نه display و نه دست‌کاریِ DOM)
+ * پنهان می‌کند. آن CSS داخلِ همان کامپوننت است، پس «برگشت به حالتِ عادی» یعنی
+ * `setPrintJob(null)` و بس: هیچ گرهی حذف/بازسازی نشده، هیچ استایلِ سراسری‌ای
+ * جا نمانده و هیچ شنونده‌ای بی‌صاحب نیست. جزئیات در
+ * src/components/print/OrderPrintOverlay.jsx.
+ */
+
+function readAdminThemeColor(token, fallback) {
+  if (typeof document === "undefined") return fallback;
+  const scope = document.querySelector(".admin-scope") || document.documentElement;
+  return getComputedStyle(scope).getPropertyValue(token).trim() || fallback;
+}
+
+function getSwalTheme() {
+  return {
+    confirmButtonColor: readAdminThemeColor("--color-primary", "#004225"),
+    cancelButtonColor: "#9ca3af",
+    customClass: {
+      popup: "rounded-2xl font-[Vazirmatn] text-right",
+      confirmButton: "rounded-[6px] font-bold",
+      cancelButton: "rounded-[6px] font-bold",
+    },
+    rtl: true,
+  };
+}
+
+/* ─── Helpers ───────────────────────────────────────────────────────── */
+
+function formatPrice(v) {
+  return new Intl.NumberFormat("fa-IR").format(Number(v ?? 0));
+}
+
+// قالب‌بندی مبلغ یورو — جدا از تومان، با ارقام لاتین و حداکثر دو رقم اعشار
+function formatEUR(v) {
+  return new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(Number(v ?? 0));
+}
+
+function splitProductName(text = "") {
+  const englishPart = text.match(/[a-zA-Z(].*/);
+  if (!englishPart) return { farsi: text, english: "" };
+
+  return {
+    farsi: text.slice(0, englishPart.index).trim(),
+    english: englishPart[0].trim(),
+  };
+}
+
+function toFarsiDate(dateStr) {
+  if (!dateStr) return "—";
+  return new Intl.DateTimeFormat("fa-IR", {
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit",
+    timeZone: "Asia/Tehran",
+  }).format(new Date(dateStr));
+}
+
+/* ─── Sub-components ────────────────────────────────────────────────── */
+
+function StatusBadge({ config, size = "sm" }) {
+  if (!config) return null;
+  const Icon = config.icon;
+  return (
+    <span className={`inline-flex items-center gap-1 font-semibold border rounded-full
+      ${size === "xs" ? "text-[10px] px-1.5 py-0.5" : "text-xs px-2.5 py-1"}
+      ${config.color}`}>
+      {Icon && <Icon size={size === "xs" ? 9 : 11} />}
+      {config.label}
+    </span>
+  );
+}
+
+function InfoRow({ icon: Icon, label, value }) {
+  return (
+    <div className="flex items-center gap-2 text-xs">
+      <Icon size={12} className="text-gray-400 flex-shrink-0" />
+      <span className="text-gray-400 w-14 flex-shrink-0">{label}:</span>
+      <span className="font-semibold text-gray-700 truncate">{value}</span>
+    </div>
+  );
+}
+
+/* ─── Receipt Lightbox ──────────────────────────────────────────────── */
+function ReceiptLightbox({ url, onClose }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[9999] flex items-center justify-center"
+      style={{ background: "rgba(0,0,0,0.85)", backdropFilter: "blur(6px)" }}
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ scale: 0.85, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.85, opacity: 0 }}
+        transition={{ type: "spring", damping: 22, stiffness: 260 }}
+        className="relative max-w-2xl w-full mx-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button onClick={onClose}
+          className="absolute -top-10 left-0 w-8 h-8 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center text-white transition">
+          <X size={16} />
+        </button>
+        <img src={url} alt="تصویر رسید" className="w-full rounded-2xl shadow-2xl object-contain max-h-[80vh]" />
+      </motion.div>
+    </motion.div>
+  );
+}
+
+/* ─── Approve Payment Modal ─────────────────────────────────────────── */
+function ApproveModal({ payment, orderTotal, dueAmount, onConfirm, onClose }) {
+  const [amount, setAmount] = useState(String(dueAmount || payment.amount || ""));
+  // مبلغ یورو — اختیاری و کاملاً مستقل از تومان
+  const [eurAmount, setEurAmount] = useState("");
+  const [loading, setLoading] = useState(false);
+  const inputRef = useRef(null);
+
+  useEffect(() => { setTimeout(() => inputRef.current?.focus(), 100); }, []);
+
+  const handleSubmit = async () => {
+    // فقط مبلغ تومان الزامی است
+    const parsed = Number(amount.replace(/,/g, ""));
+    if (!parsed || parsed <= 0) { toast.error(`مبلغ ${storeConfig.commerce.currency.label} معتبر وارد کنید`); return; }
+
+    // مبلغ یورو اختیاری است؛ اگر خالی بود نادیده گرفته می‌شود (بدون اعتبارسنجی مسدودکننده).
+    const eurRaw = String(eurAmount).replace(/,/g, "").trim();
+    const eurParsed = eurRaw === "" ? null : Number(eurRaw);
+    const eurToSend =
+      eurParsed !== null && !isNaN(eurParsed) && eurParsed > 0 ? eurParsed : null;
+
+    setLoading(true);
+    await onConfirm(parsed, eurToSend);
+    setLoading(false);
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[200] flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)" }}
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ scale: 0.9, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }}
+        exit={{ scale: 0.9, opacity: 0, y: 20 }}
+        transition={{ type: "spring", damping: 24, stiffness: 280 }}
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden"
+        dir="rtl" onClick={(e) => e.stopPropagation()}
+      >
+        <div className="bg-[var(--color-primary)] px-5 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-white">
+            <BadgeCheck size={18} />
+            <span className="font-bold text-sm">تأیید پرداخت رسید بانکی</span>
+          </div>
+          <button onClick={onClose} className="text-white/70 hover:text-white transition">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="p-5 space-y-4">
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-700 leading-relaxed">
+            <div className="flex items-center gap-1.5 font-bold mb-1">
+              <AlertCircle size={12} /><span>مبلغ درج‌شده توسط کاربر</span>
+            </div>
+            <p>مبلغ اعلامی کاربر: <strong>{formatPrice(payment.amount)} {storeConfig.commerce.currency.label}</strong></p>
+            <p className="mt-0.5">مبلغ کل سفارش: <strong>{formatPrice(orderTotal)} {storeConfig.commerce.currency.label}</strong></p>
+            {dueAmount > 0 && dueAmount !== orderTotal && (
+              <p className="mt-0.5">مانده قابل پرداخت (پس از تخفیف/پرداخت‌های قبلی): <strong>{formatPrice(dueAmount)} {storeConfig.commerce.currency.label}</strong></p>
+            )}
+          </div>
+          <div>
+            <label className="block text-sm font-bold text-gray-700 mb-2">
+              مبلغ تأیید شده ({storeConfig.commerce.currency.label}) <span className="text-red-500">*</span>
+            </label>
+            <div className="relative">
+              <AdminInput
+                ref={inputRef} type="number" value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
+                placeholder={`مبلغ را به ${storeConfig.commerce.currency.label} وارد کنید`}
+                className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm font-bold text-gray-800
+                  focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/30 focus:border-[var(--color-primary)] transition"
+              />
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">{storeConfig.commerce.currency.label}</span>
+            </div>
+          </div>
+
+          {/* ─── مبلغ یورو (اختیاری) — مستقل از تومان ─── */}
+          <div>
+            <label className="flex items-center gap-1.5 text-sm font-bold text-gray-700 mb-2">
+              <Euro size={13} className="text-[var(--color-primary)]" />
+              مبلغ یورو
+              <span className="text-[10px] font-medium text-gray-400">(اختیاری)</span>
+            </label>
+            <div className="relative">
+              <AdminInput
+                type="number" step="any" min="0" value={eurAmount}
+                onChange={(e) => setEurAmount(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
+                placeholder="در صورت پرداخت یورویی، مبلغ را وارد کنید"
+                dir="ltr"
+                className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm font-bold text-gray-800 text-left
+                  focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/30 focus:border-[var(--color-primary)] transition"
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">€</span>
+            </div>
+            <p className="text-[10px] text-gray-400 mt-1.5 leading-relaxed">
+              این مبلغ مستقل از {storeConfig.commerce.currency.label} است و فقط مانده و تاریخچه‌ی یورو را بروزرسانی می‌کند.
+              خالی بگذارید تا فقط پرداخت {storeConfig.commerce.currency.label}ی ثبت شود.
+            </p>
+          </div>
+          <div className="flex gap-3">
+            <button onClick={handleSubmit} disabled={loading}
+              className="flex-1 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white font-bold py-2.5 rounded-xl text-sm
+                transition flex items-center justify-center gap-2 disabled:opacity-60">
+              {loading ? <Loader2 size={15} className="animate-spin" /> : <BadgeCheck size={15} />}
+              تأیید پرداخت
+            </button>
+            <button onClick={onClose}
+              className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold py-2.5 rounded-xl text-sm transition">
+              انصراف
+            </button>
+          </div>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+/* ─── Edit Payment Modal (تومان و یورو) ─────────────────────────────── */
+// تأییدِ ویرایش مبلغ پرداخت با نمایش «مبلغ قبلی → مبلغ جدید».
+// currency: "toman" | "eur"
+function EditPaymentModal({ payment, currency, onConfirm, onClose }) {
+  const isEUR = currency === "eur";
+  const fmt = isEUR ? formatEUR : formatPrice;
+  const unit = isEUR ? "€" : `${storeConfig.commerce.currency.label}`;
+  const [value, setValue] = useState(String(payment.amount ?? ""));
+  const [loading, setLoading] = useState(false);
+  const inputRef = useRef(null);
+
+  useEffect(() => { setTimeout(() => inputRef.current?.focus(), 100); }, []);
+
+  const parsed = Number(String(value).replace(/,/g, ""));
+  const valid = !isNaN(parsed) && parsed > 0;
+  const changed = valid && Math.round(parsed) !== Math.round(Number(payment.amount) || 0);
+  const diff = valid ? parsed - (Number(payment.amount) || 0) : 0;
+
+  const handleSubmit = async () => {
+    if (!valid) { toast.error(`مبلغ ${isEUR ? "یورو" : `${storeConfig.commerce.currency.label}`} معتبر وارد کنید`); return; }
+    setLoading(true);
+    await onConfirm(parsed);
+    setLoading(false);
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[260] flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)" }}
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ scale: 0.9, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }}
+        exit={{ scale: 0.9, opacity: 0, y: 20 }}
+        transition={{ type: "spring", damping: 24, stiffness: 280 }}
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden"
+        dir="rtl" onClick={(e) => e.stopPropagation()}
+      >
+        <div className="bg-[var(--color-primary)] px-5 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-white">
+            <Pencil size={16} />
+            <span className="font-bold text-sm">ویرایش مبلغ پرداخت {isEUR ? "(یورو)" : `(${storeConfig.commerce.currency.label})`}</span>
+          </div>
+          <button onClick={onClose} className="text-white/70 hover:text-white transition">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="p-5 space-y-4">
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-700 leading-relaxed">
+            <div className="flex items-center gap-1.5 font-bold mb-1">
+              <AlertCircle size={12} /><span>ویرایش سابقه‌ی مالی</span>
+            </div>
+            <p>این تغییر فقط مانده و وضعیت {isEUR ? "یورو" : `${storeConfig.commerce.currency.label}`} را بروزرسانی می‌کند و در تاریخچه‌ی ممیزی ثبت می‌شود.</p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-bold text-gray-700 mb-2">
+              مبلغ جدید ({unit}) <span className="text-red-500">*</span>
+            </label>
+            <div className="relative">
+              <AdminInput
+                ref={inputRef} type="number" step={isEUR ? "any" : "1"} min="0" value={value}
+                onChange={(e) => setValue(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
+                dir="ltr"
+                className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm font-bold text-gray-800 text-left
+                  focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/30 focus:border-[var(--color-primary)] transition"
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">{unit}</span>
+            </div>
+          </div>
+
+          {/* قبلی → جدید */}
+          <div className="flex items-center justify-between bg-gray-50 border border-gray-100 rounded-xl px-3 py-2.5 text-xs">
+            <div className="text-center flex-1">
+              <p className="text-gray-400 mb-0.5">مبلغ قبلی</p>
+              <p className="font-black text-gray-600" dir="ltr">{isEUR ? "€ " : ""}{fmt(payment.amount)}</p>
+            </div>
+            <ChevronRight size={16} className="text-gray-300 rotate-180" />
+            <div className="text-center flex-1">
+              <p className="text-gray-400 mb-0.5">مبلغ جدید</p>
+              <p className={`font-black ${changed ? "text-[var(--color-primary)]" : "text-gray-600"}`} dir="ltr">
+                {valid ? <>{isEUR ? "€ " : ""}{fmt(parsed)}</> : "—"}
+              </p>
+            </div>
+          </div>
+          {changed && (
+            <p className={`text-[11px] font-bold text-center ${diff > 0 ? "text-blue-600" : "text-amber-600"}`} dir="ltr">
+              {diff > 0 ? "▲ +" : "▼ "}{isEUR ? "€ " : ""}{fmt(Math.abs(diff))}{!isEUR ? ` ${storeConfig.commerce.currency.label}` : ""}
+            </p>
+          )}
+
+          <div className="flex gap-3">
+            <button onClick={handleSubmit} disabled={loading || !valid}
+              className="flex-1 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white font-bold py-2.5 rounded-xl text-sm
+                transition flex items-center justify-center gap-2 disabled:opacity-60">
+              {loading ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
+              ذخیره تغییر
+            </button>
+            <button onClick={onClose}
+              className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold py-2.5 rounded-xl text-sm transition">
+              انصراف
+            </button>
+          </div>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+/* ─── Add Item Modal ────────────────────────────────────────────────── */
+// جستجوی محصول (همان API بخش تخفیف‌ها) → انتخاب واریانت (در صورت وجود) → تعداد.
+// قیمت در سرور و از همان مسیر priceEngine ثبت می‌شود؛ اینجا فقط انتخاب انجام می‌شود.
+function AddItemModal({ orderId, onSuccess, onClose }) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [openList, setOpenList] = useState(false);
+  const [product, setProduct] = useState(null);     // {_id, label, image}
+  const [variants, setVariants] = useState([]);
+  const [loadingVariants, setLoadingVariants] = useState(false);
+  const [variantId, setVariantId] = useState(null);
+  const [quantity, setQuantity] = useState(1);
+  const [submitting, setSubmitting] = useState(false);
+  const timer = useRef(null);
+  const [flow, setFlow] = useState(null);
+  const [flowOpen, setFlowOpen] = useState(false);
+  const [optionsError, setOptionsError] = useState("");
+  const optionsRequest = useRef(null);
+  const searchRequest = useRef(null);
+  const submitLock = useRef(false);
+
+  useEffect(() => () => {
+    clearTimeout(timer.current);
+    optionsRequest.current?.abort();
+    searchRequest.current?.abort();
+  }, []);
+
+  const runSearch = useCallback(async (q) => {
+    if (!q?.trim()) { setResults([]); setOpenList(false); return; }
+    searchRequest.current?.abort();
+    const controller = new AbortController();
+    searchRequest.current = controller;
+    setSearching(true);
+    try {
+      const res = await fetch(`/api/admin/orders/item-options?q=${encodeURIComponent(q)}`, { signal: controller.signal });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "خطا در جستجوی محصول");
+      if (controller.signal.aborted) return;
+      setResults(data.items || []);
+      setOpenList(true);
+    } catch (error) {
+      if (!controller.signal.aborted) { setResults([]); toast.error(error.message); }
+    } finally { if (!controller.signal.aborted) setSearching(false); }
+  }, []);
+
+  const handleQuery = (val) => {
+    setQuery(val);
+    clearTimeout(timer.current);
+    searchRequest.current?.abort();
+    setSearching(false);
+    setOpenList(false);
+    if (!val.trim()) { setResults([]); setOpenList(false); return; }
+    timer.current = setTimeout(() => runSearch(val), 300);
+  };
+
+  const selectProduct = async (item) => {
+    clearTimeout(timer.current);
+    searchRequest.current?.abort();
+    optionsRequest.current?.abort();
+    const controller = new AbortController();
+    optionsRequest.current = controller;
+    setSearching(false);
+    setProduct(item);
+    setFlow(null);
+    setOptionsError("");
+    setOpenList(false);
+    setQuery("");
+    setResults([]);
+    setVariantId(null);
+    setVariants([]);
+    setLoadingVariants(true);
+    try {
+      const res = await fetch(`/api/admin/orders/item-options?productId=${item._id}`, { signal: controller.signal });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "خطا در دریافت اطلاعات محصول");
+      if (controller.signal.aborted) return;
+      setVariants(data.items || []);
+      setProduct({ ...item, ...data.product });
+      setFlow(data.flow || null);
+    } catch (error) {
+      if (!controller.signal.aborted) setOptionsError(error.message || "خطا در دریافت اطلاعات محصول");
+    } finally { if (!controller.signal.aborted) setLoadingVariants(false); }
+  };
+
+  const resetProduct = () => {
+    if (submitLock.current) return;
+    optionsRequest.current?.abort();
+    setLoadingVariants(false);
+    setOptionsError("");
+    setFlow(null);
+    setFlowOpen(false);
+    setProduct(null);
+    setVariants([]);
+    setVariantId(null);
+    setQuantity(1);
+  };
+
+  const needsVariant = variants.length > 0;
+  const hasFlow = flow && buildStepSequence(flow).length > 0;
+  const canSubmit = product && !loadingVariants && !optionsError && (!needsVariant || variantId) && Number.isSafeInteger(quantity) && quantity >= 1 && !submitting;
+
+  const saveItem = async (flowSelections = []) => {
+    if (submitLock.current) return;
+    submitLock.current = true;
+    setSubmitting(true);
+    try {
+      const res = await fetch(`/api/admin/orders/${orderId}/items`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          productId: product._id,
+          variantId: variantId || null,
+          quantity: Math.max(1, Math.floor(quantity)),
+          flowSelections,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "خطا در افزودن آیتم");
+      toast.success(data.message || "آیتم افزوده شد");
+      onSuccess();
+      onClose();
+    } finally {
+      submitLock.current = false;
+      setSubmitting(false);
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!canSubmit || submitLock.current) return;
+    if (hasFlow) { setFlowOpen(true); return; }
+    try { await saveItem(); }
+    catch (error) { toast.error(error.message || "خطا در افزودن آیتم"); }
+  };
+
+  const close = () => { if (!submitLock.current) onClose(); };
+  if (flowOpen) return (
+    <OrderFlowModal
+      isOpen flow={flow} product={product} quantity={quantity} variantId={variantId}
+      onConfirm={saveItem} onClose={() => { if (!submitLock.current) setFlowOpen(false); }}
+      onBackToProduct={() => setFlowOpen(false)}
+      confirmLabel="تأیید و افزودن به سفارش"
+      confirmErrorMessage="خطا در افزودن آیتم به سفارش"
+      overlayClassName="z-[260]" productSummary={`${variants.find((variant) => String(variant._id) === variantId)?.label || ""} · تعداد: ${quantity.toLocaleString("fa-IR")}`}
+    />
+  );
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[260] flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)" }}
+      onClick={close}
+    >
+      <motion.div
+        initial={{ scale: 0.92, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }}
+        exit={{ scale: 0.92, opacity: 0, y: 20 }}
+        transition={{ type: "spring", damping: 24, stiffness: 280 }}
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto"
+        role="dialog" aria-modal="true" aria-label="افزودن آیتم به سفارش"
+        dir="rtl" onClick={(e) => e.stopPropagation()}
+      >
+        <div className="bg-[var(--color-primary)] px-5 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-white">
+            <Plus size={18} />
+            <span className="font-bold text-sm">افزودن آیتم به سفارش</span>
+          </div>
+          <button onClick={close} disabled={submitting} aria-label="بستن" className="text-white/70 hover:text-white transition">
+            <X size={18} />
+          </button>
+        </div>
+
+        <fieldset disabled={submitting} className="p-5 space-y-4 min-w-0">
+          {!product ? (
+            <div className="relative">
+              <label className="block text-sm font-bold text-gray-700 mb-2">جستجوی محصول</label>
+              <div className="relative">
+                <Search size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text" value={query} autoComplete="off"
+                  onChange={(e) => handleQuery(e.target.value)}
+                  onFocus={() => query && results.length && setOpenList(true)}
+                  placeholder="نام محصول را تایپ کنید..."
+                  className="w-full border border-gray-300 rounded-xl pr-9 pl-3 py-2.5 text-sm font-bold text-gray-800
+                    focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/30 focus:border-[var(--color-primary)] transition"
+                />
+                {searching && <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">جستجو...</span>}
+              </div>
+              {openList && (
+                <ul className="mt-2 bg-white border border-gray-200 rounded-xl shadow-sm
+                  min-h-[4rem] max-h-[18rem] overflow-y-auto">
+                  {results.length === 0
+                    ? <li className="px-4 py-6 text-sm text-gray-400 text-center">محصولی یافت نشد</li>
+                    : results.map((item) => (
+                      <li key={String(item._id)} className="border-b border-gray-50 last:border-none">
+                        <button type="button" onClick={() => selectProduct(item)}
+                          className="w-full flex items-center gap-2.5 px-3 py-2.5 hover:bg-gray-50 cursor-pointer transition focus-visible:outline-2 focus-visible:outline-[var(--color-primary)]">
+                        {item.image
+                          ? <img src={item.image} alt="" className="w-9 h-9 rounded-lg object-cover flex-shrink-0" />
+                          : <div className="w-9 h-9 rounded-lg bg-gray-100 flex-shrink-0" />}
+                        <div className="text-right min-w-0">
+                          <p className="text-sm font-bold text-gray-800 truncate">{item.label}</p>
+                          {item.sub && <p className="text-xs text-gray-400 truncate">{item.sub}</p>}
+                        </div>
+                        </button>
+                      </li>
+                    ))}
+                </ul>
+              )}
+            </div>
+          ) : (
+            <>
+              {/* محصول انتخاب‌شده */}
+              <div className="flex items-center gap-3 bg-gray-50 border border-gray-100 rounded-xl p-3">
+                {product.image
+                  ? <img src={product.image} alt="" className="w-12 h-12 rounded-xl object-cover border border-gray-200" />
+                  : <div className="w-12 h-12 rounded-xl bg-gray-100" />}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-gray-800 truncate">{product.label}</p>
+                  <p className="text-xs text-gray-400">{product.sub || ""}</p>
+                </div>
+                <button onClick={resetProduct} className="text-xs text-gray-400 hover:text-gray-600 font-bold">× تغییر</button>
+              </div>
+
+              {/* واریانت‌ها */}
+              {loadingVariants ? (
+                <div className="flex items-center justify-center gap-2 py-3 text-sm text-gray-400">
+                  <Loader2 size={15} className="animate-spin text-[var(--color-primary)]" /> بارگذاری واریانت‌ها و فرایند سفارش...
+                </div>
+              ) : optionsError ? (
+                <div role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">
+                  <p>{optionsError}</p>
+                  <button onClick={() => selectProduct(product)} className="mt-2 font-bold underline">تلاش دوباره</button>
+                </div>
+              ) : needsVariant ? (
+                <div className="space-y-2">
+                  <label className="block text-xs font-bold text-gray-500">انتخاب واریانت <span className="text-red-500">*</span></label>
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                    {variants.map((v) => {
+                      const selected = variantId === String(v._id);
+                      return (
+                        <label key={String(v._id)}
+                          className={`flex items-center gap-2 p-2.5 rounded-xl cursor-pointer transition border
+                            ${selected ? "bg-[var(--color-primary)]/10 border-[var(--color-primary)]/30" : "bg-white border-gray-100 hover:border-[var(--color-primary)]/30"}`}>
+                          <input type="radio" name="variant" checked={selected}
+                            onChange={() => setVariantId(String(v._id))} className="accent-[var(--color-primary)]" />
+                          <div className="text-right flex-1 min-w-0">
+                            <p className="text-xs font-bold text-gray-800 truncate">{v.label}</p>
+                            {v.sub && <p className="text-[10px] text-gray-400 truncate">{v.sub}</p>}
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-[11px] text-gray-400 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2">
+                  این محصول واریانت ندارد؛ قیمت پایه‌ی محصول ثبت می‌شود.
+                </p>
+              )}
+
+              {/* تعداد */}
+              <div>
+                <label className="block text-xs font-bold text-gray-500 mb-2">تعداد</label>
+                <div className="flex items-center gap-3">
+                  <button onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+                    className="w-9 h-9 rounded-xl border border-gray-200 flex items-center justify-center text-gray-600 hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition">
+                    <Minus size={14} />
+                  </button>
+                  <input type="number" min="1" value={quantity}
+                    onChange={(e) => setQuantity(Math.max(1, Math.floor(Number(e.target.value) || 1)))}
+                    className="w-16 text-center border border-gray-300 rounded-xl py-2 text-sm font-black text-gray-800
+                      focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/30 focus:border-[var(--color-primary)]" />
+                  <button onClick={() => setQuantity((q) => q + 1)}
+                    className="w-9 h-9 rounded-xl border border-gray-200 flex items-center justify-center text-gray-600 hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition">
+                    <Plus size={14} />
+                  </button>
+                </div>
+              </div>
+
+              <p className="text-[11px] text-gray-400 leading-relaxed bg-[color:var(--color-primary)]/5 border border-[color:var(--color-primary)]/15 rounded-xl px-3 py-2">
+                {hasFlow ? "در مرحله بعد، خدمات و محصولات فرایند سفارش را انتخاب کنید. آیتم پس از تأیید نهایی به سفارش اضافه می‌شود." : "قیمت نهایی با احتساب تخفیف‌های فعال محاسبه و در سفارش ثبت می‌شود."}
+              </p>
+
+              <button onClick={handleSubmit} disabled={!canSubmit}
+                className="w-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white font-bold py-2.5 rounded-xl text-sm
+                  transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                {submitting ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}
+                {submitting ? "در حال افزودن..." : hasFlow ? "ادامه و تکمیل فرایند سفارش" : "افزودن به سفارش"}
+              </button>
+            </>
+          )}
+        </fieldset>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+/* ─── Barcode Scanner Component ─────────────────────────────────────── */
+function BarcodeScanner({ onScan, onClose }) {
+  const [phase, setPhase] = useState("idle");
+  const [manualCode, setManualCode] = useState("");
+  const [cameraError, setCameraError] = useState("");
+  const scannerRef = useRef(null);
+  const processingRef = useRef(false);
+  const inputRef = useRef(null);
+
+  const handleScanResult = useCallback((code) => {
+    const trimmed = code.trim();
+    if (!trimmed || processingRef.current) return;
+    processingRef.current = true;
+    stopScanner();
+    onScan(trimmed);
+    onClose();
+  }, [onScan, onClose]);
+
+  const startScanner = async () => {
+    setPhase("starting");
+    setCameraError("");
+    processingRef.current = false;
+    try {
+      const { Html5Qrcode } = await import("html5-qrcode");
+      const el = document.getElementById("order-qr-reader");
+      if (el) el.innerHTML = "";
+      const scanner = new Html5Qrcode("order-qr-reader");
+      scannerRef.current = scanner;
+      const devices = await Html5Qrcode.getCameras();
+      if (!devices?.length) throw new Error("دوربینی یافت نشد");
+      const back = devices.find((d) => /back|rear|environment/i.test(d.label));
+      await scanner.start(
+        back ? back.id : devices[0].id,
+        { fps: 15, qrbox: { width: 240, height: 140 }, aspectRatio: 1.6 },
+        (decoded) => { if (!processingRef.current) handleScanResult(decoded); },
+        () => { }
+      );
+      setPhase("scanning");
+    } catch (err) {
+      setCameraError(err.message || "خطا در باز کردن دوربین");
+      setPhase("error");
+    }
+  };
+
+  const stopScanner = async () => {
+    if (scannerRef.current) {
+      try { await scannerRef.current.stop(); scannerRef.current.clear(); } catch { }
+      scannerRef.current = null;
+    }
+    processingRef.current = false;
+    setPhase("idle");
+  };
+
+  useEffect(() => {
+    setTimeout(() => inputRef.current?.focus(), 200);
+    return () => { stopScanner(); };
+  }, []);
+
+  const handleManual = (e) => {
+    e.preventDefault();
+    if (!manualCode.trim()) return;
+    stopScanner();
+    onScan(manualCode.trim());
+    onClose();
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Manual Input */}
+      <form onSubmit={handleManual} className="flex gap-2">
+        <input
+          ref={inputRef}
+          type="text"
+          value={manualCode}
+          onChange={(e) => setManualCode(e.target.value)}
+          placeholder="کد رهگیری یا بارکد را وارد کنید..."
+          className="flex-1 border border-gray-300 rounded-xl px-3 py-2.5 text-sm font-mono
+            focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/30 focus:border-[var(--color-primary)] transition"
+          dir="ltr"
+        />
+        <button type="submit"
+          className="bg-[var(--color-primary)] text-white text-sm font-bold px-4 py-2.5 rounded-xl hover:bg-[var(--color-primary-hover)] transition">
+          تأیید
+        </button>
+      </form>
+
+      {/* Camera Scanner */}
+      <div className="border border-gray-200 rounded-2xl overflow-hidden">
+        {phase === "idle" && (
+          <button onClick={startScanner}
+            className="w-full flex items-center justify-center gap-2 py-4 text-sm font-bold text-gray-600
+              hover:bg-gray-50 transition">
+            <QrCode size={18} className="text-[var(--color-primary)]" />
+            اسکن با دوربین
+          </button>
+        )}
+        {phase === "starting" && (
+          <div className="flex items-center justify-center gap-2 py-6 text-sm text-gray-500">
+            <Loader2 size={16} className="animate-spin text-[var(--color-primary)]" />
+            در حال راه‌اندازی دوربین...
+          </div>
+        )}
+        {(phase === "scanning" || phase === "starting") && (
+          <div>
+            <div id="order-qr-reader" className="w-full" />
+            {phase === "scanning" && (
+              <button onClick={stopScanner}
+                className="w-full flex items-center justify-center gap-2 py-2.5 text-xs font-bold
+                  text-gray-500 hover:text-red-500 border-t border-gray-100 transition">
+                <X size={13} /> توقف اسکن
+              </button>
+            )}
+          </div>
+        )}
+        {phase === "error" && (
+          <div className="p-4 space-y-2">
+            <p className="text-xs text-red-500 font-bold flex items-center gap-1.5">
+              <AlertTriangle size={13} /> {cameraError}
+            </p>
+            <button onClick={() => { setCameraError(""); setPhase("idle"); }}
+              className="text-xs text-[var(--color-primary)] font-bold hover:underline">
+              تلاش مجدد
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Procurement Choice Modal ───────────────────────────────────────── */
+function ProcurementModal({ item, onConfirm, onClose }) {
+  const [choice, setChoice] = useState(null);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[300] flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)" }}
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ scale: 0.9, y: 20, opacity: 0 }} animate={{ scale: 1, y: 0, opacity: 1 }}
+        exit={{ scale: 0.9, y: 20, opacity: 0 }}
+        transition={{ type: "spring", damping: 24, stiffness: 280 }}
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden"
+        dir="rtl" onClick={(e) => e.stopPropagation()}
+      >
+        <div className="bg-[var(--admin-sidebar-bg)] px-5 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-white">
+            <Package size={16} />
+            <span className="font-bold text-sm">وضعیت تأمین محصول</span>
+          </div>
+          <button onClick={onClose} className="text-white/70 hover:text-white">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          <div className="flex items-center gap-3 bg-gray-50 rounded-xl p-3">
+            {item.product?.mainImage && (
+              <img src={item.product.mainImage} alt="" className="w-12 h-12 rounded-xl object-cover border border-gray-200" />
+            )}
+            <div>
+              <p className="text-sm font-bold text-gray-800">{item.product?.name}</p>
+              <p className="text-xs text-gray-400">{item.product?.sku}</p>
+            </div>
+          </div>
+
+          <p className="text-sm text-gray-600 font-bold text-center">
+            این محصول را از چه طریقی تأمین می‌کنید؟
+          </p>
+
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              onClick={() => setChoice("IN_STOCK")}
+              className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition font-bold text-sm
+                ${choice === "IN_STOCK"
+                  ? "border-green-500 bg-green-50 text-green-700"
+                  : "border-gray-200 text-gray-600 hover:border-green-300"}`}
+            >
+              <Warehouse size={22} className={choice === "IN_STOCK" ? "text-green-600" : "text-gray-400"} />
+              موجود در انبار
+            </button>
+            <button
+              onClick={() => setChoice("TO_PURCHASE")}
+              className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition font-bold text-sm
+                ${choice === "TO_PURCHASE"
+                  ? "border-amber-500 bg-amber-50 text-amber-700"
+                  : "border-gray-200 text-gray-600 hover:border-amber-300"}`}
+            >
+              <ShoppingBag size={22} className={choice === "TO_PURCHASE" ? "text-amber-600" : "text-gray-400"} />
+              باید خریداری شود
+            </button>
+          </div>
+
+          <button
+            onClick={() => choice && onConfirm(choice)}
+            disabled={!choice}
+            className="w-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white font-bold py-3 rounded-xl text-sm
+              transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Scan size={16} />
+            تأیید و ادامه به اسکن بارکد
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+/* ─── Scan Modal (combined procurement + scan) ──────────────────────── */
+// target: { productName, productImage, productSku, expectedProductId,
+//           orderItemIndex, flowNodeId, quantity }
+// mode: "choose" → ابتدا انتخاب وضعیت تأمین | "scan_purchased" → مستقیم اسکن بارکدِ خریداری‌شده
+function ScanModal({ target, orderId, mode = "choose", onSuccess, onClose }) {
+  const [step, setStep] = useState(mode === "scan_purchased" ? "scan" : "procurement");
+  const [procurementStatus, setProcurementStatus] = useState(
+    mode === "scan_purchased" ? "PURCHASED" : null
+  );
+  const [scanning, setScanning] = useState(false);
+  const [marking, setMarking] = useState(false);
+  const [scanResult, setScanResult] = useState(null); // null | {success, message, item}
+
+  // علامت‌گذاری «باید خریداری شود» — بدون نیاز به بارکد
+  const handleMarkToPurchase = async () => {
+    setMarking(true);
+    try {
+      const res = await fetch(`/api/admin/orders/${orderId}/tracking`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "mark_purchase",
+          itemId: target.itemId,
+          orderItemIndex: target.orderItemIndex,
+          flowNodeId: target.flowNodeId || null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.message || "خطا در علامت‌گذاری");
+        setMarking(false);
+        return;
+      }
+      toast.success(data.message || "به عنوان «باید خریداری شود» علامت‌گذاری شد");
+      onSuccess();
+      onClose();
+    } catch (err) {
+      toast.error("خطا در اتصال به سرور");
+      setMarking(false);
+    }
+  };
+
+  const handleScan = async (code) => {
+    setScanning(true);
+    setScanResult(null);
+    try {
+      // اول lookup کن
+      const lookupRes = await fetch(
+        `/api/admin/orders/tracking-items/lookup?code=${encodeURIComponent(code)}`
+      );
+      const lookupData = await lookupRes.json();
+
+      if (!lookupData.found) {
+        setScanResult({ success: false, message: "آیتمی با این کد در سیستم ترکینگ یافت نشد" });
+        setScanning(false);
+        return;
+      }
+
+      // بررسی محصول
+      if (lookupData.item.productRef?.toString() !== target.expectedProductId?.toString()) {
+        setScanResult({
+          success: false,
+          message: "این بارکد متعلق به محصول دیگری است. بارکد محصول درست را اسکن کنید.",
+        });
+        setScanning(false);
+        return;
+      }
+
+      // ثبت به سفارش
+      const assignRes = await fetch(`/api/admin/orders/${orderId}/tracking`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          barcode: code,
+          itemId: target.itemId,
+          orderItemIndex: target.orderItemIndex,
+          flowNodeId: target.flowNodeId || null,
+          procurementStatus: procurementStatus || "IN_STOCK",
+        }),
+      });
+      const assignData = await assignRes.json();
+
+      if (!assignRes.ok) {
+        setScanResult({ success: false, message: assignData.message || "خطا در ثبت بارکد" });
+        setScanning(false);
+        return;
+      }
+
+      setScanResult({
+        success: true,
+        message: assignData.message,
+        trackingId: lookupData.item.trackingId,
+        barcode: lookupData.item.barcode,
+        scannedCount: assignData.scannedCount,
+        remainingCount: assignData.remainingCount,
+      });
+
+      onSuccess();
+    } catch (err) {
+      setScanResult({ success: false, message: "خطا در اتصال به سرور" });
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[250] flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)" }}
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ scale: 0.92, y: 20, opacity: 0 }} animate={{ scale: 1, y: 0, opacity: 1 }}
+        exit={{ scale: 0.92, y: 20, opacity: 0 }}
+        transition={{ type: "spring", damping: 24, stiffness: 280 }}
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden"
+        dir="rtl" onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="bg-[var(--admin-sidebar-bg)] px-5 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            {step === "procurement" ? (
+              <div className="w-8 h-8 rounded-xl bg-[var(--color-primary)] flex items-center justify-center">
+                <Package size={15} className="text-white" />
+              </div>
+            ) : (
+              <div className="w-8 h-8 rounded-xl bg-[var(--color-primary)] flex items-center justify-center">
+                <Scan size={15} className="text-white" />
+              </div>
+            )}
+            <div>
+              <p className="text-white font-bold text-sm">
+                {step === "procurement" ? "وضعیت تأمین" : "اسکن بارکد"}
+              </p>
+              <p className="text-white/70 text-xs whitespace-normal [overflow-wrap:anywhere] max-w-[200px]">
+                {target.productName}
+              </p>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-white/70 hover:text-white">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          {/* Product info */}
+          <div className="flex items-center gap-3 bg-gray-50 rounded-xl p-3">
+            {target.productImage && (
+              <img src={target.productImage} alt="" className="w-12 h-12 rounded-xl object-cover border border-gray-200" />
+            )}
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-gray-800 whitespace-normal [overflow-wrap:anywhere]">{target.productName}</p>
+              {target.productSku && (
+                <p className="text-xs text-gray-400 font-mono">{target.productSku}</p>
+              )}
+              <p className="text-xs text-gray-500 mt-0.5">
+                تعداد مورد نیاز: <strong>{target.quantity}</strong> عدد
+              </p>
+            </div>
+          </div>
+
+          {/* Step 1: Procurement choice */}
+          {step === "procurement" && (
+            <div className="space-y-3">
+              <p className="text-sm font-bold text-gray-700">این محصول از چه طریقی تأمین می‌شود؟</p>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => { setProcurementStatus("IN_STOCK"); setStep("scan"); }}
+                  disabled={marking}
+                  className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200
+                    hover:border-green-400 hover:bg-green-50 transition font-bold text-sm text-gray-600 hover:text-green-700
+                    disabled:opacity-50"
+                >
+                  <Warehouse size={24} className="text-green-500" />
+                  موجود در انبار
+                  <span className="text-[10px] text-gray-400 font-normal">بارکد از انبار اسکن شود</span>
+                </button>
+                <button
+                  onClick={handleMarkToPurchase}
+                  disabled={marking}
+                  className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200
+                    hover:border-amber-400 hover:bg-amber-50 transition font-bold text-sm text-gray-600 hover:text-amber-700
+                    disabled:opacity-50"
+                >
+                  {marking
+                    ? <Loader2 size={24} className="animate-spin text-amber-500" />
+                    : <ShoppingBag size={24} className="text-amber-500" />}
+                  باید خریداری شود
+                  <span className="text-[10px] text-gray-400 font-normal">وضعیت سفارش بروزرسانی می‌شود</span>
+                </button>
+              </div>
+              <p className="text-[11px] text-gray-400 leading-relaxed">
+                با انتخاب «باید خریداری شود» این سفارش در لیست سفارش‌ها با وضعیت «باید خریداری شود»
+                نشان داده می‌شود تا بعداً پس از خرید، بارکد آن اسکن شود.
+              </p>
+            </div>
+          )}
+
+          {/* Step 2: Scan */}
+          {step === "scan" && (
+            <div className="space-y-3">
+              {/* Procurement status indicator */}
+              <div className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold
+                ${procurementStatus === "IN_STOCK"
+                  ? "bg-green-50 text-green-700 border border-green-200"
+                  : "bg-blue-50 text-blue-700 border border-blue-200"}`}>
+                {procurementStatus === "IN_STOCK"
+                  ? <><Warehouse size={13} /> موجود در انبار — بارکد را اسکن کنید</>
+                  : <><ShoppingBag size={13} /> خریداری‌شده — بارکد محصول خریداری‌شده را اسکن کنید</>
+                }
+              </div>
+
+              {scanning && (
+                <div className="flex items-center justify-center gap-2 py-4 text-sm text-gray-500">
+                  <Loader2 size={16} className="animate-spin text-[var(--color-primary)]" />
+                  در حال بررسی بارکد...
+                </div>
+              )}
+
+              {scanResult && (
+                <motion.div
+                  initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
+                  className={`p-3 rounded-xl border text-sm font-bold flex items-center gap-2
+                    ${scanResult.success
+                      ? "bg-green-50 border-green-200 text-green-700"
+                      : "bg-red-50 border-red-200 text-red-700"}`}
+                >
+                  {scanResult.success
+                    ? <CheckCircle size={16} />
+                    : <XCircle size={16} />}
+                  <div>
+                    <p>{scanResult.message}</p>
+                    {scanResult.success && scanResult.trackingId && (
+                      <p className="text-xs font-mono mt-0.5 text-green-600">
+                        {scanResult.trackingId}
+                      </p>
+                    )}
+                    {scanResult.success && scanResult.remainingCount > 0 && (
+                      <p className="text-xs mt-0.5 text-green-600">
+                        {scanResult.remainingCount} عدد دیگر باقی مانده
+                      </p>
+                    )}
+                  </div>
+                </motion.div>
+              )}
+
+              {!scanning && (
+                <BarcodeScanner
+                  onScan={handleScan}
+                  onClose={() => { }}
+                />
+              )}
+
+              {mode === "choose" && (
+                <button onClick={() => setStep("procurement")}
+                  className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1 transition">
+                  <ChevronRight size={12} /> برگشت به انتخاب تأمین
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+/* ─── Payment Card ──────────────────────────────────────────────────── */
+function PaymentCard({ payment, orderTotal, onViewReceipt, onApprove, onReject, onEdit }) {
+  // همان کلیدهایی که /api/admin/payments/[id]/{approve,reject,edit} با آن‌ها گیت شده‌اند
+  const { can } = useAdminPermissions();
+  const canApprove = can("payments.approve");
+  const canReject = can("payments.reject");
+  const isPending = payment.status === "PENDING";
+  const isPaid = payment.status === "PAID";
+  const isBankReceipt = payment.method === "BANK_RECEIPT";
+  const receiptStatus = payment.bankReceipt?.reviewStatus;
+  const receiptCfg = RECEIPT_STATUS[receiptStatus] || RECEIPT_STATUS.PENDING;
+
+  // ─── چند عکس: هم imageUrls (آرایه جدید) هم imageUrl (تکی قدیمی) پشتیبانی می‌شه
+  const images = payment.bankReceipt?.imageUrls?.length
+    ? payment.bankReceipt.imageUrls
+    : payment.bankReceipt?.imageUrl
+      ? [payment.bankReceipt.imageUrl]
+      : [];
+
+
+  return (
+    <div className={`rounded-xl border p-3.5 space-y-3 transition
+      ${isPending && isBankReceipt
+        ? "border-amber-300 bg-amber-50/50"
+        : "border-gray-200 bg-gray-50/50"}`}
+    >
+      {/* ردیف اول: نوع پرداخت + مبلغ */}
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0
+            ${isPaid ? "bg-green-100" : isPending ? "bg-amber-100" : "bg-red-100"}`}>
+            {payment.method === "ONLINE"
+              ? <CreditCard size={14} className={isPaid ? "text-green-600" : "text-amber-600"} />
+              : <Receipt size={14} className={isPaid ? "text-green-600" : isPending ? "text-amber-600" : "text-red-600"} />
+            }
+          </div>
+          <div>
+            <p className="text-xs font-bold text-gray-700">
+              {PAYMENT_METHOD[payment.method]?.label || payment.method}
+            </p>
+            <p className="text-[10px] text-gray-400">{toFarsiDate(payment.createdAt)}</p>
+          </div>
+        </div>
+
+        <div className="text-left space-y-0.5">
+          <div className="flex items-center gap-1.5">
+            {onEdit && payment.method !== "WALLET" && (
+              <button onClick={onEdit} title="ویرایش مبلغ"
+                className="w-6 h-6 flex items-center justify-center rounded-lg text-gray-400
+                  hover:text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 transition">
+                <Pencil size={12} />
+              </button>
+            )}
+            <p className="text-sm font-black text-gray-800">{formatPrice(payment.amount)}</p>
+          </div>
+          <p className="text-[10px] text-gray-400">{storeConfig.commerce.currency.label} پرداخت شده</p>
+          {payment.meta?.editedAt && (
+            <p className="text-[9px] text-amber-500 font-medium">ویرایش‌شده</p>
+          )}
+        </div>
+      </div>
+
+
+      {/* ─── رسید بانکی ─── */}
+      {isBankReceipt && (
+        <div className="space-y-2">
+
+          {/* وضعیت رسید */}
+          {receiptStatus && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${receiptCfg.color}`}>
+                {receiptCfg.label}
+              </span>
+              {payment.bankReceipt?.rejectReason && (
+                <span className="text-[10px] text-red-500 truncate">
+                  علت: {payment.bankReceipt.rejectReason}
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* ─── گالری تصاویر ─── */}
+          {images.length > 0 && (
+            <div className={`grid gap-2 ${images.length === 1 ? "grid-cols-1" : "grid-cols-2 sm:grid-cols-3"}`}>
+              {images.map((url, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => onViewReceipt(url)}
+                  className="group relative rounded-xl overflow-hidden border border-gray-200
+                    hover:border-[var(--color-primary)] transition aspect-video bg-gray-100"
+                >
+                  <img
+                    src={url}
+                    alt={`رسید ${idx + 1}`}
+                    className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                  />
+                  {/* overlay */}
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition flex items-center justify-center">
+                    <ExternalLink
+                      size={18}
+                      className="text-white opacity-0 group-hover:opacity-100 transition drop-shadow"
+                    />
+                  </div>
+                  {/* شماره عکس */}
+                  {images.length > 1 && (
+                    <span className="absolute top-1.5 right-1.5 bg-black/50 text-white text-[10px] font-bold
+                      px-1.5 py-0.5 rounded-full">
+                      {idx + 1}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* دکمه‌های تأیید/رد */}
+          {isPending && (canApprove || canReject) && (
+            <div className="flex gap-2 pt-1">
+              {canApprove && (
+              <button onClick={onApprove}
+                className="flex-1 flex items-center justify-center gap-1.5 bg-green-500 hover:bg-green-600
+                  text-white text-xs font-bold py-2 rounded-xl transition">
+                <BadgeCheck size={13} /> تأیید با ورود مبلغ
+              </button>
+              )}
+              {canReject && (
+              <button onClick={onReject}
+                className="flex-1 flex items-center justify-center gap-1.5 bg-red-50 hover:bg-red-100
+                  text-red-600 text-xs font-bold py-2 rounded-xl border border-red-200 transition">
+                <XCircle size={13} /> رد رسید
+              </button>
+              )}
+            </div>
+          )}
+
+          {isPaid && payment.bankReceipt?.reviewedAt && (
+            <p className="text-[10px] text-green-600 font-medium">
+              تأیید شده در {toFarsiDate(payment.bankReceipt.reviewedAt)}
+            </p>
+          )}
+        </div>
+      )}
+
+      {payment.method === "ONLINE" && payment.onlinePayment?.refId && (
+        <p className="text-[10px] text-gray-400 font-mono">
+          شماره پیگیری: {payment.onlinePayment.refId}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/* ─── Tracking Item Badge ────────────────────────────────────────────── */
+function TrackingItemBadge({ trackingItem, onRemove }) {
+  return (
+    <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 group">
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-mono font-bold text-gray-700 truncate">
+          {trackingItem.trackingId}
+        </p>
+        <div className="flex items-center gap-2 mt-0.5">
+          <span className="text-[10px] text-gray-400 font-mono truncate">
+            {trackingItem.barcode}
+          </span>
+          {trackingItem.procurementStatus && (
+            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full
+              ${trackingItem.procurementStatus === "IN_STOCK"
+                ? "bg-green-50 text-green-600 border border-green-200"
+                : trackingItem.procurementStatus === "TO_PURCHASE"
+                  ? "bg-amber-50 text-amber-600 border border-amber-200"
+                  : "bg-blue-50 text-blue-600 border border-blue-200"}`}>
+              {trackingItem.procurementStatus === "IN_STOCK" ? "انبار"
+                : trackingItem.procurementStatus === "TO_PURCHASE" ? "خرید"
+                  : "خریداری شد"}
+            </span>
+          )}
+          <span className="text-[10px] text-gray-400">
+            {TRACKING_STATUS_LABELS[trackingItem.status] || trackingItem.status}
+          </span>
+        </div>
+      </div>
+      {/* onRemove فقط وقتی پاس داده می‌شود که orderTracking.assign را داشته باشد */}
+      {onRemove && (
+      <button onClick={() => onRemove(trackingItem._id)}
+        className="opacity-0 group-hover:opacity-100 w-6 h-6 flex items-center justify-center
+          text-red-400 hover:text-red-600 transition rounded-lg hover:bg-red-50">
+        <Trash2 size={12} />
+      </button>
+      )}
+    </div>
+  );
+}
+
+/* ─── Order Items Tracking Panel ─────────────────────────────────────── */
+function TrackingPanel({ orderId, orderItems, orderFulfillmentStatus, onStatusChange }) {
+  const { can } = useAdminPermissions();
+  const canAssign = can("orderTracking.assign");
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [scanModal, setScanModal] = useState(null); // {item, itemIndex}
+  const [expanded, setExpanded] = useState({});
+
+  const fetchTracking = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/admin/orders/${orderId}/tracking`);
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.message || "خطا در دریافت اطلاعات ترکینگ");
+      setData(d);
+    } catch (err) {
+      toast.error("خطا در دریافت اطلاعات ترکینگ");
+    } finally {
+      setLoading(false);
+    }
+  }, [orderId]);
+
+  useEffect(() => { fetchTracking(); }, [fetchTracking]);
+
+  const handleRemoveTracking = async (trackingItemId) => {
+    const result = await Swal.fire({
+      ...getSwalTheme(),
+      title: "حذف بارکد از سفارش",
+      text: "آیا مطمئن هستید که می‌خواهید این بارکد را از سفارش جدا کنید؟",
+      showCancelButton: true,
+      confirmButtonText: "بله، جدا کن",
+      cancelButtonText: "انصراف",
+      confirmButtonColor: "#dc2626",
+    });
+    if (!result.isConfirmed) return;
+
+    try {
+      const res = await fetch(`/api/admin/orders/${orderId}/tracking`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ trackingItemId }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.message);
+      toast.success(d.message);
+      fetchTracking();
+    } catch (err) {
+      toast.error(err.message || "خطا در حذف");
+    }
+  };
+
+  // بلوک نمایش بارکدهای اسکن‌شده + دکمه افزودن، برای یک خط (اصلی یا انتخاب فرایند)
+  // target: داده‌ی موردنیاز برای باز کردن ScanModal
+  // procurementStatus: وضعیت تأمینِ این خط روی سفارش (TO_PURCHASE یعنی منتظر خرید)
+  const renderTrackingBlock = ({
+    trackingItems,
+    scannedCount,
+    quantity,
+    remainingCount,
+    procurementStatus,
+    manualTracking = [],
+    manualTrackingRevision = 0,
+    target,
+    addLabel = "اسکن بارکد",
+  }) => {
+    const complete = remainingCount <= 0;
+    const isToPurchase = procurementStatus === "TO_PURCHASE";
+    const remainText = new Intl.NumberFormat("fa-IR").format(remainingCount);
+    return (
+      <div className="space-y-2">
+        {trackingItems.length > 0 && (
+          <div className="space-y-2">
+            {trackingItems.map((t) => (
+              <TrackingItemBadge
+                key={t._id}
+                trackingItem={t}
+                onRemove={canAssign ? handleRemoveTracking : undefined}
+              />
+            ))}
+          </div>
+        )}
+
+        <ManualTrackingEditor
+          orderId={orderId}
+          target={{ itemId: target.itemId, orderItemIndex: target.orderItemIndex, flowNodeId: target.flowNodeId }}
+          line={{ manualTracking, manualTrackingRevision, scannedCount }}
+          quantity={quantity}
+          canEdit={canAssign && data?.order?.fulfillmentStatus !== "CANCELED"}
+          onSaved={async () => { await fetchTracking(); onStatusChange?.(); }}
+        />
+
+        {/* خطی که «باید خریداری شود» علامت خورده و هنوز خریداری/اسکن نشده */}
+        {!complete && isToPurchase && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-xs font-bold text-amber-700 bg-amber-50
+              border border-amber-200 rounded-xl px-3 py-2">
+              <ShoppingBag size={13} className="shrink-0" />
+              {remainText} عدد باید خریداری شود — پس از خرید، بارکد را وارد/اسکن کنید
+            </div>
+            {canAssign && (
+            <button
+              onClick={() => setScanModal({ ...target, mode: "scan_purchased" })}
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold
+                bg-amber-500 hover:bg-amber-600 text-white transition"
+            >
+              <Scan size={16} />
+              خریداری شد — ثبت بارکد ({remainText} عدد باقی‌مانده)
+            </button>
+            )}
+          </div>
+        )}
+
+        {!complete && !isToPurchase && canAssign && (
+          <button
+            onClick={() => setScanModal({ ...target, mode: "choose" })}
+            className="w-full flex items-center justify-center gap-2 py-2.5 border-2 border-dashed
+              border-[var(--color-primary)]/40 hover:border-[var(--color-primary)] rounded-xl text-sm font-bold
+              text-[var(--color-primary)]/70 hover:text-[var(--color-primary)] bg-[var(--color-primary)]/5 hover:bg-[var(--color-primary)]/10 transition"
+          >
+            <Plus size={16} />
+            {addLabel} ({remainText} عدد باقی‌مانده)
+          </button>
+        )}
+
+        {complete && (
+          <div className="flex items-center gap-2 text-xs text-green-600 font-bold">
+            <CheckCircle size={13} />
+            تمام {new Intl.NumberFormat("fa-IR").format(quantity)} عدد تعیین وضعیت شد
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-8 gap-2 text-sm text-gray-400">
+        <Loader2 size={16} className="animate-spin text-[var(--color-primary)]" />
+        در حال بارگذاری اطلاعات ترکینگ...
+      </div>
+    );
+  }
+
+  if (!data) return null;
+
+  const totalHandled = data.totalScanned + (data.totalManual || 0);
+  const allComplete = totalHandled >= data.totalRequired && data.totalRequired > 0;
+
+  return (
+    <div className="space-y-4">
+      {/* Summary */}
+      <div className={`rounded-2xl p-4 border ${allComplete
+          ? "bg-green-50 border-green-200"
+          : "bg-blue-50 border-blue-200"
+        }`}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            {allComplete
+              ? <CheckCircle size={18} className="text-green-600" />
+              : <Scan size={18} className="text-blue-600" />}
+            <div>
+              <p className={`text-sm font-black ${allComplete ? "text-green-800" : "text-blue-800"}`}>
+                {allComplete ? "همه محصولات تعیین وضعیت شدند" : "در حال تعیین وضعیت محصولات"}
+              </p>
+              <p className={`text-xs mt-0.5 ${allComplete ? "text-green-600" : "text-blue-600"}`}>
+                {new Intl.NumberFormat("fa-IR").format(data.totalScanned)} از{" "}
+                {new Intl.NumberFormat("fa-IR").format(data.totalRequired)} عدد اسکن شده
+                {data.totalManual > 0 && ` · ${new Intl.NumberFormat("fa-IR").format(data.totalManual)} عدد با وضعیت دستی`}
+                {` · ${new Intl.NumberFormat("fa-IR").format(Math.max(0, data.totalRequired - totalHandled))} عدد باقی‌مانده`}
+              </p>
+            </div>
+          </div>
+          <button onClick={fetchTracking}
+            aria-label="تازه‌سازی اطلاعات ترکینگ"
+            className="w-8 h-8 flex items-center justify-center rounded-xl bg-white/70 hover:bg-white text-gray-500 transition">
+            <RefreshCw size={14} />
+          </button>
+        </div>
+
+        {/* Progress bar */}
+        <div className="mt-3 bg-white/50 rounded-full h-2 overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all duration-500 ${allComplete ? "bg-green-500" : "bg-blue-500"}`}
+            style={{ width: `${data.totalRequired > 0 ? Math.min(100, (totalHandled / data.totalRequired) * 100) : 0}%` }}
+          />
+        </div>
+      </div>
+
+      {/* Per-item tracking */}
+      {data.itemsWithTracking.map((item) => {
+        const orderItem = orderItems?.[item.index];
+        const flowList = item.flowTracking || [];
+        const mainRequired = item.isUsed ? 1 : item.quantity;
+        const itemRequired =
+          mainRequired + flowList.reduce((s, f) => s + f.quantity, 0);
+        const itemScanned =
+          item.scannedCount + (item.manualCount || 0) + flowList.reduce((s, f) => s + f.scannedCount + (f.manualCount || 0), 0);
+        const isComplete = itemScanned >= itemRequired && itemRequired > 0;
+        const isExpanded = expanded[item.index] !== false; // default open
+
+        return (
+          <div key={item.index}
+            className={`border rounded-2xl overflow-hidden transition ${isComplete ? "border-green-200" : "border-gray-200"
+              }`}>
+            {/* Item header */}
+            <button
+              onClick={() => setExpanded((e) => ({ ...e, [item.index]: !isExpanded }))}
+              className="w-full flex items-center gap-3 p-4 bg-gray-50/80 hover:bg-gray-100/80 transition text-right"
+            >
+              {item.product?.mainImage && (
+                <img src={item.product.mainImage} alt=""
+                  className="w-10 h-10 rounded-xl object-cover border border-gray-200 flex-shrink-0" />
+              )}
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-gray-800 whitespace-normal [overflow-wrap:anywhere] flex flex-wrap items-center gap-1.5">
+                  {item.product?.name}
+                  {item.isUsed && (
+                    <span className="text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full shrink-0">
+                      دست دوم
+                    </span>
+                  )}
+                </p>
+                {(orderItem?.variantSnapshot?.length ||
+                  (item.variant?.attributes &&
+                    Object.keys(item.variant.attributes).length > 0)) && (
+                  <div className="mt-1.5">
+                    <VariantSummary
+                      snapshot={orderItem?.variantSnapshot}
+                      attributes={item.variant?.attributes}
+                    />
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <span className={`text-xs font-black px-2.5 py-1 rounded-full ${isComplete
+                    ? "bg-green-100 text-green-700"
+                    : itemScanned > 0
+                      ? "bg-blue-100 text-blue-700"
+                      : "bg-gray-100 text-gray-500"
+                  }`}>
+                  {new Intl.NumberFormat("fa-IR").format(itemScanned)}/
+                  {new Intl.NumberFormat("fa-IR").format(itemRequired)}
+                </span>
+                {isExpanded ? <ChevronUp size={14} className="text-gray-400" /> : <ChevronDown size={14} className="text-gray-400" />}
+              </div>
+            </button>
+
+            {/* Expanded content */}
+            <AnimatePresence>
+              {isExpanded && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="overflow-hidden"
+                >
+                  <div className="p-4 space-y-4 border-t border-gray-100">
+                    {/* ─── خط محصول اصلی ─── */}
+                    <div className="space-y-2">
+                      <p className="text-xs font-bold text-gray-500 flex items-center gap-1.5">
+                        <Package size={12} className="text-[var(--color-primary)]" />
+                        محصول اصلی
+                      </p>
+
+                      {item.isUsed ? (
+                        // محصول دست دوم — اختصاص خودکار، فقط نمایش
+                        item.trackingItems.length > 0 ? (
+                          <div className="space-y-2">
+                            {item.trackingItems.map((t) => (
+                              <TrackingItemBadge
+                                key={t._id}
+                                trackingItem={t}
+                                onRemove={canAssign ? handleRemoveTracking : undefined}
+                              />
+                            ))}
+                            <p className="flex items-center gap-1.5 text-[11px] text-green-600 font-medium">
+                              <CheckCircle size={12} />
+                              کد رهگیری به‌صورت خودکار اختصاص یافت
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
+                            <AlertTriangle size={13} className="shrink-0" />
+                            کد رهگیری انبار برای این محصول دست دوم هنوز ثبت/اختصاص نشده است
+                          </div>
+                        )
+                      ) : (
+                        renderTrackingBlock({
+                          trackingItems: item.trackingItems,
+                          scannedCount: item.scannedCount,
+                          quantity: item.quantity,
+                          remainingCount: item.remainingCount,
+                          procurementStatus: item.procurementStatus,
+                          manualTracking: item.manualTracking,
+                          manualTrackingRevision: item.manualTrackingRevision,
+                          addLabel: "اسکن بارکد",
+                          target: {
+                            itemId: item.itemId,
+                            productName: item.product?.name,
+                            productImage: item.product?.mainImage,
+                            productSku: item.product?.sku,
+                            expectedProductId: item.product?._id,
+                            orderItemIndex: item.index,
+                            flowNodeId: null,
+                            quantity: item.quantity,
+                          },
+                        })
+                      )}
+                    </div>
+
+                    {item.isUsed && (
+                      <ManualTrackingEditor
+                        orderId={orderId}
+                        target={{ itemId: item.itemId, orderItemIndex: item.index }}
+                        line={item}
+                        quantity={1}
+                        canEdit={canAssign && data.order?.fulfillmentStatus !== "CANCELED"}
+                        onSaved={async () => { await fetchTracking(); onStatusChange?.(); }}
+                      />
+                    )}
+
+                    {/* ─── خطوط انتخاب‌های فرایند سفارش ─── */}
+                    {flowList.map((f) => (
+                      <div key={f.nodeId} className="space-y-2 border-t border-gray-100 pt-3">
+                        <div className="flex items-center gap-2">
+                          {f.product?.mainImage ? (
+                            <img src={f.product.mainImage} alt=""
+                              className="w-8 h-8 rounded-lg object-cover border border-gray-200 shrink-0" />
+                          ) : (
+                            <span className="w-8 h-8 rounded-lg bg-[var(--color-primary)]/10 flex items-center justify-center shrink-0">
+                              <Tag size={13} className="text-[var(--color-primary)]" />
+                            </span>
+                          )}
+                          <div className="min-w-0">
+                            <p className="text-[11px] text-gray-400 leading-tight">
+                              {f.nodeLabel} <span className="text-[var(--color-primary)]">(انتخاب فرایند)</span>
+                            </p>
+                            <FlowProductIdentity name={f.product?.name} variantLabel={f.variantLabel} />
+                          </div>
+                        </div>
+
+                        {renderTrackingBlock({
+                          trackingItems: f.trackingItems,
+                          scannedCount: f.scannedCount,
+                          quantity: f.quantity,
+                          remainingCount: f.remainingCount,
+                          procurementStatus: f.procurementStatus,
+                          manualTracking: f.manualTracking,
+                          manualTrackingRevision: f.manualTrackingRevision,
+                          addLabel: "اسکن بارکد این مورد",
+                          target: {
+                            itemId: item.itemId,
+                            productName: `${f.product?.name || ""}${f.variantLabel ? ` (${f.variantLabel})` : ""}`,
+                            productImage: f.product?.mainImage,
+                            productSku: f.product?.sku,
+                            expectedProductId: f.product?._id,
+                            orderItemIndex: item.index,
+                            flowNodeId: f.nodeId,
+                            quantity: f.quantity,
+                          },
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        );
+      })}
+
+      {/* Scan Modal */}
+      <AnimatePresence>
+        {scanModal && (
+          <ScanModal
+            target={scanModal}
+            mode={scanModal.mode || "choose"}
+            orderId={orderId}
+            onSuccess={() => { fetchTracking(); onStatusChange?.(); }}
+            onClose={() => setScanModal(null)}
+          />
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+/* ─── EUR Panel (سیستم یورو — کاملاً مستقل از تومان) ─────────────────── */
+// این پنل فقط فیلدهای یورویی سفارش را می‌خواند/می‌نویسد و هیچ تأثیری روی
+// مبلغ، پرداخت‌ها یا مانده‌ی تومانی ندارد. مانده‌ی یورو دقیقاً مثل مانده‌ی
+// تومان، سمت کلاینت از روی priceEUR و paymentsEUR محاسبه می‌شود.
+function EurPanel({ orderId, priceEUR, items = [], paymentsEUR = [], onChange, onEditPayment }) {
+  // /api/admin/orders/[orderId]/eur — همه‌ی متدها با همین یک کلید گیت شده‌اند
+  const { can } = useAdminPermissions();
+  const canSetCurrency = can("orders.setCurrency");
+  const [editPrice, setEditPrice] = useState(false);
+  const [priceInput, setPriceInput] = useState(
+    priceEUR === null || priceEUR === undefined ? "" : String(priceEUR)
+  );
+  const [savingPrice, setSavingPrice] = useState(false);
+
+  // باز/بستن حالت ویرایش قیمت — هنگام باز شدن، ورودی را از مقدار فعلی پر می‌کند.
+  // (نمایش حالت غیرویرایش مستقیماً از priceEUR خوانده می‌شود، پس نیازی به sync افکتی نیست)
+  const toggleEditPrice = () => {
+    setEditPrice((open) => {
+      if (!open) {
+        setPriceInput(
+          priceEUR === null || priceEUR === undefined ? "" : String(priceEUR)
+        );
+      }
+      return !open;
+    });
+  };
+
+  const hasPrice = priceEUR !== null && priceEUR !== undefined;
+  const totalPaidEUR = paymentsEUR.reduce((s, p) => s + (p.amount || 0), 0);
+  const remainingEUR = hasPrice ? priceEUR - totalPaidEUR : null;
+
+  // جمعِ قیمت‌های یوروییِ اقلام — هم‌ارزِ services/orderEurRecalc.js سمت سرور.
+  // فقط برای نمایش است؛ منبعِ حقیقت همان چیزی است که سرور ذخیره کرده.
+  const eurItems = items.filter(
+    (it) => it?.priceEUR !== null && it?.priceEUR !== undefined
+  );
+  const itemsEurTotal =
+    Math.round(
+      eurItems.reduce(
+        (s, it) => s + Number(it.priceEUR) * Math.max(1, Number(it.quantity) || 1),
+        0
+      ) * 100
+    ) / 100;
+  const hasItemEurPrices = eurItems.length > 0;
+  // اگر ادمین بعد از قیمت‌گذاریِ اقلام، مبلغ کل را دستی عوض کرده باشد این دو
+  // با هم فرق می‌کنند — یک هشدارِ نرم نشان می‌دهیم (بدون بازنویسیِ خودکار).
+  const overriddenTotal = hasItemEurPrices && hasPrice && priceEUR !== itemsEurTotal;
+
+  const handleSavePrice = async () => {
+    setSavingPrice(true);
+    try {
+      const res = await fetch(`/api/admin/orders/${orderId}/eur`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          priceEUR: priceInput.trim() === "" ? null : Number(priceInput),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "خطا");
+      toast.success(data.message || "قیمت یورو ذخیره شد");
+      setEditPrice(false);
+      onChange?.();
+    } catch (err) {
+      toast.error(err.message || "خطا در ذخیره قیمت یورو");
+    } finally {
+      setSavingPrice(false);
+    }
+  };
+
+  const handleDeletePayment = async (paymentId) => {
+    const result = await Swal.fire({
+      ...getSwalTheme(),
+      title: "حذف پرداخت یورویی",
+      text: "آیا از حذف این پرداخت یورو مطمئن هستید؟",
+      showCancelButton: true,
+      confirmButtonText: "بله، حذف کن",
+      cancelButtonText: "انصراف",
+      confirmButtonColor: "#dc2626",
+    });
+    if (!result.isConfirmed) return;
+    try {
+      const res = await fetch(`/api/admin/orders/${orderId}/eur`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paymentId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "خطا");
+      toast.success(data.message || "پرداخت یورویی حذف شد");
+      onChange?.();
+    } catch (err) {
+      toast.error(err.message || "خطا در حذف پرداخت یورو");
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2">
+          <span className="w-7 h-7 rounded-xl bg-[var(--color-primary)] flex items-center justify-center">
+            <Euro size={14} className="text-white" />
+          </span>
+          سیستم یورو (EUR)
+        </h3>
+        <span className="text-[10px] font-bold text-[var(--color-primary)] bg-[var(--color-primary)]/10 border border-[var(--color-primary)]/20 px-2 py-0.5 rounded-full">
+          مستقل از {storeConfig.commerce.currency.label}
+        </span>
+      </div>
+
+      {/* ─── قیمت یورویی سفارش ─── */}
+      <div className="bg-gray-50 border border-gray-100 rounded-xl p-3.5 space-y-3">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-bold text-gray-600">قیمت سفارش (یورو)</span>
+          {canSetCurrency && (
+          <button
+            onClick={toggleEditPrice}
+            className={`flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-lg transition
+              ${editPrice
+                ? "bg-gray-200 text-gray-600"
+                : "bg-[var(--color-primary)]/10 text-[var(--color-primary)] hover:bg-[var(--color-primary)]/20"}`}
+          >
+            <Edit3 size={10} />
+            {editPrice ? "انصراف" : hasPrice ? "ویرایش" : "تعیین قیمت"}
+          </button>
+          )}
+        </div>
+
+        {editPrice ? (
+          <div className="space-y-2">
+            <div className="relative">
+              <AdminInput
+                type="number"
+                step="any"
+                min="0"
+                value={priceInput}
+                onChange={(e) => setPriceInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSavePrice()}
+                placeholder="مبلغ را به یورو وارد کنید"
+                dir="ltr"
+                className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm font-bold text-gray-800 text-left
+                  focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/30 focus:border-[var(--color-primary)] transition"
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">€</span>
+            </div>
+            <button
+              onClick={handleSavePrice}
+              disabled={savingPrice}
+              className="w-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white font-bold py-2.5 rounded-xl text-sm
+                transition flex items-center justify-center gap-2 disabled:opacity-60"
+            >
+              {savingPrice ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+              ذخیره قیمت یورو
+            </button>
+          </div>
+        ) : (
+          <p className="text-2xl font-black text-gray-900 tabular-nums" dir="ltr">
+            {hasPrice ? (
+              <>€ {formatEUR(priceEUR)}</>
+            ) : (
+              <span className="text-sm text-gray-400 font-bold">قیمت یورویی تعیین نشده</span>
+            )}
+          </p>
+        )}
+
+        {/* رابطه‌ی مبلغ کل با قیمت یوروییِ اقلام — این فیلد همچنان دستی قابل
+            ویرایش است، ولی با هر تغییرِ قیمت یوروییِ یک قلم دوباره از روی
+            مجموعِ اقلام محاسبه و بازنویسی می‌شود. */}
+        {hasItemEurPrices && (
+          <div className="space-y-1 border-t border-gray-200 pt-2">
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="font-bold text-gray-500">
+                مجموع قیمت یورویی اقلام ({new Intl.NumberFormat("fa-IR").format(eurItems.length)} قلم)
+              </span>
+              <span className="font-black text-gray-700" dir="ltr">
+                € {formatEUR(itemsEurTotal)}
+              </span>
+            </div>
+            {overriddenTotal ? (
+              <p className="flex items-start gap-1 text-[10px] leading-relaxed text-amber-700">
+                <AlertTriangle size={11} className="mt-px shrink-0" />
+                مبلغ کل به‌صورت دستی بازنویسی شده و با مجموع اقلام یکی نیست. با
+                اولین تغییر در قیمت یوروییِ هر قلم، دوباره برابرِ مجموع اقلام می‌شود.
+              </p>
+            ) : (
+              <p className="text-[10px] leading-relaxed text-gray-400">
+                مبلغ کل از مجموع قیمت یوروییِ اقلام محاسبه شده است. ویرایش دستی آزاد
+                است، ولی با تغییر قیمت یوروییِ هر قلم دوباره بازمحاسبه می‌شود.
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ─── تاریخچه‌ی پرداخت‌های یورویی ─── */}
+      {/* پرداخت‌های یورویی از داخل مودال «تأیید رسید» ثبت می‌شوند (اختیاری، در کنار مبلغ تومان) */}
+      {paymentsEUR.length > 0 ? (
+        <div className="space-y-2">
+          <p className="text-xs font-bold text-gray-500 flex items-center gap-1.5">
+            <Wallet size={12} className="text-[var(--color-primary)]" />
+            پرداخت‌های یورویی
+          </p>
+          {paymentsEUR.map((p) => (
+            <div
+              key={p._id}
+              className="flex items-center justify-between gap-2 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 group"
+            >
+              <div className="min-w-0">
+                <p className="text-sm font-black text-gray-800" dir="ltr">€ {formatEUR(p.amount)}</p>
+                <p className="text-[10px] text-gray-400">
+                  {toFarsiDate(p.confirmedAt || p.createdAt)}
+                  {p.note ? ` — ${p.note}` : ""}
+                  {p.editedAt ? " — ویرایش‌شده" : ""}
+                </p>
+              </div>
+              <div className="flex items-center gap-1 flex-shrink-0">
+                {canSetCurrency && (
+                <button
+                  onClick={() => onEditPayment?.(p)}
+                  title="ویرایش مبلغ"
+                  className="opacity-0 group-hover:opacity-100 w-7 h-7 flex items-center justify-center
+                    text-gray-400 hover:text-[var(--color-primary)] transition rounded-lg hover:bg-[var(--color-primary)]/10"
+                >
+                  <Pencil size={12} />
+                </button>
+                )}
+                {canSetCurrency && (
+                <button
+                  onClick={() => handleDeletePayment(p._id)}
+                  className="opacity-0 group-hover:opacity-100 w-7 h-7 flex items-center justify-center
+                    text-red-400 hover:text-red-600 transition rounded-lg hover:bg-red-50"
+                >
+                  <Trash2 size={13} />
+                </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-[11px] text-gray-400 leading-relaxed bg-gray-50 border border-gray-100 rounded-xl px-3 py-2">
+          پرداخت یورویی هنگام «تأیید رسید» و با پر کردن فیلد اختیاری یورو ثبت می‌شود.
+        </p>
+      )}
+
+      {/* ─── خلاصه‌ی مالی یورو ─── */}
+      <div className="border-t border-gray-100 pt-3 space-y-2 text-xs">
+        <div className="flex justify-between text-gray-500">
+          <span>قیمت سفارش (یورو)</span>
+          <span className="font-bold text-gray-700" dir="ltr">
+            {hasPrice ? `€ ${formatEUR(priceEUR)}` : "—"}
+          </span>
+        </div>
+        <div className="flex justify-between text-gray-500">
+          <span>مجموع پرداخت‌های یورویی</span>
+          <span className="font-bold text-green-600" dir="ltr">€ {formatEUR(totalPaidEUR)}</span>
+        </div>
+        {hasPrice && (
+          <div className={`flex justify-between font-black text-sm pt-1 border-t border-gray-100
+            ${remainingEUR < 0 ? "text-blue-600" : remainingEUR > 0 ? "text-red-600" : "text-green-600"}`}>
+            <span>
+              {remainingEUR < 0 ? "اضافه‌پرداخت (یورو)" : remainingEUR > 0 ? "مانده پرداخت (یورو)" : "تسویه کامل یورو"}
+            </span>
+            <span dir="ltr">€ {formatEUR(Math.abs(remainingEUR))}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Main Page ─────────────────────────────────────────────────────── */
+/* ─── Management Discount Modal (تخفیف مدیریت) ──────────────────────── */
+// اعمالِ یک تخفیف دستیِ متعلق به همین سفارش — دقیقاً همان فیلد/محاسبه‌ی کوپن،
+// فقط بدون ساختن کدِ تخفیفِ سراسری.
+function ManagementDiscountModal({ order, orderId, onSuccess, onClose }) {
+  const hasRealCoupon = Boolean(order.coupon?.code) && !order.coupon?.isManual;
+  const [amount, setAmount] = useState(
+    order.coupon?.isManual ? String(order.couponDiscount || "") : ""
+  );
+  const [submitting, setSubmitting] = useState(false);
+  const inputRef = useRef(null);
+
+  useEffect(() => { setTimeout(() => inputRef.current?.focus(), 100); }, []);
+
+  const parsed = Math.floor(Number(String(amount).replace(/,/g, "")));
+  const valid = Number.isFinite(parsed) && parsed > 0;
+
+  const handleSubmit = async () => {
+    if (!valid) { toast.error("مبلغ تخفیف را به‌درستی وارد کنید"); return; }
+    setSubmitting(true);
+    try {
+      const res = await fetch(`/api/admin/orders/${orderId}/discount`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount: parsed }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "خطا در اعمال تخفیف");
+      toast.success(data.message || "تخفیف مدیریت اعمال شد");
+      onSuccess();
+      onClose();
+    } catch (err) {
+      toast.error(err.message || "خطا در اعمال تخفیف");
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[260] flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)" }}
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ scale: 0.92, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }}
+        exit={{ scale: 0.92, opacity: 0, y: 20 }}
+        transition={{ type: "spring", damping: 24, stiffness: 280 }}
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden"
+        dir="rtl" onClick={(e) => e.stopPropagation()}
+      >
+        <div className="bg-[var(--color-primary)] px-5 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-white">
+            <Tag size={16} />
+            <span className="font-bold text-sm">تخفیف مدیریت</span>
+          </div>
+          <button onClick={onClose} className="text-white/70 hover:text-white transition">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="p-5 space-y-4">
+          {hasRealCoupon && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-700 leading-relaxed">
+              <div className="flex items-center gap-1.5 font-bold mb-1">
+                <AlertTriangle size={12} /><span>این سفارش کد تخفیف دارد</span>
+              </div>
+              <p>
+                کد «{couponDisplayCode(order.coupon)}» به مبلغ {formatPrice(order.couponDiscount)} {storeConfig.commerce.currency.label} روی این سفارش فعال است؛
+                ابتدا باید آن حذف شود (این مسیر جایگزینِ خودکار انجام نمی‌دهد).
+              </p>
+            </div>
+          )}
+          <div>
+            <label className="block text-sm font-bold text-gray-700 mb-2">
+              مبلغ تخفیف ({storeConfig.commerce.currency.label}) <span className="text-red-500">*</span>
+            </label>
+            <div className="relative">
+              <AdminInput
+                ref={inputRef} type="number" min="1" value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
+                disabled={hasRealCoupon}
+                placeholder={`مبلغ را به ${storeConfig.commerce.currency.label} وارد کنید`}
+                className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm font-bold text-gray-800
+                  focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/30 focus:border-[var(--color-primary)] transition
+                  disabled:opacity-50"
+              />
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">{storeConfig.commerce.currency.label}</span>
+            </div>
+          </div>
+          <div className="flex gap-3">
+            <button onClick={handleSubmit} disabled={submitting || !valid || hasRealCoupon}
+              className="flex-1 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white font-bold py-2.5 rounded-xl text-sm
+                transition flex items-center justify-center gap-2 disabled:opacity-60">
+              {submitting ? <Loader2 size={15} className="animate-spin" /> : <Tag size={15} />}
+              اعمال تخفیف
+            </button>
+            <button onClick={onClose}
+              className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold py-2.5 rounded-xl text-sm transition">
+              انصراف
+            </button>
+          </div>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+export default function AdminOrderDetailClient({ orderId }) {
+  const router = useRouter();
+
+  // کلیدها دقیقاً همان‌هایی‌اند که روت‌های /api/admin/orders/[orderId]/* با
+  // آن‌ها گیت شده‌اند (src/lib/apiPermissions.js) — نه یک نگاشتِ موازی.
+  const { can } = useAdminPermissions();
+  const canChangeStatus = can("orders.changeStatus");
+  const canEditItems = can("orders.editItems");
+  const canAdjustDiscount = can("orders.adjustDiscount");
+  const canEditPayment = can("payments.edit");
+  // همان کلیدی که کلِ سیستم یورو (شامل قیمت یوروییِ اقلام) با آن گیت شده است
+  const canSetCurrency = can("orders.setCurrency");
+  // بدونِ این کلید کلِ «منطقه‌ی خطر» رندر نمی‌شود — نه غیرفعال، نه پنهانِ CSSی.
+  // (این فقط رابط است؛ اجرای واقعی در DELETE /api/admin/orders/[orderId] است.)
+  const canDeleteOrder = can("orders.delete");
+  const [order, setOrder] = useState(null);
+  const [installment, setInstallment] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [lightboxUrl, setLightboxUrl] = useState(null);
+  const [approveTarget, setApproveTarget] = useState(null);
+  const [editStatus, setEditStatus] = useState(false);
+  const [payStatus, setPayStatus] = useState("");
+  const [fulStatus, setFulStatus] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [activeTab, setActiveTab] = useState("details"); // "details" | "tracking"
+  const [addItemOpen, setAddItemOpen] = useState(false);
+  const [editPaymentTarget, setEditPaymentTarget] = useState(null); // { payment, currency }
+  const [itemBusy, setItemBusy] = useState(null); // item._id در حال تغییر
+  const [discountModalOpen, setDiscountModalOpen] = useState(false);
+  const [discountBusy, setDiscountBusy] = useState(false);
+  // ویرایشِ قیمت یوروییِ اقلام: { [itemId]: "متنِ ورودی" } — فقط قلم‌هایی که
+  // ادمین بازشان کرده در این شیء هستند، پس بقیه‌ی اقلام دست‌نخورده می‌مانند.
+  const [itemEurDraft, setItemEurDraft] = useState({});
+  const [itemEurBusy, setItemEurBusy] = useState(null); // item._id در حال ذخیره
+  // چاپِ برگه‌ی آدرس، در دو گام: انتخابِ فرستنده → حالتِ چاپ روی همین صفحه.
+  // `printJob` تنها حالتی است که این قابلیت نگه می‌دارد؛ null یعنی حالتِ چاپ
+  // اصلاً mount نیست، پس نه استایلی و نه شنونده‌ای در کار است.
+  const [senderModalOpen, setSenderModalOpen] = useState(false);
+  const [printJob, setPrintJob] = useState(null); // { sender, paperSize } | null
+  const [deleting, setDeleting] = useState(false);
+
+  const fetchOrder = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/admin/orders/${orderId}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "خطا");
+      setOrder(data.order);
+      setInstallment(data.installment || null);
+      setPayStatus(data.order.paymentStatus);
+      setFulStatus(data.order.fulfillmentStatus);
+    } catch (err) {
+      toast.error(err.message || "خطا در دریافت سفارش");
+    } finally {
+      setLoading(false);
+    }
+  }, [orderId]);
+
+  useEffect(() => { fetchOrder(); }, [fetchOrder]);
+
+  const handleApprovePayment = async (confirmedAmount, eurAmount = null) => {
+    try {
+      // ۱) تأیید پرداخت تومانی — مسیر موجود و دست‌نخورده
+      const res = await fetch(`/api/admin/payments/${approveTarget._id}/approve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirmedAmount }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "خطا");
+
+      // ۲) ثبت پرداخت یورویی (اختیاری) — کاملاً مستقل از تومان، مسیر جداگانه.
+      //    اگر این مرحله خطا بدهد، تأیید تومانی که قبلاً موفق شده را خراب نمی‌کند.
+      if (eurAmount && eurAmount > 0) {
+        try {
+          const eurRes = await fetch(`/api/admin/orders/${orderId}/eur`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ amount: eurAmount, note: "ثبت همراه تأیید رسید" }),
+          });
+          const eurData = await eurRes.json();
+          if (!eurRes.ok) {
+            toast.error(eurData.message || "خطا در ثبت پرداخت یورو");
+          } else {
+            toast.success("پرداخت یورو نیز ثبت شد");
+          }
+        } catch {
+          toast.error("خطا در ثبت پرداخت یورو");
+        }
+      }
+
+      toast.success(data.message || "پرداخت تأیید شد");
+      setApproveTarget(null);
+      fetchOrder();
+    } catch (err) {
+      toast.error(err.message || "خطا در تأیید پرداخت");
+    }
+  };
+
+  const handleRejectPayment = async (paymentId) => {
+    const result = await Swal.fire({
+      ...getSwalTheme(),
+      title: "رد رسید بانکی",
+      html: `<div dir="rtl" class="text-right space-y-3">
+        <p class="text-sm text-gray-600">دلیل رد (اختیاری):</p>
+        <textarea id="swal-reason" class="w-full border border-gray-300 rounded-xl p-3 text-sm resize-none
+          focus:outline-none focus:ring-2 focus:ring-red-300" rows="3" placeholder="مثلاً: اطلاعات تراکنش مطابقت ندارد"></textarea>
+      </div>`,
+      showCancelButton: true,
+      confirmButtonText: "رد رسید",
+      cancelButtonText: "انصراف",
+      confirmButtonColor: "#dc2626",
+      preConfirm: () => document.getElementById("swal-reason")?.value?.trim() || "",
+    });
+    if (!result.isConfirmed) return;
+
+    try {
+      const res = await fetch(`/api/admin/payments/${paymentId}/reject`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rejectReason: result.value }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "خطا");
+      toast.success("رسید با موفقیت رد شد");
+      fetchOrder();
+    } catch (err) {
+      toast.error(err.message || "خطا در رد رسید");
+    }
+  };
+
+  const handleSaveStatus = async () => {
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/admin/orders/${orderId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paymentStatus: payStatus, fulfillmentStatus: fulStatus }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "خطا");
+      toast.success("وضعیت سفارش بروز شد");
+      setEditStatus(false);
+      fetchOrder();
+    } catch (err) {
+      toast.error(err.message || "خطا در ذخیره وضعیت");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ─── ویرایش تعداد یک آیتم ───
+  const handleEditItemQty = async (item, newQty) => {
+    if (!item._id || newQty < 1 || newQty === item.quantity) return;
+    setItemBusy(item._id);
+    try {
+      const res = await fetch(`/api/admin/orders/${orderId}/items`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemId: item._id, quantity: newQty }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "خطا");
+      await fetchOrder();
+    } catch (err) {
+      toast.error(err.message || "خطا در تغییر تعداد");
+    } finally {
+      setItemBusy(null);
+    }
+  };
+
+  // ─── حذف یک آیتم ───
+  const handleRemoveItem = async (item) => {
+    if (!item._id) return;
+    const result = await Swal.fire({
+      ...getSwalTheme(),
+      title: "حذف آیتم از سفارش",
+      text: `«${item.product?.name || "این آیتم"}» از سفارش حذف شود؟ مبلغ کل و مانده دوباره محاسبه می‌شوند.`,
+      showCancelButton: true,
+      confirmButtonText: "بله، حذف کن",
+      cancelButtonText: "انصراف",
+      confirmButtonColor: "#dc2626",
+    });
+    if (!result.isConfirmed) return;
+    setItemBusy(item._id);
+    try {
+      const res = await fetch(`/api/admin/orders/${orderId}/items`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemId: item._id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "خطا");
+      toast.success(data.message || "آیتم حذف شد");
+      await fetchOrder();
+    } catch (err) {
+      toast.error(err.message || "خطا در حذف آیتم");
+    } finally {
+      setItemBusy(null);
+    }
+  };
+
+  // ─── قیمت یوروییِ یک قلم (مستقل از تومان) ───
+  // مقدارِ ورودی «قیمت واحد به یورو» است؛ سهم این قلم در مبلغ کل = مقدار × تعداد.
+  // پس از ذخیره، سرور مبلغ کلِ یوروییِ سفارش را از روی مجموعِ اقلام بازمحاسبه
+  // می‌کند — به همین دلیل fetchOrder() صدا زده می‌شود تا پنل یورو هم به‌روز شود.
+  const openItemEurEditor = (item) => {
+    setItemEurDraft((prev) => ({
+      ...prev,
+      [item._id]:
+        item.priceEUR === null || item.priceEUR === undefined ? "" : String(item.priceEUR),
+    }));
+  };
+
+  const closeItemEurEditor = (itemId) => {
+    setItemEurDraft((prev) => {
+      const next = { ...prev };
+      delete next[itemId];
+      return next;
+    });
+  };
+
+  const handleSaveItemEur = async (item) => {
+    if (!item._id) return;
+    const raw = (itemEurDraft[item._id] ?? "").trim();
+
+    // رشته‌ی خالی = پاک کردنِ قیمت یوروییِ این قلم (نه صفر)
+    if (raw !== "") {
+      const parsed = Number(raw);
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        toast.error("قیمت یورو باید عددی نامنفی باشد");
+        return;
+      }
+    }
+
+    setItemEurBusy(item._id);
+    try {
+      const res = await fetch(`/api/admin/orders/${orderId}/eur/item`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemId: item._id, priceEUR: raw === "" ? null : Number(raw) }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "خطا");
+      toast.success(data.message || "قیمت یورویی آیتم ذخیره شد");
+      closeItemEurEditor(item._id);
+      await fetchOrder();
+    } catch (err) {
+      toast.error(err.message || "خطا در ذخیره قیمت یورویی آیتم");
+    } finally {
+      setItemEurBusy(null);
+    }
+  };
+
+  // ─── حذف تخفیف مدیریت ───
+  const handleRemoveDiscount = async () => {
+    const result = await Swal.fire({
+      ...getSwalTheme(),
+      title: "حذف تخفیف مدیریت",
+      text: "تخفیف مدیریت از این سفارش حذف شود؟ مبلغ کل دوباره محاسبه می‌شود.",
+      showCancelButton: true,
+      confirmButtonText: "بله، حذف کن",
+      cancelButtonText: "انصراف",
+      confirmButtonColor: "#dc2626",
+    });
+    if (!result.isConfirmed) return;
+    setDiscountBusy(true);
+    try {
+      const res = await fetch(`/api/admin/orders/${orderId}/discount`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "خطا");
+      toast.success(data.message || "تخفیف مدیریت حذف شد");
+      await fetchOrder();
+    } catch (err) {
+      toast.error(err.message || "خطا در حذف تخفیف");
+    } finally {
+      setDiscountBusy(false);
+    }
+  };
+
+  // ─── ویرایش مبلغ پرداخت (تومان یا یورو، مستقل) ───
+  const handleEditPayment = async (newAmount) => {
+    if (!editPaymentTarget) return;
+    const { payment, currency } = editPaymentTarget;
+    try {
+      let res, data;
+      if (currency === "eur") {
+        res = await fetch(`/api/admin/orders/${orderId}/eur`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ paymentId: payment._id, amount: newAmount }),
+        });
+      } else {
+        res = await fetch(`/api/admin/payments/${payment._id}/edit`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ amount: newAmount }),
+        });
+      }
+      data = await res.json();
+      if (!res.ok) throw new Error(data.message || "خطا");
+      toast.success(data.message || "مبلغ پرداخت ویرایش شد");
+      setEditPaymentTarget(null);
+      await fetchOrder();
+    } catch (err) {
+      toast.error(err.message || "خطا در ویرایش پرداخت");
+    }
+  };
+
+  /**
+   * حذفِ دائمیِ سفارش — دیالوگِ تأیید با تایپِ کدِ سفارش.
+   *
+   * `preConfirm` تنها وقتی اجازه‌ی ادامه می‌دهد که ورودی *دقیقاً* برابرِ
+   * `trackingCode` باشد؛ پس صرفِ کلیک روی دکمه‌ی تأیید چیزی را حذف نمی‌کند.
+   * همین مقدار دوباره در بدنه‌ی درخواست می‌رود و سرور مستقل بررسی‌اش می‌کند —
+   * این‌جا راحتیِ کاربر است، آن‌جا گارد.
+   */
+  const handleDeleteOrder = async () => {
+    const code = String(order?.trackingCode || "");
+    if (!code) {
+      toast.error("این سفارش کد رهگیری ندارد و از این مسیر قابل حذف نیست");
+      return;
+    }
+    const safeCode = code.replace(/[<>&"]/g, "");
+
+    const result = await Swal.fire({
+      ...getSwalTheme(),
+      icon: "warning",
+      title: "حذف دائمی سفارش",
+      html: `<div dir="rtl" class="text-right space-y-2">
+        <p class="text-sm text-gray-600 leading-relaxed">
+          این عملیات <b class="text-red-600">برگشت‌ناپذیر</b> است: سفارش، همه‌ی پرداخت‌های آن
+          و طرح اقساط مرتبط برای همیشه حذف می‌شوند.
+        </p>
+        <p class="text-sm text-gray-600">
+          برای تأیید حذف سفارش، کد سفارش را وارد کنید:
+          <b dir="ltr" class="inline-block font-mono text-gray-900">${safeCode}</b>
+        </p>
+      </div>`,
+      input: "text",
+      inputPlaceholder: safeCode,
+      inputAttributes: { autocapitalize: "off", autocorrect: "off", spellcheck: "false" },
+      showCancelButton: true,
+      confirmButtonText: "حذف دائمی سفارش",
+      cancelButtonText: "انصراف",
+      confirmButtonColor: "#dc2626",
+      preConfirm: (value) => {
+        if (String(value || "").trim() !== code) {
+          Swal.showValidationMessage("کد سفارش وارد‌شده صحیح نیست");
+          return false;
+        }
+        return code;
+      },
+    });
+    if (!result.isConfirmed) return;
+
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/admin/orders/${orderId}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirm: result.value }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "خطا");
+      toast.success(data.message || "سفارش حذف شد");
+      // replace، نه push: صفحه‌ی سفارشِ حذف‌شده نباید در تاریخچه‌ی مرورگر بماند
+      // (دکمه‌ی «بازگشت» روی یک ۴۰۴ می‌نشست).
+      router.replace("/p-admin/admin-orders");
+    } catch (err) {
+      toast.error(err.message || "خطا در حذف سفارش");
+      setDeleting(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: "var(--admin-bg, #f4f5f2)" }}>
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 size={32} className="animate-spin text-[var(--color-primary)]" />
+          <p className="text-sm text-gray-500">در حال بارگذاری سفارش...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!order) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: "var(--admin-bg, #f4f5f2)" }}>
+        <div className="text-center space-y-3">
+          <AlertCircle size={40} className="text-red-400 mx-auto" />
+          <p className="text-sm text-gray-600 font-bold">سفارش یافت نشد</p>
+          <button onClick={() => router.back()}
+            className="text-sm text-[var(--color-primary)] hover:underline">
+            بازگشت
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const payCfg = PAYMENT_STATUS[order.paymentStatus];
+  const fulCfg = FULFILLMENT_STATUS[order.fulfillmentStatus];
+  const methodCfg = PAYMENT_METHOD[order.paymentMethod];
+  const pendingReceipts = order.payments?.filter(
+    (p) => p.method === "BANK_RECEIPT" && p.status === "PENDING"
+  ).length || 0;
+  const hasOrderDiscount =
+    Number(order.discountAmount || 0) > 0 ||
+    Number(order.couponDiscount || 0) > 0;
+  const subtotalPrice =
+    order.subtotalPrice ??
+    Number(order.totalPrice || 0) +
+      Number(order.discountAmount || 0) +
+      Number(order.couponDiscount || 0);
+  // مبلغ باقیمانده قابل پرداخت — کل سفارش (پس از تخفیف مدیریت/کوپن) منهای پرداخت‌های تأییدشده
+  const totalPaidAmount = (order.payments || [])
+    .filter((p) => p.status === "PAID")
+    .reduce((sum, p) => sum + (p.amount || 0), 0);
+  const remainingDue = Math.max(Number(order.totalPrice || 0) - totalPaidAmount, 0);
+
+  return (
+    <div className="min-h-screen" style={{ background: "var(--admin-bg, #f4f5f2)" }} dir="rtl">
+      <div className="max-w-4xl mx-auto p-5 space-y-5">
+
+        {/* ─── Header ─── */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div>
+              <h1 className="text-lg font-black text-gray-900 flex items-center gap-2">
+                <div className="w-7 h-7 bg-[var(--color-primary)] rounded-xl flex items-center justify-center">
+                  <ShoppingCart size={13} className="text-white" />
+                </div>
+                جزئیات سفارش
+              </h1>
+              <p className="text-xs text-gray-400 font-mono mt-0.5">{order.trackingCode}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {pendingReceipts > 0 && (
+              <span className="flex items-center gap-1.5 bg-amber-50 border border-amber-200 text-amber-700
+                text-xs font-bold px-3 py-1.5 rounded-xl animate-pulse">
+                <AlertCircle size={12} />
+                {new Intl.NumberFormat("fa-IR").format(pendingReceipts)} رسید در انتظار
+              </span>
+            )}
+            <button
+              onClick={fetchOrder} disabled={loading}
+              className="flex items-center gap-1.5 bg-white border border-gray-200 text-gray-600
+                hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] text-xs font-bold px-3 py-2 rounded-xl transition"
+            >
+              <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
+              بروزرسانی
+            </button>
+          </div>
+        </div>
+
+        {/* ─── Tabs ─── */}
+        <div className="bg-white rounded-2xl border border-gray-100 p-1.5 flex gap-1">
+          <button
+            onClick={() => setActiveTab("details")}
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold transition
+              ${activeTab === "details"
+                ? "bg-[var(--color-primary)] text-white shadow-sm"
+                : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"}`}
+          >
+            <Eye size={15} />
+            جزئیات سفارش
+          </button>
+          <button
+            onClick={() => setActiveTab("tracking")}
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold transition
+              ${activeTab === "tracking"
+                ? "bg-[var(--color-primary)] text-white shadow-sm"
+                : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"}`}
+          >
+            <Scan size={15} />
+            ترکینگ محصولات
+          </button>
+          {installment && (
+            <button
+              onClick={() => setActiveTab("installment")}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold transition
+                ${activeTab === "installment"
+                  ? "bg-[var(--color-primary)] text-white shadow-sm"
+                  : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"}`}
+            >
+              <Calendar size={15} />
+              اقساط
+              {installment.overdueCount > 0 && (
+                <span className="min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold">
+                  {Number(installment.overdueCount).toLocaleString("fa-IR")}
+                </span>
+              )}
+            </button>
+          )}
+        </div>
+
+        {/* ─── Tab Content ─── */}
+        {activeTab === "details" && (
+          <div className="space-y-4">
+
+            {/* Status Row */}
+            <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-bold text-gray-700">وضعیت سفارش</h3>
+                {canChangeStatus && (
+                <button
+                  onClick={() => setEditStatus(!editStatus)}
+                  className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg transition
+                    ${editStatus
+                      ? "bg-gray-200 text-gray-600"
+                      : "bg-[var(--color-primary)]/10 text-[var(--color-primary)] hover:bg-[var(--color-primary)]/20"}`}
+                >
+                  <Edit3 size={11} />
+                  {editStatus ? "انصراف" : "ویرایش وضعیت"}
+                </button>
+                )}
+              </div>
+
+              {editStatus && canChangeStatus ? (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-bold text-gray-500 mb-1.5 block">وضعیت پرداخت</label>
+                      <select value={payStatus} onChange={(e) => setPayStatus(e.target.value)}
+                        className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm font-bold text-gray-700
+                          focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/30 focus:border-[var(--color-primary)]">
+                        {Object.entries(PAYMENT_STATUS).map(([k, v]) => (
+                          <option key={k} value={k}>{v.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-gray-500 mb-1.5 block">وضعیت ارسال</label>
+                      <select value={fulStatus} onChange={(e) => setFulStatus(e.target.value)}
+                        className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm font-bold text-gray-700
+                          focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/30 focus:border-[var(--color-primary)]">
+                        {Object.entries(FULFILLMENT_STATUS).map(([k, v]) => (
+                          <option key={k} value={k}>{v.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <button onClick={handleSaveStatus} disabled={saving}
+                    className="w-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white font-bold py-2.5 rounded-xl text-sm
+                      transition flex items-center justify-center gap-2 disabled:opacity-60">
+                    {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                    ذخیره وضعیت
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  <StatusBadge config={payCfg} />
+                  <StatusBadge config={fulCfg} />
+                  {methodCfg && (
+                    <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 bg-gray-100 text-gray-600 border border-gray-200 rounded-full">
+                      <methodCfg.icon size={10} />
+                      {methodCfg.label}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* User & Address */}
+            <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-3">
+              <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2">
+                <Users size={14} className="text-[var(--color-primary)]" />
+                اطلاعات خریدار
+              </h3>
+              <div className="space-y-2">
+                {getUserFullName(order.user) && <InfoRow icon={Users} label="نام" value={getUserFullName(order.user)} />}
+                {order.user?.phone && <InfoRow icon={Phone} label="تلفن" value={order.user.phone} />}
+                {order.user?.email && <InfoRow icon={Mail} label="ایمیل" value={order.user.email} />}
+                {getUserFullName(order.user?.coach) && (
+                  <div className="flex items-center gap-2 text-xs">
+                    <GraduationCap size={12} className="text-gray-400 flex-shrink-0" />
+                    <span className="text-gray-400 w-14 flex-shrink-0">مربی:</span>
+                    <button
+                      type="button"
+                      onClick={() => router.push(`/p-admin/users/coaches/${order.user.coach._id}/credit/${order._id}`)}
+                      className="font-semibold text-[var(--color-primary)] hover:underline truncate"
+                    >
+                      {getUserFullName(order.user.coach)}
+                    </button>
+                  </div>
+                )}
+              </div>
+              {order.address?.snapshot && (
+                <div className="border-t border-gray-100 pt-3">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <p className="text-xs font-bold text-gray-500 flex items-center gap-1.5">
+                      <MapPin size={11} /> آدرس تحویل
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setSenderModalOpen(true)}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-[11px] font-bold text-gray-600 transition hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
+                    >
+                      <Printer size={12} />
+                      چاپ برگه آدرس
+                    </button>
+                  </div>
+                  <div className="text-xs text-gray-600 leading-6 bg-gray-50 rounded-xl px-3 py-2">
+                    {order.address.snapshot.fullName && (
+                      <p>
+                        <span className="text-gray-400">گیرنده: </span>
+                        <span className="font-semibold text-gray-700">{order.address.snapshot.fullName}</span>
+                      </p>
+                    )}
+                    {order.address.snapshot.phone && (
+                      <p>
+                        <span className="text-gray-400">تلفن گیرنده: </span>
+                        <span className="font-semibold text-gray-700 font-mono" dir="ltr">{order.address.snapshot.phone}</span>
+                      </p>
+                    )}
+                    <p>{order.address.snapshot.province} — {order.address.snapshot.city}</p>
+                    <p>{order.address.snapshot.addressLine}</p>
+                    {order.address.snapshot.postalCode && (
+                      <p className="text-gray-400">کد پستی: {order.address.snapshot.postalCode}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Order Items */}
+            <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2">
+                  <Package size={14} className="text-[var(--color-primary)]" />
+                  اقلام سفارش
+                </h3>
+                {canEditItems && (
+                <button
+                  onClick={() => setAddItemOpen(true)}
+                  className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg
+                    bg-[var(--color-primary)]/10 text-[var(--color-primary)] hover:bg-[var(--color-primary)]/20 transition"
+                >
+                  <Plus size={12} /> افزودن آیتم
+                </button>
+                )}
+              </div>
+              {order.paymentStatus === "PAID" && (
+                <div className="flex items-center gap-1.5 text-[11px] text-amber-700 bg-amber-50
+                  border border-amber-200 rounded-xl px-3 py-2">
+                  <AlertTriangle size={12} className="shrink-0" />
+                  این سفارش تسویه شده است؛ تغییر اقلام مانده/اضافه‌پرداخت ایجاد می‌کند.
+                </div>
+              )}
+              <div className="space-y-2">
+                {order.items?.map((item, i) => {
+                  const itemId = item._id;
+                  const isUsed = item.itemType === "used_product";
+                  const busy = itemBusy === itemId;
+                  // ─── وضعیت یوروییِ همین قلم (مستقل از تومان) ───
+                  const hasItemEur =
+                    item.priceEUR !== null && item.priceEUR !== undefined;
+                  const isEurEditing = Boolean(itemId) && itemEurDraft[itemId] !== undefined;
+                  const eurBusy = itemEurBusy === itemId;
+                  const productName = item.product?.name || "محصول";
+                  const { farsi, english } = splitProductName(productName);
+                  const productHref = item.product?.slug
+                    ? isUsed
+                      ? `/second-hand/${item.product.slug}`
+                      : `/products/${item.product.slug}`
+                    : null;
+                  const productNameContent = (
+                    <>
+                      {farsi && (
+                        <span className="block text-sm font-bold leading-snug text-gray-800 transition-colors duration-200 group-hover/name:text-[var(--color-primary)] group-focus-visible/name:text-[var(--color-primary)] [overflow-wrap:anywhere]">
+                          {farsi}
+                        </span>
+                      )}
+                      {english && (
+                        <span
+                          className="mt-0.5 block text-xs font-semibold leading-snug text-gray-500 transition-colors duration-200 group-hover/name:text-[var(--color-primary)] group-focus-visible/name:text-[var(--color-primary)] [overflow-wrap:anywhere]"
+                          dir="ltr"
+                        >
+                          {english}
+                        </span>
+                      )}
+                    </>
+                  );
+                  return (
+                  <div key={itemId || i} className="flex flex-wrap sm:flex-nowrap items-start gap-3 p-3 bg-gray-50 rounded-xl">
+                    {item.product?.mainImage && (
+                      <img src={item.product.mainImage} alt={productName}
+                        className="w-12 h-12 rounded-xl object-cover border border-gray-200 flex-shrink-0" />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start gap-1.5">
+                        {productHref ? (
+                          <a
+                            href={productHref}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="group/name min-w-0 max-w-full rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-2"
+                            aria-label={`مشاهده محصول ${productName} در تب جدید`}
+                          >
+                            {productNameContent}
+                          </a>
+                        ) : (
+                          <div className="min-w-0 max-w-full">{productNameContent}</div>
+                        )}
+                        {isUsed && (
+                          <span className="text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full shrink-0">
+                            دست دوم
+                          </span>
+                        )}
+                      </div>
+                      {(item.variantSnapshot?.length ||
+                        (item.variant?.attributes &&
+                          Object.keys(item.variant.attributes).length > 0)) && (
+                        <div className="mt-1.5">
+                          <VariantSummary
+                            snapshot={item.variantSnapshot}
+                            attributes={item.variant?.attributes}
+                          />
+                        </div>
+                      )}
+                      {item.flowSelections?.length > 0 && (
+                        <div className="hidden sm:block">
+                          <OrderFlowSelectionsView flowSelections={item.flowSelections} />
+                        </div>
+                      )}
+
+                      {/* کنترل‌های ویرایش آیتم — بدونِ orders.editItems کلِ ردیف حذف می‌شود */}
+                      {canEditItems && (
+                      <div className="flex items-center gap-2 mt-2">
+                        {isUsed ? (
+                          <span className="text-[11px] text-gray-400 font-medium">تعداد: ۱ (دست دوم)</span>
+                        ) : (
+                          <div className="flex items-center gap-1">
+                            <button
+                              disabled={busy || !itemId || item.quantity <= 1}
+                              onClick={() => handleEditItemQty(item, item.quantity - 1)}
+                              className="w-6 h-6 rounded-lg border border-gray-200 flex items-center justify-center
+                                text-gray-500 hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition
+                                disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                              <Minus size={11} />
+                            </button>
+                            <span className="min-w-7 text-center text-xs font-black text-gray-700">
+                              {busy ? <Loader2 size={11} className="animate-spin inline" /> : new Intl.NumberFormat("fa-IR").format(item.quantity)}
+                            </span>
+                            <button
+                              disabled={busy || !itemId}
+                              onClick={() => handleEditItemQty(item, item.quantity + 1)}
+                              className="w-6 h-6 rounded-lg border border-gray-200 flex items-center justify-center
+                                text-gray-500 hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition
+                                disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                              <Plus size={11} />
+                            </button>
+                          </div>
+                        )}
+                        <button
+                          disabled={busy || !itemId}
+                          onClick={() => handleRemoveItem(item)}
+                          className="flex items-center gap-1 text-[11px] font-bold text-red-400 hover:text-red-600
+                            hover:bg-red-50 px-2 py-1 rounded-lg transition disabled:opacity-40"
+                        >
+                          <Trash2 size={11} /> حذف
+                        </button>
+                      </div>
+                      )}
+
+                      {/* ─── قیمت یوروییِ این قلم (EUR) ─────────────────────────
+                          کاملاً مستقل از تومان و از قیمت پایه/کاتالوگِ محصول؛ یک
+                          مبلغِ دستیِ مخصوصِ همین قلم در همین سفارش است.
+                          مقدارِ ورودی «قیمت واحد» است و سهم این قلم در مبلغ کلِ
+                          یوروییِ سفارش = مقدار × تعداد.
+                          ردیف فقط وقتی نمایش داده می‌شود که ادمین اجازه‌ی
+                          orders.setCurrency داشته باشد یا قیمتی ثبت شده باشد. */}
+                      {(canSetCurrency || hasItemEur) && (
+                        <div className="mt-2 border-t border-dashed border-gray-200 pt-2">
+                          {isEurEditing ? (
+                            <div className="flex items-center gap-1.5">
+                              <div className="relative min-w-0 flex-1">
+                                <AdminInput
+                                  type="number"
+                                  step="any"
+                                  min="0"
+                                  value={itemEurDraft[itemId] ?? ""}
+                                  onChange={(e) =>
+                                    setItemEurDraft((prev) => ({ ...prev, [itemId]: e.target.value }))
+                                  }
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") handleSaveItemEur(item);
+                                    if (e.key === "Escape") closeItemEurEditor(itemId);
+                                  }}
+                                  placeholder="قیمت واحد به یورو — خالی یعنی بدون قیمت"
+                                  dir="ltr"
+                                  className="w-full rounded-lg border border-gray-300 py-1.5 pl-6 pr-2 text-left text-xs font-bold
+                                    text-gray-800 transition focus:border-[var(--color-primary)] focus:outline-none
+                                    focus:ring-2 focus:ring-[var(--color-primary)]/30"
+                                />
+                                <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[11px] text-gray-400">
+                                  €
+                                </span>
+                              </div>
+                              <button
+                                onClick={() => handleSaveItemEur(item)}
+                                disabled={eurBusy}
+                                className="flex items-center gap-1 rounded-lg bg-[var(--color-primary)] px-2.5 py-1.5 text-[11px]
+                                  font-bold text-white transition hover:bg-[var(--color-primary-hover)] disabled:opacity-60"
+                              >
+                                {eurBusy ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />}
+                                ذخیره
+                              </button>
+                              <button
+                                onClick={() => closeItemEurEditor(itemId)}
+                                disabled={eurBusy}
+                                className="rounded-lg bg-gray-200 px-2 py-1.5 text-[11px] font-bold text-gray-600
+                                  transition hover:bg-gray-300 disabled:opacity-60"
+                              >
+                                انصراف
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Euro size={11} className="shrink-0 text-[var(--color-primary)]" />
+                              {hasItemEur ? (
+                                <span className="text-[11px] font-bold text-gray-700" dir="ltr">
+                                  € {formatEUR(item.priceEUR)}
+                                  {item.quantity > 1 && (
+                                    <span className="font-medium text-gray-400">
+                                      {" "}
+                                      × {item.quantity} = € {formatEUR(item.priceEUR * item.quantity)}
+                                    </span>
+                                  )}
+                                </span>
+                              ) : (
+                                <span className="text-[11px] font-medium text-gray-400">
+                                  قیمت یورویی تعیین نشده
+                                </span>
+                              )}
+                              {canSetCurrency && (
+                                <button
+                                  onClick={() => openItemEurEditor(item)}
+                                  disabled={!itemId || eurBusy}
+                                  className="flex items-center gap-1 rounded-lg bg-[var(--color-primary)]/10 px-2 py-0.5
+                                    text-[10px] font-bold text-[var(--color-primary)] transition
+                                    hover:bg-[var(--color-primary)]/20 disabled:opacity-40"
+                                >
+                                  <Edit3 size={9} />
+                                  {hasItemEur ? "ویرایش یورو" : "تعیین یورو"}
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <div className="text-left flex-shrink-0 text-xs text-gray-500 space-y-0.5">
+                      <p>×{new Intl.NumberFormat("fa-IR").format(item.quantity)}</p>
+                      <p className="font-bold text-gray-700">{formatPrice(item.unitPrice)}</p>
+                      <p className="text-[10px] text-gray-400">{formatPrice(item.unitPrice * item.quantity)}</p>
+                      {hasItemEur && (
+                        <p className="text-[10px] font-bold text-[var(--color-primary)]" dir="ltr">
+                          € {formatEUR(item.priceEUR * item.quantity)}
+                        </p>
+                      )}
+                    </div>
+                    {item.flowSelections?.length > 0 && (
+                      <div className="w-full min-w-0 basis-full sm:hidden">
+                        <OrderFlowSelectionsView flowSelections={item.flowSelections} />
+                      </div>
+                    )}
+                  </div>
+                  );
+                })}
+              </div>
+              <div className="border-t border-gray-100 pt-3 space-y-1.5 text-xs">
+                {hasOrderDiscount && (
+                  <div className="flex justify-between text-gray-500">
+                    <span>مبلغ کل</span>
+                    <span>{formatPrice(subtotalPrice)} {storeConfig.commerce.currency.label}</span>
+                  </div>
+                )}
+                {order.discountAmount > 0 && (
+                  <div className="flex justify-between text-gray-500">
+                    <span>تخفیف محصول</span>
+                    <span className="text-green-600">- {formatPrice(order.discountAmount)} {storeConfig.commerce.currency.label}</span>
+                  </div>
+                )}
+                {order.couponDiscount > 0 && (
+                  <div className="flex justify-between items-center text-gray-500">
+                    <span>
+                      {order.coupon?.isManual
+                        ? "تخفیف مدیریت"
+                        : `تخفیف کوپن ${order.coupon?.code ? `(${couponDisplayCode(order.coupon)})` : ""}`}
+                    </span>
+                    <span className="flex items-center gap-2">
+                      <span className="text-green-600">- {formatPrice(order.couponDiscount)} {storeConfig.commerce.currency.label}</span>
+                      {order.coupon?.isManual && canAdjustDiscount && (
+                        <>
+                          <button
+                            onClick={() => setDiscountModalOpen(true)}
+                            title="ویرایش"
+                            className="w-6 h-6 flex items-center justify-center rounded-lg
+                              text-gray-400 hover:text-[var(--color-primary)] transition hover:bg-[var(--color-primary)]/10"
+                          >
+                            <Pencil size={12} />
+                          </button>
+                          <button
+                            disabled={discountBusy}
+                            onClick={handleRemoveDiscount}
+                            title="حذف"
+                            className="w-6 h-6 flex items-center justify-center rounded-lg
+                              text-red-400 hover:text-red-600 transition hover:bg-red-50 disabled:opacity-40"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </>
+                      )}
+                    </span>
+                  </div>
+                )}
+                {order.walletPaid > 0 && <div className="flex justify-between gap-2 text-emerald-700"><span>پرداخت با کیف پول</span><span>− {formatPrice(order.walletPaid)} {storeConfig.commerce.currency.label}</span></div>}
+                {!order.coupon?.code && canAdjustDiscount && (
+                  <button
+                    onClick={() => setDiscountModalOpen(true)}
+                    className="flex items-center gap-1.5 text-[11px] font-bold text-[var(--color-primary)] hover:underline"
+                  >
+                    <Tag size={11} /> افزودن تخفیف مدیریت
+                  </button>
+                )}
+                <div className="flex justify-between font-black text-sm text-gray-900 border-t border-gray-100 pt-2">
+                  <span>{order.walletPaid > 0 ? 'مبلغ پس از پرداخت کیف پول' : 'مبلغ نهایی'}</span>
+                  <span>{formatPrice(Math.max(0, order.totalPrice - (order.walletPaid || 0)))} {storeConfig.commerce.currency.label}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Payments */}
+            {order.payments?.length > 0 && (
+              <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-3">
+                <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2">
+                  <ReceiptText size={14} className="text-[var(--color-primary)]" />
+                  رسیدها و پرداخت‌ها
+                </h3>
+
+                <div className="space-y-3">
+                  {order.payments.map((payment, i) => (
+                    <PaymentCard
+                      key={payment._id || i}
+                      payment={payment}
+                      orderTotal={order.totalPrice}
+                      onViewReceipt={setLightboxUrl}
+                      onApprove={() => setApproveTarget(payment)}
+                      onReject={() => handleRejectPayment(payment._id)}
+                      onEdit={canEditPayment ? () => setEditPaymentTarget({ payment, currency: "toman" }) : undefined}
+                    />
+                  ))}
+                </div>
+
+                {/* ─── خلاصه مالی ─── */}
+                {(() => {
+                  const totalPaid = totalPaidAmount;
+                  const remaining = order.totalPrice - totalPaid;
+                  const overpaid = remaining < 0;
+                  const settled = remaining === 0;
+
+                  return (
+                    <div className="border-t border-gray-100 pt-3 space-y-2 text-xs">
+                      <div className="flex justify-between text-gray-500">
+                        <span>مبلغ کل سفارش</span>
+                        <span className="font-bold text-gray-700">{formatPrice(order.totalPrice)} {storeConfig.commerce.currency.label}</span>
+                      </div>
+                      <div className="flex justify-between text-gray-500">
+                        <span>مجموع پرداخت‌های تأییدشده</span>
+                        <span className="font-bold text-green-600">{formatPrice(totalPaid)} {storeConfig.commerce.currency.label}</span>
+                      </div>
+                      <div className={`flex justify-between font-black text-sm pt-1 border-t border-gray-100
+            ${overpaid ? "text-blue-600" : settled ? "text-green-600" : "text-red-600"}`}>
+                        <span>{overpaid ? "اضافه‌پرداخت" : settled ? "تسویه کامل" : "مانده پرداخت"}</span>
+                        <span>{formatPrice(Math.abs(remaining))} {storeConfig.commerce.currency.label}</span>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
+            {/* EUR System (مستقل از تومان) */}
+            <EurPanel
+              orderId={orderId}
+              priceEUR={order.priceEUR ?? null}
+              items={order.items || []}
+              paymentsEUR={order.paymentsEUR || []}
+              onChange={fetchOrder}
+              onEditPayment={(p) => setEditPaymentTarget({ payment: p, currency: "eur" })}
+            />
+
+            {/* Description */}
+            {order.description && (
+              <div className="bg-white rounded-2xl border border-gray-100 p-5">
+                <p className="text-xs font-bold text-gray-500 mb-1.5">یادداشت سفارش</p>
+                <p className="text-sm text-gray-600 leading-relaxed">{order.description}</p>
+              </div>
+            )}
+
+            {/* Meta */}
+            <div className="grid grid-cols-2 gap-3 text-xs text-gray-400">
+              <div className="bg-white rounded-2xl border border-gray-100 p-4">
+                <p className="font-bold text-gray-500 mb-0.5">تاریخ ثبت</p>
+                <p dir="ltr" className="text-right">{toFarsiDate(order.createdAt)}</p>
+              </div>
+              {order.reviewedAt && (
+                <div className="bg-white rounded-2xl border border-gray-100 p-4">
+                  <p className="font-bold text-gray-500 mb-0.5">آخرین بررسی</p>
+                  <p dir="ltr" className="text-right">{toFarsiDate(order.reviewedAt)}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {activeTab === "tracking" && (
+          <div className="bg-white rounded-2xl border border-gray-100 p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2">
+                <Scan size={14} className="text-[var(--color-primary)]" />
+                شناسایی و ترکینگ محصولات
+              </h3>
+              {order.paymentStatus !== "PAID" && (
+                <div className="flex items-center gap-1.5 text-xs text-amber-600 bg-amber-50 border border-amber-200 px-2.5 py-1.5 rounded-xl">
+                  <AlertTriangle size={12} />
+                  سفارش هنوز پرداخت نشده
+                </div>
+              )}
+            </div>
+            <TrackingPanel
+              orderId={orderId}
+              orderItems={order.items}
+              orderFulfillmentStatus={order.fulfillmentStatus}
+              onStatusChange={fetchOrder}
+            />
+          </div>
+        )}
+
+        {activeTab === "installment" && installment && (
+          <div className="bg-white rounded-2xl border border-gray-100 p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2">
+                <Calendar size={14} className="text-[var(--color-primary)]" />
+                مدیریت اقساط سفارش
+              </h3>
+              <a
+                href={`/p-admin/financial/installments/${installment._id}`}
+                className="flex items-center gap-1.5 text-xs font-bold text-[var(--color-primary)] hover:underline"
+              >
+                <ExternalLink size={12} />
+                صفحه کامل اقساط
+              </a>
+            </div>
+            <InstallmentChecksPanel
+              installment={installment}
+              orderFulfillmentStatus={order.fulfillmentStatus}
+              onChanged={fetchOrder}
+              onViewImage={setLightboxUrl}
+            />
+          </div>
+        )}
+
+        {/* ─── منطقه خطر ───
+            خارج از تب‌ها و در انتهای صفحه، تا در هیچ تبی به‌طور تصادفی کنارِ
+            دکمه‌های روزمره نیفتد. بدونِ کلیدِ orders.delete اصلاً رندر نمی‌شود. */}
+        {canDeleteOrder && (
+          <div className="bg-white rounded-2xl border-2 border-red-200 p-5 space-y-4">
+            <h3 className="text-sm font-bold text-red-600 flex items-center gap-2">
+              <AlertTriangle size={14} />
+              منطقه خطر
+            </h3>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4
+              bg-red-50 border border-red-100 rounded-xl p-4">
+              <div className="space-y-1">
+                <p className="text-sm font-bold text-gray-800">حذف دائمی این سفارش</p>
+                <p className="text-xs text-gray-500 leading-relaxed">
+                  سفارش و همه‌ی پرداخت‌های ثبت‌شده‌ی آن (به‌همراه طرح اقساط مرتبط) برای همیشه
+                  حذف می‌شوند و قابل بازیابی نیستند. بارکدهای انبار و محصولات دست دومِ این
+                  سفارش آزاد می‌شوند تا دوباره قابل استفاده باشند.
+                </p>
+              </div>
+              <button
+                onClick={handleDeleteOrder}
+                disabled={deleting}
+                className="shrink-0 bg-red-600 hover:bg-red-700 text-white font-bold px-4 py-2.5 rounded-xl
+                  text-sm transition flex items-center justify-center gap-2 disabled:opacity-60"
+              >
+                {deleting
+                  ? <Loader2 size={14} className="animate-spin" />
+                  : <Trash2 size={14} />}
+                حذف سفارش
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Lightbox */}
+      <AnimatePresence>
+        {lightboxUrl && (
+          <ReceiptLightbox url={lightboxUrl} onClose={() => setLightboxUrl(null)} />
+        )}
+      </AnimatePresence>
+
+      {/* Approve Modal */}
+      <AnimatePresence>
+        {approveTarget && (
+          <ApproveModal
+            payment={approveTarget}
+            orderTotal={order.totalPrice}
+            dueAmount={remainingDue}
+            onConfirm={handleApprovePayment}
+            onClose={() => setApproveTarget(null)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Add Item Modal */}
+      <AnimatePresence>
+        {addItemOpen && (
+          <AddItemModal
+            orderId={orderId}
+            onSuccess={fetchOrder}
+            onClose={() => setAddItemOpen(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Edit Payment Modal (تومان / یورو) */}
+      <AnimatePresence>
+        {editPaymentTarget && (
+          <EditPaymentModal
+            payment={editPaymentTarget.payment}
+            currency={editPaymentTarget.currency}
+            onConfirm={handleEditPayment}
+            onClose={() => setEditPaymentTarget(null)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Management Discount Modal (تخفیف مدیریت) */}
+      <AnimatePresence>
+        {discountModalOpen && (
+          <ManagementDiscountModal
+            order={order}
+            orderId={orderId}
+            onSuccess={fetchOrder}
+            onClose={() => setDiscountModalOpen(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* گام ۱ — انتخاب/مدیریتِ آدرسِ فرستنده و اندازه‌ی کاغذ.
+          شرطی رندر می‌شود تا هر بار باز شدن، حالتِ تمیز داشته باشد. */}
+      {senderModalOpen && (
+        <SenderAddressModal
+          onClose={() => setSenderModalOpen(false)}
+          onPrint={(job) => {
+            setSenderModalOpen(false);
+            setPrintJob(job);
+          }}
+        />
+      )}
+
+      {/* گام ۲ — حالتِ چاپ، روی همین صفحه. بستنش فقط یک setState است؛ هیچ
+          DOMی دست‌کاری نشده که لازم باشد برگردانده شود. */}
+      {printJob && (
+        <OrderPrintOverlay
+          sender={printJob.sender}
+          recipient={order.address?.snapshot || null}
+          trackingCode={order.trackingCode || order._id}
+          paperSize={printJob.paperSize}
+          onClose={() => setPrintJob(null)}
+        />
+      )}
+    </div>
+  );
+}

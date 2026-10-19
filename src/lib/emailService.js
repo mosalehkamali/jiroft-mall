@@ -1,0 +1,869 @@
+import storeConfig from "base/store.config";
+/**
+ * src/lib/emailService.js
+ *
+ * سرویس ارسال ایمیل — فاکتور سفارش برای مشتری و ادمین
+ *
+ * نیاز: متغیرهای محیطی زیر در .env.local
+ *   EMAIL_HOST=smtp.example.com
+ *   EMAIL_PORT=587
+ *   EMAIL_USER=noreply@example.com
+ *   EMAIL_PASS=your_password
+ *   EMAIL_FROM="Store <noreply@example.com>"
+ *   ADMIN_EMAIL=admin@example.com
+ *   NEXT_PUBLIC_BASE_URL=https://example.com
+ *   NEXT_PUBLIC_LOGO_URL=https://example.com/logo/logo.svg  (اختیاری)
+ */
+
+import { couponDisplayCode } from "@/lib/couponLabel";
+import nodemailer from 'nodemailer';
+import { DEPARTMENT_LABELS as TICKET_DEPARTMENT_LABELS } from 'base/utils/ticketMeta';
+
+// رنگ‌های ایمیل از store.config — کلاینت‌های ایمیل متغیر CSS را نمی‌فهمند.
+const C = storeConfig.theme.colors;
+function tint(alpha) {
+  const h = C.primary.replace("#", "");
+  const n = parseInt(h.length === 3 ? h.split("").map((x) => x + x).join("") : h, 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
+}
+
+// ─── Transporter ─────────────────────────────────────────────────────────────
+function createTransporter(options = {}) {
+  return nodemailer.createTransport({
+    ...options,
+    host:   process.env.EMAIL_HOST,
+    port:   Number(process.env.EMAIL_PORT ?? 587),
+    secure: Number(process.env.EMAIL_PORT) === 465,
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS,
+    },
+  });
+}
+
+// ─── Format Helpers ──────────────────────────────────────────────────────────
+function formatPrice(price) {
+  return new Intl.NumberFormat(storeConfig.commerce.currency.locale).format(Number(price ?? 0)) + ' ' + storeConfig.commerce.currency.label;
+}
+
+function formatJalaliDate(date) {
+  if (!date) return '—';
+  try {
+    return new Intl.DateTimeFormat('fa-IR', {
+      year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'Asia/Tehran',
+    }).format(new Date(date));
+  } catch {
+    return '—';
+  }
+}
+
+function splitName(text) {
+  if (!text) return { farsi: '', english: '' };
+  const match = text.match(/[a-zA-Z(].*/);
+  if (match) {
+    return {
+      farsi:   text.substring(0, match.index).trim(),
+      english: match[0].trim(),
+    };
+  }
+  return { farsi: text, english: '' };
+}
+
+// نمایشِ واریانت در ایمیل — اولویت با variantSnapshot (برچسب + چندواحدی)، فالبک attributes
+function renderVariant(item) {
+  const snap = item?.variantSnapshot;
+  if (Array.isArray(snap) && snap.length) {
+    return snap
+      .map((e) => {
+        const val =
+          e.units && Object.keys(e.units).length
+            ? Object.entries(e.units).map(([u, v]) => `${v} ${u}`).join('/')
+            : e.value;
+        return `${e.label || e.name}: ${val}`;
+      })
+      .join(' / ');
+  }
+  const attrs = item?.variant?.attributes;
+  if (!attrs || !Object.keys(attrs).length) return '';
+  return Object.entries(attrs)
+    .map(([k, v]) => `${k}: ${v}`)
+    .join(' / ');
+}
+
+function escapeHtml(str) {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+// رندر انتخاب‌های فرایند سفارش (خدمات + محصولات انتخاب‌شده) زیر هر آیتم
+function renderFlowSelections(flowSelections) {
+  if (!Array.isArray(flowSelections) || flowSelections.length === 0) return '';
+
+  const rows = flowSelections.flatMap((sel) => {
+    const isService = sel.nodeType === 'service';
+    const productImage = sel.selectedProduct?.mainImage || sel.selectedProductImage || '';
+    const productName  = sel.selectedProductName || sel.selectedProduct?.name || '';
+
+    // پیکربندیِ کاملِ خدمت — هر آپشن یک ردیف (از اسنپ‌شاتِ سفارش)
+    const config = Array.isArray(sel.serviceConfig) ? sel.serviceConfig : [];
+    if (isService && config.length > 0) {
+      return config.map((c) => {
+        const addon = Number(c.priceModifier) || 0;
+        const thumb = c.image
+          ? `<td width="40" style="vertical-align:middle;padding-left:8px;"><img src="${c.image}" alt="" width="36" height="36" style="border-radius:6px;object-fit:cover;border:1px solid #eee;display:block;background:#fff;"></td>`
+          : `<td width="40" style="vertical-align:middle;padding-left:8px;"><div style="width:36px;height:36px;border-radius:6px;border:1px solid #eee;background:#fff;text-align:center;line-height:36px;color:${C.primary};font-size:16px;">⚙</div></td>`;
+        return `
+      <tr>
+        ${thumb}
+        <td style="vertical-align:middle;font-size:12px;color:#444;">
+          <span style="color:#999;">${escapeHtml(sel.nodeLabel || '')} — ${escapeHtml(c.title || '')}:</span>
+          <strong style="color:#333;">${escapeHtml(c.label || '')}</strong>
+        </td>
+        ${addon > 0
+          ? `<td style="text-align:left;white-space:nowrap;vertical-align:middle;"><span style="display:inline-block;color:${C.primary};font-weight:700;font-size:11px;background:${tint(0.1)};border-radius:6px;padding:3px 8px;">+ ${formatPrice(addon)}</span></td>`
+          : '<td></td>'}
+      </tr>
+    `;
+      });
+    }
+
+    const valueText = isService
+      ? sel.serviceLabel
+      : `${productName}${sel.selectedVariantLabel ? ` (${sel.selectedVariantLabel})` : ''}`;
+    const addon = Number(sel.addonToman) || 0;
+    const addonCell = addon > 0
+      ? `<td style="text-align:left;white-space:nowrap;vertical-align:middle;"><span style="display:inline-block;color:${C.primary};font-weight:700;font-size:11px;background:${tint(0.1)};border-radius:6px;padding:3px 8px;">+ ${formatPrice(addon)}</span></td>`
+      : '<td></td>';
+
+    const thumbCell = (!isService && productImage)
+      ? `<td width="40" style="vertical-align:middle;padding-left:8px;"><img src="${productImage}" alt="${escapeHtml(productName)}" width="36" height="36" style="border-radius:6px;object-fit:cover;border:1px solid #eee;display:block;background:#fff;"></td>`
+      : `<td width="40" style="vertical-align:middle;padding-left:8px;"><div style="width:36px;height:36px;border-radius:6px;border:1px solid #eee;background:#fff;text-align:center;line-height:36px;color:${C.primary};font-size:16px;">${isService ? '⚙' : '🏷'}</div></td>`;
+
+    return `
+      <tr>
+        ${thumbCell}
+        <td style="vertical-align:middle;padding:4px 0;">
+          <div style="font-size:10px;color:#999;line-height:1.4;">${escapeHtml(sel.nodeLabel)}</div>
+          <div style="font-size:12px;color:#333;font-weight:700;line-height:1.5;">${escapeHtml(valueText)}</div>
+        </td>
+        ${addonCell}
+      </tr>`;
+  }).join('');
+
+  return `
+    <div style="margin-top:8px;border:1px solid ${tint(0.2)};background:${tint(0.04)};border-radius:8px;padding:8px 10px;">
+      <div style="font-size:11px;font-weight:700;color:${C.primary};margin-bottom:6px;">موارد انتخاب‌شده برای این محصول</div>
+      <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+        ${rows}
+      </table>
+    </div>`;
+}
+
+const PAYMENT_LABEL = {
+  BANK_RECEIPT: 'فیش بانکی',
+  WALLET: 'کیف پول',
+  INSTALLMENT:  'اقساطی',
+  ONLINE:       'پرداخت آنلاین',
+};
+
+// ─── جدول زمان‌بندی اقساط (در ایمیل تأیید سفارشِ اقساطی) ──────────────────────
+function renderInstallmentSchedule(order, installment) {
+  if (!installment || !Array.isArray(installment.checks) || installment.checks.length === 0) {
+    return '';
+  }
+
+  const checks = installment.checks
+    .slice()
+    .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
+
+  const checksTotal = checks.reduce((s, c) => s + (Number(c.amount) || 0), 0);
+  const downPaymentAmount = Number(installment.downPaymentAmount ?? installment.downPayment?.amount ?? 0);
+  const orderTotal = Math.max(0, Number(order.totalPrice ?? 0) - Number(order.walletPaid || 0));
+  const interest = Math.max(0, checksTotal - (orderTotal - downPaymentAmount));
+
+  const rows = checks.map((c, idx) => `
+    <tr style="border-bottom:1px solid #f0ece8;">
+      <td style="padding:10px 12px; text-align:center; font-size:13px; color:#555;">قسط ${new Intl.NumberFormat('fa-IR').format(idx + 1)}</td>
+      <td style="padding:10px 12px; text-align:center; font-size:13px; color:#555;">${formatJalaliDate(c.dueDate)}</td>
+      <td style="padding:10px 12px; text-align:left; font-size:13px; font-weight:700; color:#1a1a1a; direction:rtl;">${formatPrice(c.amount)}</td>
+    </tr>`).join('');
+
+  return `
+    <div style="margin-top:24px; border:1px solid ${tint(0.25)}; border-radius:10px; overflow:hidden;">
+      <div style="background:${tint(0.06)}; padding:12px 16px; border-bottom:1px solid ${tint(0.15)};">
+        <span style="font-size:14px; font-weight:700; color:${C.primary};">🗓 زمان‌بندی پرداخت اقساطی</span>
+      </div>
+
+      <table width="100%" cellpadding="0" cellspacing="0" style="font-size:13px;">
+        <tr>
+          <td style="padding:10px 16px; color:#888; border-bottom:1px solid #f0ece8; width:50%;">پیش‌پرداخت</td>
+          <td style="padding:10px 16px; color:#1a1a1a; font-weight:700; border-bottom:1px solid #f0ece8; text-align:left; direction:rtl;">${formatPrice(downPaymentAmount)}</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 16px; color:#888; border-bottom:1px solid #f0ece8;">تعداد اقساط</td>
+          <td style="padding:10px 16px; color:#1a1a1a; font-weight:700; border-bottom:1px solid #f0ece8; text-align:left;">${new Intl.NumberFormat('fa-IR').format(checks.length)} قسط</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 16px; color:#888; border-bottom:1px solid #f0ece8;">مجموع سود اقساط</td>
+          <td style="padding:10px 16px; color:#1a1a1a; font-weight:700; border-bottom:1px solid #f0ece8; text-align:left; direction:rtl;">${formatPrice(interest)}</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 16px; color:#888;">مجموع چک‌ها (با سود)</td>
+          <td style="padding:10px 16px; color:${C.primary}; font-weight:700; text-align:left; direction:rtl;">${formatPrice(checksTotal)}</td>
+        </tr>
+      </table>
+
+      <table width="100%" cellpadding="0" cellspacing="0" style="border-top:2px solid #f0ece8;">
+        <thead>
+          <tr style="background:#faf7f5;">
+            <th style="padding:10px 12px; text-align:center; color:#888; font-weight:600; font-size:12px;">قسط</th>
+            <th style="padding:10px 12px; text-align:center; color:#888; font-weight:600; font-size:12px;">سررسید</th>
+            <th style="padding:10px 12px; text-align:left; color:#888; font-weight:600; font-size:12px; direction:rtl;">مبلغ</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+
+      <div style="padding:10px 16px; background:#faf7f5; font-size:11px; color:#888; line-height:1.7;">
+        چک‌های شما پس از بازبینی توسط فروشگاه تأیید می‌شوند. لطفاً نسبت به تأمین موجودی هر چک تا تاریخ سررسید آن اقدام فرمایید.
+      </div>
+    </div>`;
+}
+
+// ─── HTML Template ─────────────────────────────────────────────────────────
+/**
+ * @param {Object} order  - سفارش populate‌شده
+ * @param {boolean} isAdmin
+ */
+function buildEmailHtml(order, isAdmin = false, installment = null) {
+  const logoUrl     = process.env.NEXT_PUBLIC_LOGO_URL ?? `${process.env.NEXT_PUBLIC_BASE_URL ?? ''}${storeConfig.brand.logo}`;
+  const baseUrl     = process.env.NEXT_PUBLIC_BASE_URL ?? '';
+  const addressSnap = order.address?.snapshot ?? {};
+
+  const itemsHtml = (order.items ?? []).map((item) => {
+    const productName  = item.product?.name ?? '—';
+    const productImage = item.product?.mainImage ?? '';
+    const { farsi, english } = splitName(productName);
+    const variantText  = renderVariant(item);
+    const unitPrice    = item.unitPrice ?? 0;
+    const totalLine    = unitPrice * (item.quantity ?? 1);
+
+    return `
+      <tr style="border-bottom:1px solid #f0ece8;">
+        <td style="padding:12px 8px; vertical-align:middle; text-align:right;">
+          ${productImage ? `<img src="${productImage}" alt="${productName}" width="56" height="56" style="border-radius:8px;object-fit:cover;border:1px solid #f0ece8;display:block;">` : ''}
+        </td>
+        <td style="padding:12px 8px; vertical-align:middle; text-align:right; max-width:220px;">
+          <div style="font-weight:700; color:#1a1a1a; font-size:14px; line-height:1.4;">
+            ${farsi ? `<span>${farsi}</span>` : ''}
+            ${english ? `<span style="display:block;direction:ltr;font-size:12px;color:#444;">${english}</span>` : ''}
+            ${!farsi && !english ? `<span>${productName}</span>` : ''}
+          </div>
+          ${variantText ? `<div style="margin-top:4px;font-size:11px;color:${C.primary};background:${tint(0.08)};border:1px solid ${tint(0.2)};border-radius:12px;padding:2px 8px;display:inline-block;">${variantText}</div>` : ''}
+          ${renderFlowSelections(item.flowSelections)}
+        </td>
+        <td style="padding:12px 8px; text-align:center; font-size:13px; color:#555; white-space:nowrap;">
+          ${new Intl.NumberFormat('fa-IR').format(item.quantity ?? 1)} عدد
+        </td>
+        <td style="padding:12px 8px; text-align:left; font-size:13px; color:#555; white-space:nowrap; direction:rtl;">
+          ${formatPrice(unitPrice)}
+        </td>
+        <td style="padding:12px 8px; text-align:left; font-size:14px; font-weight:700; color:#1a1a1a; white-space:nowrap; direction:rtl;">
+          ${formatPrice(totalLine)}
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  const discountRow = (order.discountAmount ?? 0) > 0 ? `
+    <tr>
+      <td colspan="4" style="padding:8px 16px; text-align:right; color:#555; font-size:13px;">تخفیف محصولات</td>
+      <td style="padding:8px 16px; text-align:left; color:#16a34a; font-weight:600; font-size:13px; direction:rtl;">− ${formatPrice(order.discountAmount)}</td>
+    </tr>` : '';
+
+  const couponLabel = order.coupon?.isManual ? 'تخفیف مدیریت' : `تخفیف کد «${couponDisplayCode(order.coupon)}»`;
+  const couponRow = (order.couponDiscount ?? 0) > 0 ? `
+    <tr>
+      <td colspan="4" style="padding:8px 16px; text-align:right; color:#555; font-size:13px;">${escapeHtml(couponLabel)}</td>
+      <td style="padding:8px 16px; text-align:left; color:#16a34a; font-weight:600; font-size:13px; direction:rtl;">− ${formatPrice(order.couponDiscount)}</td>
+    </tr>` : '';
+
+  const greeting = isAdmin
+    ? `<p style="font-size:15px;color:#555;margin:0 0 8px;">سفارش جدید از مشتری <strong>${addressSnap.fullName ?? '—'}</strong> ثبت شد.</p>`
+    : `<p style="font-size:15px;color:#555;margin:0 0 8px;">با سپاس از خرید شما عزیز، سفارش شما با موفقیت ثبت شد.</p>`;
+
+  return `
+<!DOCTYPE html>
+<html dir="rtl" lang="fa">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700&display=swap');
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Vazirmatn', Tahoma, Arial, sans-serif; background: #f5f0eb; direction: rtl; }
+  </style>
+</head>
+<body style="background:#f5f0eb; padding: 24px 16px;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="max-width:640px; margin:0 auto;">
+
+    <!-- Header -->
+    <tr>
+      <td style="background:#fff; border-radius:12px 12px 0 0; padding:28px 32px; text-align:center;">
+        <img src="${logoUrl}" alt="${storeConfig.brand.name}" height="48" style="display:inline-block;max-width:180px;object-fit:contain;" onerror="this.style.display='none'">
+        <h1 style="color:${C.primary}; font-size:20px; font-weight:700; margin-top:12px; letter-spacing:-0.3px;">
+          ${isAdmin ? '🛒 سفارش جدید دریافت شد' : '✅ تأیید دریافت سفارش'}
+        </h1>
+      </td>
+    </tr>
+
+    <!-- Body -->
+    <tr>
+      <td style="background:#fff; padding:28px 32px;">
+
+        ${greeting}
+
+        <!-- Tracking + Payment Method -->
+        <table width="100%" cellpadding="0" cellspacing="0" style="margin:20px 0; border:1px solid #f0ece8; border-radius:8px; overflow:hidden;">
+          <tr style="background:#faf7f5;">
+            <td style="padding:12px 16px; font-size:13px; color:#888; border-left:1px solid #f0ece8;">کد سفارش</td>
+            <td style="padding:12px 16px; font-size:14px; font-weight:700; color:#1a1a1a; font-family:monospace; border-left:1px solid #f0ece8;">${order.trackingCode ?? '—'}</td>
+            <td style="padding:12px 16px; font-size:13px; color:#888; border-left:1px solid #f0ece8;">روش پرداخت</td>
+            <td style="padding:12px 16px; font-size:14px; font-weight:600; color:${C.primary};">${PAYMENT_LABEL[order.paymentMethod] ?? order.paymentMethod}</td>
+          </tr>
+        </table>
+
+        <!-- Items Table -->
+        <p style="font-size:13px; color:#888; margin-bottom:8px;">اقلام سفارش:</p>
+        <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #f0ece8; border-radius:8px; overflow:hidden; font-size:13px;">
+          <thead>
+            <tr style="background:#faf7f5;">
+              <th style="padding:10px 8px; text-align:right; color:#888; font-weight:600; font-size:12px; width:64px;">تصویر</th>
+              <th style="padding:10px 8px; text-align:right; color:#888; font-weight:600; font-size:12px;">محصول</th>
+              <th style="padding:10px 8px; text-align:center; color:#888; font-weight:600; font-size:12px; white-space:nowrap;">تعداد</th>
+              <th style="padding:10px 8px; text-align:left; color:#888; font-weight:600; font-size:12px; white-space:nowrap; direction:rtl;">قیمت واحد</th>
+              <th style="padding:10px 8px; text-align:left; color:#888; font-weight:600; font-size:12px; white-space:nowrap; direction:rtl;">جمع</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${itemsHtml}
+          </tbody>
+          <tfoot>
+            ${discountRow}
+            ${couponRow}
+            ${order.walletPaid > 0 ? `<tr><td colspan="4" style="padding:8px 16px;color:#16a34a;">پرداخت با کیف پول</td><td style="padding:8px 16px;color:#16a34a;">− ${formatPrice(order.walletPaid)}</td></tr>` : ''}
+            <tr style="background:#faf7f5; border-top:2px solid #f0ece8;">
+              <td colspan="4" style="padding:14px 16px; text-align:right; font-weight:700; color:#1a1a1a; font-size:14px;">مبلغ قابل پرداخت:</td>
+              <td style="padding:14px 16px; text-align:left; font-size:18px; font-weight:700; color:${C.primary}; direction:rtl;">
+                ${formatPrice(Math.max(0, order.totalPrice - (order.walletPaid || 0)))}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+
+        ${order.paymentMethod === 'INSTALLMENT' ? renderInstallmentSchedule(order, installment) : ''}
+
+        <!-- Address -->
+        <div style="margin-top:24px; border:1px solid #f0ece8; border-radius:8px; overflow:hidden;">
+          <div style="background:#faf7f5; padding:10px 16px; border-bottom:1px solid #f0ece8;">
+            <span style="font-size:13px; font-weight:600; color:#555;">📦 اطلاعات ارسال</span>
+          </div>
+          <table width="100%" cellpadding="0" cellspacing="0" style="font-size:13px;">
+            <tr>
+              <td style="padding:10px 16px; color:#888; width:110px; border-left:1px solid #f0ece8; border-bottom:1px solid #f0ece8;">نام گیرنده</td>
+              <td style="padding:10px 16px; color:#1a1a1a; font-weight:600; border-bottom:1px solid #f0ece8;">${addressSnap.fullName ?? '—'}</td>
+            </tr>
+            <tr>
+              <td style="padding:10px 16px; color:#888; border-left:1px solid #f0ece8; border-bottom:1px solid #f0ece8;">تلفن</td>
+              <td style="padding:10px 16px; color:#1a1a1a; font-family:monospace; border-bottom:1px solid #f0ece8;">${addressSnap.phone ?? '—'}</td>
+            </tr>
+            <tr>
+              <td style="padding:10px 16px; color:#888; border-left:1px solid #f0ece8; border-bottom:1px solid #f0ece8;">استان / شهر</td>
+              <td style="padding:10px 16px; color:#1a1a1a; border-bottom:1px solid #f0ece8;">${[addressSnap.province, addressSnap.city].filter(Boolean).join(' / ') || '—'}</td>
+            </tr>
+            ${addressSnap.postalCode ? `
+            <tr>
+              <td style="padding:10px 16px; color:#888; border-left:1px solid #f0ece8; border-bottom:1px solid #f0ece8;">کد پستی</td>
+              <td style="padding:10px 16px; color:#1a1a1a; font-family:monospace; border-bottom:1px solid #f0ece8;">${addressSnap.postalCode}</td>
+            </tr>` : ''}
+            <tr>
+              <td style="padding:10px 16px; color:#888; border-left:1px solid #f0ece8;">آدرس</td>
+              <td style="padding:10px 16px; color:#1a1a1a; line-height:1.6;">${addressSnap.addressLine ?? '—'}</td>
+            </tr>
+          </table>
+        </div>
+
+        ${!isAdmin ? `
+        <!-- CTA -->
+        <div style="margin-top:28px; text-align:center;">
+          <a href="${baseUrl}/p-user/orders" style="display:inline-block; background:${C.primary}; color:#fff; text-decoration:none; font-size:14px; font-weight:700; padding:12px 32px; border-radius:8px; letter-spacing:-0.2px;">
+            مشاهده سفارشات من
+          </a>
+        </div>` : ''}
+
+      </td>
+    </tr>
+
+    <!-- Footer -->
+    <tr>
+      <td style="background:#1a1a1a; border-radius:0 0 12px 12px; padding:20px 32px; text-align:center;">
+        <p style="color:#888; font-size:11px; line-height:1.7; margin:0;">
+          این ایمیل به صورت خودکار ارسال شده است. لطفاً پاسخ ندهید.<br>
+          &copy; تمامی حقوق برای فروشگاه ${storeConfig.brand.name} محفوظ است.
+        </p>
+        ${baseUrl ? `<a href="${baseUrl}" style="color:${C.primary}; font-size:11px; text-decoration:none; display:block; margin-top:6px;">${baseUrl.replace(/^https?:\/\//, '')}</a>` : ''}
+      </td>
+    </tr>
+
+  </table>
+</body>
+</html>
+  `.trim();
+}
+
+// ─── Public API ──────────────────────────────────────────────────────────────
+
+/**
+ * ارسال ایمیل فاکتور به مشتری + ادمین
+ *
+ * @param {Object} order  - سفارش کامل populate‌شده از دیتابیس
+ * @param {string} customerEmail  - ایمیل مشتری
+ */
+export async function sendOrderConfirmationEmail(order, customerEmail, installment = null) {
+  if (!process.env.EMAIL_HOST || !process.env.EMAIL_USER) {
+    console.warn('[emailService] EMAIL_HOST / EMAIL_USER not set — skipping email');
+    return;
+  }
+
+  const transporter = createTransporter();
+  const subject = `تأیید سفارش — کد ${order.trackingCode}`;
+
+  const jobs = [];
+
+  // ارسال به مشتری
+  if (customerEmail) {
+    jobs.push(
+      transporter.sendMail({
+        from:    process.env.EMAIL_FROM ?? process.env.EMAIL_USER,
+        to:      customerEmail,
+        subject,
+        html:    buildEmailHtml(order, false, installment),
+      })
+    );
+  }
+
+  // ارسال به ادمین
+  if (process.env.ADMIN_EMAIL) {
+    jobs.push(
+      transporter.sendMail({
+        from:    process.env.EMAIL_FROM ?? process.env.EMAIL_USER,
+        to:      process.env.ADMIN_EMAIL,
+        subject: `[سفارش جدید] ${subject}`,
+        html:    buildEmailHtml(order, true, installment),
+      })
+    );
+  }
+
+  try {
+    await Promise.all(jobs);
+    console.log(`[emailService] Order emails sent for ${order.trackingCode}`);
+  } catch (err) {
+    // خطای ایمیل نباید سفارش را متوقف کند
+    console.error('[emailService] Failed to send email:', err);
+  }
+}
+
+// ─── ایمیل ساده‌ی اعلانی (قالب مشترک برای رویدادهای اقساط) ───────────────────
+function buildSimpleNoticeHtml({ title, emoji, greeting, rows = [], note, ctaPath = '/p-user/installments', ctaLabel = 'مشاهده اقساط من' }) {
+  const logoUrl = process.env.NEXT_PUBLIC_LOGO_URL ?? `${process.env.NEXT_PUBLIC_BASE_URL ?? ''}${storeConfig.brand.logo}`;
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? '';
+
+  const rowsHtml = rows.map((r) => `
+    <tr>
+      <td style="padding:10px 16px; color:#888; border-bottom:1px solid #f0ece8; width:45%;">${escapeHtml(r.label)}</td>
+      <td style="padding:10px 16px; color:#1a1a1a; font-weight:700; border-bottom:1px solid #f0ece8; text-align:left; direction:rtl;">${r.value}</td>
+    </tr>`).join('');
+
+  return `
+<!DOCTYPE html>
+<html dir="rtl" lang="fa">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700&display=swap');
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Vazirmatn', Tahoma, Arial, sans-serif; background: #f5f0eb; direction: rtl; }
+  </style>
+</head>
+<body style="background:#f5f0eb; padding: 24px 16px;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px; margin:0 auto;">
+    <tr>
+      <td style="background:#fff; border-radius:12px 12px 0 0; padding:28px 32px; text-align:center;">
+        <img src="${logoUrl}" alt="${storeConfig.brand.name}" height="44" style="display:inline-block;max-width:160px;object-fit:contain;" onerror="this.style.display='none'">
+        <h1 style="color:${C.primary}; font-size:19px; font-weight:700; margin-top:12px;">${emoji} ${escapeHtml(title)}</h1>
+      </td>
+    </tr>
+    <tr>
+      <td style="background:#fff; padding:24px 32px;">
+        <p style="font-size:15px;color:#555;margin:0 0 16px; line-height:1.8;">${greeting}</p>
+        <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #f0ece8; border-radius:8px; overflow:hidden; font-size:13px;">
+          ${rowsHtml}
+        </table>
+        ${note ? `<p style="font-size:12px;color:#888;margin-top:16px; line-height:1.8;">${note}</p>` : ''}
+        <div style="margin-top:24px; text-align:center;">
+          <a href="${baseUrl}${ctaPath}" style="display:inline-block; background:${C.primary}; color:#fff; text-decoration:none; font-size:14px; font-weight:700; padding:11px 28px; border-radius:8px;">
+            ${ctaLabel}
+          </a>
+        </div>
+      </td>
+    </tr>
+    <tr>
+      <td style="background:#1a1a1a; border-radius:0 0 12px 12px; padding:18px 32px; text-align:center;">
+        <p style="color:#888; font-size:11px; line-height:1.7; margin:0;">
+          این ایمیل به صورت خودکار ارسال شده است.<br>
+          &copy; تمامی حقوق برای فروشگاه ${storeConfig.brand.name} محفوظ است.
+        </p>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`.trim();
+}
+
+async function sendSingle(to, subject, html) {
+  if (!process.env.EMAIL_HOST || !process.env.EMAIL_USER) {
+    console.warn('[emailService] EMAIL_HOST / EMAIL_USER not set — skipping email');
+    return;
+  }
+  if (!to) return;
+  try {
+    const transporter = createTransporter();
+    await transporter.sendMail({
+      from: process.env.EMAIL_FROM ?? process.env.EMAIL_USER,
+      to,
+      subject,
+      html,
+    });
+    console.log(`[emailService] Notice email sent to ${to}: ${subject}`);
+  } catch (err) {
+    console.error('[emailService] Failed to send notice email:', err);
+  }
+}
+
+/**
+ * ایمیل «دریافت یک قسط» — وقتی ادمین یک چک را پاس (CLEARED) می‌کند.
+ */
+export async function sendInstallmentCheckClearedEmail(order, installment, check, customerEmail) {
+  const checks = (installment.checks || []).slice().sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
+  const idx = checks.findIndex((c) => String(c._id) === String(check._id));
+  const num = idx >= 0 ? idx + 1 : '';
+  const clearedCount = checks.filter((c) => c.status === 'CLEARED').length;
+  const remaining = checks.length - clearedCount;
+
+  const html = buildSimpleNoticeHtml({
+    title: 'قسط شما دریافت شد',
+    emoji: '✅',
+    greeting: 'با سلام،<br>یکی از اقساط سفارش شما با موفقیت دریافت و تأیید شد.',
+    rows: [
+      { label: 'کد سفارش', value: escapeHtml(order.trackingCode ?? '—') },
+      { label: 'شماره قسط', value: `قسط ${new Intl.NumberFormat('fa-IR').format(num || 0)}` },
+      { label: 'مبلغ این قسط', value: formatPrice(check.amount) },
+      { label: 'اقساط باقی‌مانده', value: `${new Intl.NumberFormat('fa-IR').format(remaining)} قسط` },
+    ],
+    note: remaining > 0
+      ? 'با تشکر از پرداخت به‌موقع شما. اقساط باقی‌مانده را می‌توانید از پنل کاربری پیگیری کنید.'
+      : 'این آخرین قسط شما بود؛ به‌زودی ایمیل تکمیل اقساط برایتان ارسال می‌شود.',
+  });
+
+  await sendSingle(customerEmail, `دریافت قسط — سفارش ${order.trackingCode}`, html);
+}
+
+/**
+ * ایمیل «یادآوری سررسید اقساط» — برای چک‌های نزدیک به سررسید یا سررسیدگذشته.
+ *
+ * @param {Object} order
+ * @param {Object} installment
+ * @param {Array}  dueChecks  - [{ number, amount, dueDate, overdue }]
+ * @param {string} customerEmail
+ */
+export async function sendInstallmentReminderEmail(order, installment, dueChecks, customerEmail) {
+  if (!Array.isArray(dueChecks) || dueChecks.length === 0) return;
+
+  const anyOverdue = dueChecks.some((c) => c.overdue);
+  const totalDue = dueChecks.reduce((s, c) => s + (Number(c.amount) || 0), 0);
+
+  const rows = dueChecks.map((c) => ({
+    label: `قسط ${new Intl.NumberFormat('fa-IR').format(c.number)} — سررسید ${formatJalaliDate(c.dueDate)}`,
+    value: `${formatPrice(c.amount)}${c.overdue ? ' <span style="color:#dc2626;font-size:11px;">(سررسید گذشته)</span>' : ''}`,
+  }));
+  rows.push({ label: 'مجموع مبلغ قابل پرداخت', value: formatPrice(totalDue) });
+
+  const html = buildSimpleNoticeHtml({
+    title: anyOverdue ? 'یادآوری اقساط سررسیدگذشته' : 'یادآوری سررسید اقساط',
+    emoji: anyOverdue ? '⚠️' : '🔔',
+    greeting: anyOverdue
+      ? 'با سلام،<br>برخی از اقساط سفارش شما به سررسید رسیده یا از آن گذشته است. لطفاً در اسرع وقت نسبت به تأمین موجودی چک‌ها اقدام فرمایید.'
+      : 'با سلام،<br>سررسید برخی از اقساط سفارش شما نزدیک است. لطفاً نسبت به تأمین موجودی چک‌های زیر اقدام فرمایید.',
+    rows: [{ label: 'کد سفارش', value: escapeHtml(order.trackingCode ?? '—') }, ...rows],
+    note: 'در صورت پرداخت، این پیام را نادیده بگیرید. برای پیگیری وضعیت اقساط به پنل کاربری مراجعه کنید.',
+  });
+
+  await sendSingle(
+    customerEmail,
+    `${anyOverdue ? 'یادآوری اقساط سررسیدگذشته' : 'یادآوری سررسید اقساط'} — سفارش ${order.trackingCode}`,
+    html,
+  );
+}
+
+/**
+ * ایمیل «پاسخ پشتیبانی به تیکت» — فقط وقتی ادمین پاسخ می‌دهد ارسال می‌شود
+ * (پیام‌های خود کاربر ایمیل ندارند).
+ *
+ * @param {Object} ticket        - سند تیکت (باید _id، subject و department داشته باشد)
+ * @param {string} replyText     - متن پاسخ ادمین (خالی اگر فقط پیوست بوده)
+ * @param {number} attachmentsCount - تعداد پیوست‌های پاسخ
+ * @param {string} customerEmail
+ */
+export async function sendTicketReplyEmail(ticket, replyText, attachmentsCount, customerEmail) {
+  if (!customerEmail) return;
+
+  const logoUrl = process.env.NEXT_PUBLIC_LOGO_URL ?? `${process.env.NEXT_PUBLIC_BASE_URL ?? ''}${storeConfig.brand.logo}`;
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? '';
+  const ticketUrl = `${baseUrl}/p-user/tickets/${ticket._id}`;
+
+  const departmentLabel = TICKET_DEPARTMENT_LABELS[ticket.department] ?? ticket.department ?? '—';
+
+  const replyBlock = replyText
+    ? `<div style="margin-top:16px; border:1px solid ${tint(0.2)}; background:${tint(0.04)}; border-radius:8px; padding:14px 16px;">
+        <div style="font-size:11px; font-weight:700; color:${C.primary}; margin-bottom:8px;">متن پاسخ پشتیبانی</div>
+        <p style="font-size:14px; color:#1a1a1a; line-height:2; margin:0; white-space:pre-line;">${escapeHtml(replyText)}</p>
+      </div>`
+    : '';
+
+  const attachmentNote = attachmentsCount > 0
+    ? `<p style="font-size:12px;color:#888;margin-top:12px;">📎 این پاسخ ${new Intl.NumberFormat('fa-IR').format(attachmentsCount)} پیوست دارد — برای مشاهده وارد گفتگو شوید.</p>`
+    : '';
+
+  const html = `
+<!DOCTYPE html>
+<html dir="rtl" lang="fa">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700&display=swap');
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Vazirmatn', Tahoma, Arial, sans-serif; background: #f5f0eb; direction: rtl; }
+  </style>
+</head>
+<body style="background:#f5f0eb; padding: 24px 16px;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px; margin:0 auto;">
+    <tr>
+      <td style="background:#fff; border-radius:12px 12px 0 0; padding:28px 32px; text-align:center;">
+        <img src="${logoUrl}" alt="${storeConfig.brand.name}" height="44" style="display:inline-block;max-width:160px;object-fit:contain;" onerror="this.style.display='none'">
+        <h1 style="color:${C.primary}; font-size:19px; font-weight:700; margin-top:12px;">💬 پشتیبانی به تیکت شما پاسخ داد</h1>
+      </td>
+    </tr>
+    <tr>
+      <td style="background:#fff; padding:24px 32px;">
+        <p style="font-size:15px;color:#555;margin:0 0 16px; line-height:1.8;">
+          با سلام،<br>کارشناسان پشتیبانی ${storeConfig.brand.name} به تیکت شما پاسخ داده‌اند.
+        </p>
+        <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #f0ece8; border-radius:8px; overflow:hidden; font-size:13px;">
+          <tr>
+            <td style="padding:10px 16px; color:#888; border-bottom:1px solid #f0ece8; width:35%;">موضوع تیکت</td>
+            <td style="padding:10px 16px; color:#1a1a1a; font-weight:700; border-bottom:1px solid #f0ece8;">${escapeHtml(ticket.subject ?? '—')}</td>
+          </tr>
+          <tr>
+            <td style="padding:10px 16px; color:#888;">دپارتمان</td>
+            <td style="padding:10px 16px; color:#1a1a1a; font-weight:700;">${escapeHtml(departmentLabel)}</td>
+          </tr>
+        </table>
+        ${replyBlock}
+        ${attachmentNote}
+        <div style="margin-top:24px; text-align:center;">
+          <a href="${ticketUrl}" style="display:inline-block; background:${C.primary}; color:#fff; text-decoration:none; font-size:14px; font-weight:700; padding:11px 32px; border-radius:8px;">
+            ادامه گفتگو
+          </a>
+        </div>
+      </td>
+    </tr>
+    <tr>
+      <td style="background:#1a1a1a; border-radius:0 0 12px 12px; padding:18px 32px; text-align:center;">
+        <p style="color:#888; font-size:11px; line-height:1.7; margin:0;">
+          این ایمیل به صورت خودکار ارسال شده است.<br>
+          &copy; تمامی حقوق برای فروشگاه ${storeConfig.brand.name} محفوظ است.
+        </p>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`.trim();
+
+  await sendSingle(customerEmail, `پاسخ پشتیبانی — ${ticket.subject}`, html);
+}
+
+/**
+ * ایمیل «تکمیل اقساط» — وقتی همه‌ی چک‌ها پاس شده‌اند.
+ */
+export async function sendInstallmentCompletedEmail(order, installment, customerEmail) {
+  const html = buildSimpleNoticeHtml({
+    title: 'اقساط شما تکمیل شد',
+    emoji: '🎉',
+    greeting: 'با سلام،<br>تمامی اقساط سفارش شما با موفقیت پرداخت و تسویه شد. از خرید و همراهی شما سپاسگزاریم.',
+    rows: [
+      { label: 'کد سفارش', value: escapeHtml(order.trackingCode ?? '—') },
+      { label: 'تعداد اقساط', value: `${new Intl.NumberFormat('fa-IR').format(installment.numberOfChecks ?? (installment.checks || []).length)} قسط` },
+      { label: 'مبلغ کل سفارش', value: formatPrice(order.totalPrice) },
+    ],
+    note: 'پرونده‌ی اقساط این سفارش بسته شد. در صورت هرگونه سؤال با پشتیبانی در تماس باشید.',
+  });
+
+  await sendSingle(customerEmail, `تکمیل اقساط — سفارش ${order.trackingCode}`, html);
+}
+
+/**
+ * ایمیل «سفارش تحویل داده شد» — دعوت به ثبت نظر (اعتبار کیف پول هدیه).
+ */
+export async function sendReviewRequestEmail(order, customerEmail) {
+  const html = buildSimpleNoticeHtml({
+    title: 'سفارش شما تحویل داده شد',
+    emoji: '📦',
+    greeting: 'با سلام،<br>سفارش شما با موفقیت تحویل داده شد. با ثبت نظر برای محصولات این سفارش، اعتبار کیف پول هدیه بگیرید.',
+    rows: [
+      { label: 'کد سفارش', value: escapeHtml(order.trackingCode ?? '—') },
+    ],
+    note: 'نظر شما پس از تأیید توسط تیم ما، اعتبار هدیه به کیف پولتان اضافه می‌شود.',
+    ctaPath: '/p-user/orders',
+    ctaLabel: 'ثبت نظر برای سفارش',
+  });
+
+  await sendSingle(customerEmail, `سفارش شما تحویل داده شد — ${order.trackingCode}`, html);
+}
+
+/**
+ * ایمیل «سفارش به‌دستتان رسید؟» — پیگیریِ سه‌روزه پس از تحویل.
+ */
+export async function sendDeliveryFollowUpEmail(order, customerEmail) {
+  const html = buildSimpleNoticeHtml({
+    title: 'سفارش شما به‌دستتان رسید؟',
+    emoji: '📬',
+    greeting: 'با سلام،<br>چند روزی از تحویل سفارش شما می‌گذرد. لطفاً از دریافت آن اطمینان حاصل کنید؛ اگر مشکلی وجود داشت یا هنوز آن را دریافت نکرده‌اید، حتماً به ما اطلاع دهید.',
+    rows: [
+      { label: 'کد سفارش', value: escapeHtml(order.trackingCode ?? '—') },
+    ],
+    note: 'در صورت دریافت سفارش، خوشحال می‌شویم نظر شما را هم بخوانیم — اعتبار کیف پول هدیه می‌گیرید.',
+    ctaPath: '/p-user/orders',
+    ctaLabel: 'مشاهده سفارش من',
+  });
+
+  await sendSingle(customerEmail, `سفارش شما به‌دستتان رسید؟ — ${order.trackingCode}`, html);
+}
+
+/**
+ * ایمیل «کیف پول شارژ شد» — بابت نظر تأییدشده روی سفارش.
+ */
+export async function sendWalletCreditEmail({ trackingCode, amount }, customerEmail) {
+  const html = buildSimpleNoticeHtml({
+    title: 'کیف پول شما شارژ شد',
+    emoji: '🎁',
+    greeting: 'با سلام،<br>بابت ثبت نظر تأییدشده، اعتباری به کیف پول شما اضافه شد. از همراهی شما سپاسگزاریم.',
+    rows: [
+      { label: 'کد سفارش', value: escapeHtml(trackingCode ?? '—') },
+      { label: 'مبلغ اعتبار', value: formatPrice(amount) },
+    ],
+    note: 'این اعتبار در خریدهای بعدی شما در فروشگاه قابل استفاده است.',
+    ctaPath: '/p-user',
+    ctaLabel: 'مشاهده حساب کاربری',
+  });
+
+  await sendSingle(customerEmail, `کیف پول شما شارژ شد — سفارش ${trackingCode}`, html);
+}
+
+/**
+ * ایمیل «کد بازیابی رمز عبور» — کد ۵ رقمی برای فرآیند فراموشی رمز عبور.
+ *
+ * @param {string} to
+ * @param {string} code               کد ۵ رقمی (متن ساده — فقط در همین ایمیل ارسال می‌شود)
+ * @param {number} expiresInMinutes
+ */
+export async function sendPasswordResetCodeEmail(to, code, expiresInMinutes = 10) {
+  const logoUrl = process.env.NEXT_PUBLIC_LOGO_URL ?? `${process.env.NEXT_PUBLIC_BASE_URL ?? ''}${storeConfig.brand.logo}`;
+
+  const html = `
+<!DOCTYPE html>
+<html dir="rtl" lang="fa">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700&display=swap');
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Vazirmatn', Tahoma, Arial, sans-serif; background: #f5f0eb; direction: rtl; }
+  </style>
+</head>
+<body style="background:#f5f0eb; padding: 24px 16px;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px; margin:0 auto;">
+    <tr>
+      <td style="background:#fff; border-radius:12px 12px 0 0; padding:28px 32px; text-align:center;">
+        <img src="${logoUrl}" alt="${storeConfig.brand.name}" height="44" style="display:inline-block;max-width:160px;object-fit:contain;" onerror="this.style.display='none'">
+        <h1 style="color:${C.primary}; font-size:19px; font-weight:700; margin-top:12px;">🔐 بازیابی رمز عبور</h1>
+      </td>
+    </tr>
+    <tr>
+      <td style="background:#fff; padding:24px 32px;">
+        <p style="font-size:15px;color:#555;margin:0 0 20px; line-height:1.8;">
+          با سلام،<br>برای بازیابی رمز عبور حساب کاربری‌تان در ${storeConfig.brand.name}، از کد زیر استفاده کنید:
+        </p>
+        <div style="text-align:center; margin:24px 0;">
+          <span style="display:inline-block; background:${tint(0.08)}; border:1px solid ${tint(0.25)}; border-radius:10px; padding:16px 32px; font-size:32px; font-weight:700; letter-spacing:8px; color:${C.primary}; direction:ltr;">${code}</span>
+        </div>
+        <p style="font-size:13px;color:#888;margin:0; line-height:1.8; text-align:center;">
+          این کد تا ${expiresInMinutes} دقیقه دیگر معتبر است.
+        </p>
+        <p style="font-size:12px;color:#888;margin-top:20px; line-height:1.8;">
+          اگر شما درخواست بازیابی رمز عبور نداده‌اید، این ایمیل را نادیده بگیرید؛ رمز عبور شما تغییر نخواهد کرد.
+        </p>
+      </td>
+    </tr>
+    <tr>
+      <td style="background:#1a1a1a; border-radius:0 0 12px 12px; padding:18px 32px; text-align:center;">
+        <p style="color:#888; font-size:11px; line-height:1.7; margin:0;">
+          این ایمیل به صورت خودکار ارسال شده است. لطفاً پاسخ ندهید.<br>
+          &copy; تمامی حقوق برای فروشگاه ${storeConfig.brand.name} محفوظ است.
+        </p>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`.trim();
+
+  await sendSingle(to, `کد بازیابی رمز عبور — ${storeConfig.brand.name}`, html);
+}
+
+/** Wallet outbox needs failures to propagate so delivery can be retried. */
+export async function sendWalletTransactionEmail(transaction, customerEmail) {
+  if (!process.env.EMAIL_HOST || !process.env.EMAIL_USER) throw new Error('Wallet email transport is not configured');
+  const credit = transaction.type === 'credit';
+  const title = credit ? 'واریز به کیف پول' : 'برداشت از کیف پول';
+  const html = buildSimpleNoticeHtml({
+    title, emoji: credit ? '💰' : '💳',
+    greeting: credit ? 'مبلغی به کیف پول شما اضافه شد.' : 'مبلغی از کیف پول شما کسر شد.',
+    rows: [
+      { label: 'مبلغ تراکنش', value: formatPrice(transaction.amount) },
+      { label: 'توضیح تراکنش', value: escapeHtml(transaction.description) },
+      ...(transaction.trackingCode ? [{ label: 'کد سفارش', value: escapeHtml(transaction.trackingCode) }] : []),
+    ],
+    ctaPath: '/p-user/wallet', ctaLabel: 'مشاهده کیف پول',
+  });
+  const transporter = createTransporter({ connectionTimeout: 10000, greetingTimeout: 10000, socketTimeout: 20000 });
+  const result = await transporter.sendMail({
+    from: process.env.EMAIL_FROM ?? process.env.EMAIL_USER, to: customerEmail,
+    subject: title + ` — ${storeConfig.brand.name}`, html,
+    messageId: '<wallet-' + String(transaction._id).replace(/[^a-zA-Z0-9-]/g, '-') + '@example.com>',
+  });
+  if (!result.accepted?.length) throw new Error('Wallet email recipient was not accepted');
+}

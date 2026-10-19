@@ -1,0 +1,123 @@
+/**
+ * src/app/api/brands/grouped/route.js
+ *
+ * GET — یک batch از بخش‌های گروه‌بندی‌شده‌ی صفحه‌ی برند (بر اساس سری ریشه) را
+ * برای بارگذاری تدریجی (infinite scroll) برمی‌گرداند.
+ *
+ * query params:
+ *   brandId (الزامی), sportId?, categoryId?
+ *   attrFilters? → آرایه‌ی JSON از فیلترهای ویژگی: [{ name, values, source }]
+ *   attrName?, attrValue?, attrSource? → فرمتِ قدیمیِ تک‌ویژگی (برای سازگاری)
+ *   offset?, productOffset? → cursor دوبخشیِ section/product
+ *   limit? → سقف تعداد sectionهای یک پاسخ؛ تعداد محصول همیشه در سرور محدود است
+ *   minPrice?, maxPrice?, search?
+ *   targetAudience? → مخاطبِ هدف (navbar audience tabs)
+ *   withIndex=1  → فهرست کاملِ بخش‌ها (برای نویگیشن سری‌ها) را هم برگردان
+ *
+ * محاسبه و کش در services/brandGrouped.service.js انجام می‌شود.
+ */
+
+import { NextResponse } from "next/server";
+import { parseCategoryAttributes } from "@/lib/categoryFilterState";
+import { getBrandGroupedSections } from "base/services/brandGrouped.service";
+import { normalizeTargetAudience } from "base/utils/targetAudience";
+import {
+  BRAND_PRODUCTS_PER_BATCH,
+  BRAND_SECTIONS_PER_BATCH,
+} from "base/utils/groupedProductPagination";
+
+export async function GET(req) {
+  try {
+    const { searchParams } = new URL(req.url);
+
+    const brandId = searchParams.get("brandId");
+    if (!brandId) {
+      return NextResponse.json({ error: "brandId الزامی است" }, { status: 400 });
+    }
+
+    const toInt = (v, d) => {
+      const n = parseInt(v, 10);
+      return Number.isFinite(n) ? n : d;
+    };
+
+    // فیلترهای ویژگی به‌صورتِ آرایه‌ی JSON ارسال می‌شوند: [{name, values, source}]
+    let attrFilters = [];
+    const rawAttr = searchParams.get("attrFilters");
+    if (rawAttr) {
+      try {
+        const parsed = JSON.parse(rawAttr);
+        if (Array.isArray(parsed)) attrFilters = parsed;
+      } catch {
+        attrFilters = [];
+      }
+    }
+    // سازگاری با فرمتِ قدیمیِ تک‌ویژگی (attrName/attrValue/attrSource)
+    if (attrFilters.length === 0) {
+      const attrName = searchParams.get("attrName");
+      const attrValue = searchParams.get("attrValue");
+      if (attrName && attrValue) {
+        attrFilters = [
+          {
+            name: attrName,
+            values: [attrValue],
+            source:
+              searchParams.get("attrSource") === "variant"
+                ? "variant"
+                : "fixed",
+          },
+        ];
+      }
+    }
+
+    const rawTargetAudience = searchParams.get("targetAudience");
+    const targetAudience = normalizeTargetAudience(rawTargetAudience);
+    if (rawTargetAudience && !targetAudience) {
+      return NextResponse.json({ error: "مخاطب هدف نامعتبر است" }, { status: 400 });
+    }
+
+    let categoryAttributes;
+    try {
+      categoryAttributes = parseCategoryAttributes(searchParams.get("categoryAttributes"));
+    } catch {
+      return NextResponse.json({ error: "فیلتر ویژگی نامعتبر است" }, { status: 400 });
+    }
+    const categoryId = searchParams.get("categoryId") || null;
+    if (categoryId && !/^[a-f0-9]{24}$/i.test(categoryId)) {
+      return NextResponse.json({ error: "دسته‌بندی نامعتبر است" }, { status: 400 });
+    }
+
+    const categoryIds = [...new Set(searchParams.getAll("categoryIds"))];
+    if (categoryIds.length > 100 || categoryIds.some((id) => !/^[a-f0-9]{24}$/i.test(id))) {
+      return NextResponse.json({ error: "دسته‌بندی نامعتبر است" }, { status: 400 });
+    }
+
+    const data = await getBrandGroupedSections({
+      brandId,
+      sportId: searchParams.get("sportId") || null,
+      categoryId,
+      categoryIds,
+      categoryAttributes,
+      attrFilters,
+      offset: toInt(searchParams.get("offset"), 0),
+      productOffset: toInt(searchParams.get("productOffset"), 0),
+      limit: Math.min(
+        Math.max(
+          toInt(searchParams.get("limit"), BRAND_SECTIONS_PER_BATCH),
+          1,
+        ),
+        BRAND_SECTIONS_PER_BATCH,
+      ),
+      productLimit: BRAND_PRODUCTS_PER_BATCH,
+      minPrice: toInt(searchParams.get("minPrice"), 0),
+      maxPrice: toInt(searchParams.get("maxPrice"), 0),
+      search: searchParams.get("search") || "",
+      withIndex: searchParams.get("withIndex") === "1",
+      targetAudience,
+    });
+
+    return NextResponse.json(data, { status: 200 });
+  } catch (error) {
+    console.error("[api/brands/grouped GET]", error);
+    return NextResponse.json({ error: "خطا در دریافت بخش‌ها" }, { status: 500 });
+  }
+}

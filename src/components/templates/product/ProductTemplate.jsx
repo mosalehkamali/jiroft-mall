@@ -1,0 +1,62 @@
+import { Suspense } from "react";
+import ProductClientSection from "./ProductClientSection";
+import ProductTabs from "./ProductTabs";
+import ProductShare from "./ProductShare";
+import ProductExploreNav from "./ProductExploreNav";
+import RelatedProducts from "./RelatedProducts";
+import ProductAssurance from "./ProductAssurance";
+import { isFeatureEnabled } from "@/lib/features";
+
+// فیلدهای سفارشیِ عمومی (store.config.js) کنارِ ویژگی‌های دسته در جدولِ مشخصات
+const customFieldRows = (fields = []) =>
+  fields.map((f) => ({
+    name: `custom:${f.key}`,
+    label: f.label,
+    value: f.type === "boolean" ? (f.value ? "بله" : "خیر") : f.value,
+  }));
+
+const ProductTemplate = ({ product, reviews = [], reviewStats, rate }) => {
+  const technicalStats = isFeatureEnabled("technicalStats")
+    ? {
+        productStats: product.technicalStats || [],
+        categoryStats: product.category?.technicalStats || [],
+        color: product.color,
+      }
+    : null;
+
+  return (
+    <div className="min-h-screen bg-background">
+      <div className="max-w-7xl mx-auto px-4 pt-8">
+        <div className="container mx-auto px-4 pt-6 sm:pt-8 md:pt-12 lg:px-8">
+          {/* Gallery + Info — coupled via client state */}
+          <ProductClientSection product={product} />
+
+          {/* Tabs */}
+          <div className="mt-10 sm:mt-12 md:mt-16">
+            <ProductTabs
+              description={product.longDescription}
+              attributes={[...(product.attributes || []), ...customFieldRows(product.customFieldsView)]}
+              technicalStats={technicalStats}
+              targetAudience={product.targetAudience}
+              customTab={product.category?.customTab}
+              customTabItemIds={product.customTabItems || []}
+              productId={product._id}
+              reviews={reviews}
+              reviewStats={reviewStats}
+            />
+          </div>
+          <div className="mt-10 flex flex-col gap-4 pb-8 sm:mt-12 sm:gap-6 md:mt-16 md:pb-10">
+            <ProductAssurance />
+            <ProductShare />
+            <ProductExploreNav product={product} />
+          </div>
+        </div>
+      </div>
+      <Suspense fallback={null}>
+        <RelatedProducts productId={product._id} rate={rate} />
+      </Suspense>
+    </div>
+  );
+};
+
+export default ProductTemplate;

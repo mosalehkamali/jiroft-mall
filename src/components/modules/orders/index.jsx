@@ -1,0 +1,755 @@
+'use client'
+
+import storeConfig from "base/store.config";
+import { couponDisplayCode } from "@/lib/couponLabel";
+import { motion, AnimatePresence } from 'framer-motion'
+import {
+  FaShoppingBag, FaTruck, FaCheckCircle, FaTimesCircle,
+  FaClock, FaSpinner, FaTrash, FaReceipt, FaMapMarkerAlt,
+  FaTimes, FaChevronDown, FaStar
+} from 'react-icons/fa'
+import { MdOutlinePayment, MdOutlineConfirmationNumber } from 'react-icons/md'
+import { useState, useEffect } from 'react'
+import { toast } from 'react-toastify'
+import Swal from 'sweetalert2'
+import OrderFlowSelectionsView from '@/components/order/OrderFlowSelectionsView'
+import VariantSummary from '@/components/order/VariantSummary'
+import ReviewModal from './ReviewModal'
+
+// وضعیت‌های سفارش که اجازه‌ی ثبت نظر می‌دهند (مطابق enum مدل Order)
+const REVIEWABLE_FULFILLMENT = ['SENT', 'DELIVERED']
+
+/* ─── Helpers ─────────────────────────────────────────────────────── */
+
+function formatPrice(price) {
+  return new Intl.NumberFormat('fa-IR').format(Number(price ?? 0))
+}
+
+// قالب‌بندی مبلغ یورو — جدا از تومان (ارقام لاتین، حداکثر دو رقم اعشار)
+function formatEUR(v) {
+  return new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(Number(v ?? 0))
+}
+
+function splitName(text) {
+  if (!text) return { farsi: '', english: '' }
+  const match = text.match(/[a-zA-Z(].*/)
+  if (match) {
+    return { farsi: text.substring(0, match.index).trim(), english: match[0].trim() }
+  }
+  return { farsi: text, english: '' }
+}
+
+// متنِ خلاصه‌ی واریانت برای نماهای فشرده — اولویت با اسنپ‌شات (چندواحدی)، فالبک attributes
+function variantSummaryText(item) {
+  const snap = item?.variantSnapshot
+  if (Array.isArray(snap) && snap.length) {
+    return snap
+      .map((e) =>
+        e.units && Object.keys(e.units).length
+          ? Object.entries(e.units).map(([u, v]) => `${v} ${u}`).join('/')
+          : e.value
+      )
+      .join(' / ')
+  }
+  const attrs = item?.variant?.attributes
+  if (attrs && Object.keys(attrs).length) {
+    return Object.entries(attrs).map(([k, v]) => `${k}: ${v}`).join(' / ')
+  }
+  return ''
+}
+
+const PAYMENT_STATUS = {
+  UNPAID:          { label: 'پرداخت نشده',      color: 'bg-red-50 text-red-600 border-red-200',        icon: FaTimesCircle },
+  PARTIALLY_PAID:  { label: 'پرداخت جزئی',      color: 'bg-amber-50 text-amber-600 border-amber-200',  icon: FaClock },
+  PAID:            { label: 'پرداخت شده',        color: 'bg-green-50 text-green-600 border-green-200',  icon: FaCheckCircle },
+}
+
+const FULFILLMENT_STATUS = {
+  PENDING:    { label: 'در انتظار',      color: 'text-gray-500' },
+  PROCESSING: { label: 'در حال پردازش', color: 'text-blue-600' },
+  SHIPPED:    { label: 'ارسال شده',      color: 'text-purple-600' },
+  DELIVERED:  { label: 'تحویل شده',     color: 'text-green-600' },
+  CANCELLED:  { label: 'لغو شده',       color: 'text-red-500' },
+}
+
+const PAYMENT_METHOD = {
+  ONLINE:       'پرداخت آنلاین',
+  BANK_RECEIPT: 'فیش بانکی',
+  INSTALLMENT:  'اقساطی',
+}
+
+/* ─── OrderDetailModal ─────────────────────────────────────────────── */
+
+function OrderDetailModal({ order, onClose, isStore = false }) {
+  const addressSnap = order.address?.snapshot ?? {}
+  const payStatus   = PAYMENT_STATUS[order.paymentStatus] ?? PAYMENT_STATUS.UNPAID
+  const fulStatus   = FULFILLMENT_STATUS[order.fulfillmentStatus] ?? FULFILLMENT_STATUS.PENDING
+  const PayIcon     = payStatus.icon
+
+  // ─── وضعیت یورو (فقط برای کاربران «فروشگاه») — مستقل از تومان ───
+  // همان داده‌ای که در پنل ادمین ثبت می‌شود: priceEUR و paymentsEUR.
+  // مانده دقیقاً مثل تومان سمت کلاینت محاسبه می‌شود.
+  const hasEurPrice  = order.priceEUR !== null && order.priceEUR !== undefined
+  const totalPaidEUR = (order.paymentsEUR ?? []).reduce((s, p) => s + (p.amount || 0), 0)
+  const remainingEUR = hasEurPrice ? order.priceEUR - totalPaidEUR : null
+
+  return (
+    <AnimatePresence>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+        style={{ background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(4px)' }}
+        onClick={onClose}
+      >
+        <motion.div
+          initial={{ y: 60, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: 60, opacity: 0 }}
+          transition={{ type: 'spring', damping: 26, stiffness: 300 }}
+          className="w-full sm:max-w-lg bg-white rounded-t-3xl sm:rounded-[6px] overflow-hidden shadow-2xl max-h-[92vh] flex flex-col"
+          dir="rtl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Modal Header */}
+          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-[var(--color-primary)] text-white flex-shrink-0">
+            <div className="flex items-center gap-2.5">
+              <FaReceipt className="text-white/80 text-sm" />
+              <div>
+                <p className="font-bold text-sm tracking-tight">جزئیات سفارش</p>
+                <p className="text-white/75 text-xs font-mono mt-0.5">{order.trackingCode}</p>
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              className="w-8 h-8 flex items-center justify-center rounded-full bg-white/20 hover:bg-white/30 transition"
+            >
+              <FaTimes className="text-sm" />
+            </button>
+          </div>
+
+          {/* Scrollable content */}
+          <div className="overflow-y-auto flex-1 p-5 space-y-5">
+
+            {/* وضعیت */}
+            <div className="flex flex-wrap gap-2">
+              <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full border ${payStatus.color}`}>
+                <PayIcon className="text-[11px]" />
+                {payStatus.label}
+              </span>
+              <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full bg-gray-50 border border-gray-200 ${fulStatus.color}`}>
+                {fulStatus.label}
+              </span>
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full bg-gray-50 border border-gray-200 text-gray-600">
+                <MdOutlinePayment className="text-sm" />
+                {PAYMENT_METHOD[order.paymentMethod] ?? order.paymentMethod}
+              </span>
+            </div>
+
+            {/* اقلام */}
+            <div className="border border-gray-100 rounded-[6px] overflow-hidden">
+              <div className="bg-gray-50 px-4 py-2.5 border-b border-gray-100">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">اقلام سفارش</p>
+              </div>
+              <div className="divide-y divide-gray-50">
+                {order.items?.map((item, idx) => {
+                  const name  = item.product?.name ?? ''
+                  const image = item.product?.mainImage ?? ''
+                  const { farsi, english } = splitName(name)
+                  const variantAttrs = item.variant?.attributes ?? null
+                  const total = (item.unitPrice ?? 0) * (item.quantity ?? 1)
+
+                  // قیمت یوروییِ این قلم — فقط برای کاربران «فروشگاه» و فقط اگر
+                  // ادمین صراحتاً برای همین قلم قیمت یورویی ثبت کرده باشد.
+                  // مقدار ذخیره‌شده «قیمت واحد» است، پس کلِ ردیف = مقدار × تعداد.
+                  const hasItemEur =
+                    isStore && item.priceEUR !== null && item.priceEUR !== undefined
+                  const itemEurTotal = hasItemEur
+                    ? item.priceEUR * (item.quantity ?? 1)
+                    : null
+
+                  return (
+                    <div key={item.product?._id ?? idx} className="flex gap-3 px-4 py-3">
+                      {image && (
+                        <img src={image} alt={name}
+                          className="w-12 h-12 rounded-lg object-cover border border-gray-100 flex-shrink-0" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div>
+                          {farsi && <p className="text-sm font-bold text-[var(--color-dark)] leading-snug tracking-tight whitespace-normal [overflow-wrap:anywhere]">{farsi}</p>}
+                          {english && <span className="text-xs font-semibold text-gray-500 tracking-tight" dir="ltr">{english}</span>}
+                          {!farsi && !english && name && <p className="text-sm font-bold text-[var(--color-dark)] whitespace-normal [overflow-wrap:anywhere]">{name}</p>}
+                        </div>
+                        {(item.variantSnapshot?.length ||
+                          (variantAttrs && Object.keys(variantAttrs).length > 0)) && (
+                          <div className="mt-1">
+                            <VariantSummary
+                              snapshot={item.variantSnapshot}
+                              attributes={variantAttrs}
+                            />
+                          </div>
+                        )}
+                        {item.flowSelections?.length > 0 && (
+                          <OrderFlowSelectionsView flowSelections={item.flowSelections} />
+                        )}
+                        <div className="flex items-center justify-between mt-1.5">
+                          <span className="text-[11px] text-gray-400">{item.quantity} × {formatPrice(item.unitPrice)} ت</span>
+                          <span className="text-sm font-bold text-[var(--color-dark)] tracking-tight">
+                            {formatPrice(total)} <span className="text-[10px] font-medium text-gray-400">{storeConfig.commerce.currency.label}</span>
+                          </span>
+                        </div>
+                        {/* قیمت یورویی این قلم — در کنار قیمت تومان، بدون جایگزینی آن */}
+                        {hasItemEur && (
+                          <div className="mt-1 flex items-center justify-between border-t border-dashed border-[var(--color-primary)]/20 pt-1">
+                            <span className="text-[11px] text-[var(--color-primary)]/70" dir="ltr">
+                              {item.quantity} × € {formatEUR(item.priceEUR)}
+                            </span>
+                            <span className="text-sm font-bold tracking-tight text-[var(--color-primary)]" dir="ltr">
+                              € {formatEUR(itemEurTotal)}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* قیمت */}
+            <div className="border border-gray-100 rounded-[6px] overflow-hidden">
+              <div className="divide-y divide-gray-50 text-sm">
+                {(order.discountAmount ?? 0) > 0 && (
+                  <div className="flex justify-between px-4 py-2.5 text-emerald-600">
+                    <span className="text-gray-500">تخفیف</span>
+                    <span className="font-medium">− {formatPrice(order.discountAmount)} {storeConfig.commerce.currency.label}</span>
+                  </div>
+                )}
+                {(order.couponDiscount ?? 0) > 0 && (
+                  <div className="flex justify-between px-4 py-2.5 text-emerald-600">
+                    <span className="text-gray-500">
+                      {order.coupon?.isManual ? "تخفیف مدیریت" : `تخفیف کد «${couponDisplayCode(order.coupon)}»`}
+                    </span>
+                    <span className="font-medium">− {formatPrice(order.couponDiscount)} {storeConfig.commerce.currency.label}</span>
+                  </div>
+                )}
+                {order.walletPaid > 0 && <div className="flex justify-between px-4 py-2.5 text-emerald-700"><span>پرداخت با کیف پول</span><span>− {formatPrice(order.walletPaid)} {storeConfig.commerce.currency.label}</span></div>}
+                <div className="flex justify-between px-4 py-3 bg-gray-50">
+                  <span className="font-bold text-[var(--color-dark)]">{order.walletPaid > 0 ? 'مبلغ پس از پرداخت کیف پول' : 'مبلغ کل'}</span>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-lg font-bold text-[var(--color-primary)] tracking-tight">{formatPrice(Math.max(0, order.totalPrice - (order.walletPaid || 0)))}</span>
+                    <span className="text-[11px] font-bold text-[var(--color-primary)]/60">{storeConfig.commerce.currency.label}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* وضعیت یورو — فقط برای کاربران «فروشگاه» (مستقل از تومان) */}
+            {isStore && (
+              <div className="border border-[var(--color-primary)]/20 rounded-[6px] overflow-hidden">
+                <div className="bg-[var(--color-primary)]/5 px-4 py-2.5 border-b border-[var(--color-primary)]/10 flex items-center gap-1.5">
+                  <span className="text-xs font-bold text-[var(--color-primary)] tracking-wider">وضعیت یورو (EUR)</span>
+                </div>
+                <div className="divide-y divide-gray-50 text-sm">
+                  <div className="flex justify-between px-4 py-2.5">
+                    <span className="text-gray-500">قیمت سفارش (یورو)</span>
+                    <span className="font-bold text-[var(--color-dark)]" dir="ltr">
+                      {hasEurPrice ? `€ ${formatEUR(order.priceEUR)}` : '—'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between px-4 py-2.5">
+                    <span className="text-gray-500">پرداخت‌شده تاکنون</span>
+                    <span className="font-bold text-emerald-600" dir="ltr">€ {formatEUR(totalPaidEUR)}</span>
+                  </div>
+                  {hasEurPrice ? (
+                    <div className="flex justify-between px-4 py-3 bg-gray-50">
+                      <span className="font-bold text-[var(--color-dark)]">{remainingEUR > 0 ? 'مانده یورو' : 'تسویه کامل یورو'}</span>
+                      <span className={`text-base font-bold tracking-tight ${remainingEUR > 0 ? 'text-[var(--color-primary)]' : 'text-emerald-600'}`} dir="ltr">
+                        € {formatEUR(remainingEUR)}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="px-4 py-3 bg-gray-50 text-center text-xs text-gray-400 font-medium">
+                      قیمت یورویی برای این سفارش هنوز ثبت نشده است
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* آدرس */}
+            {addressSnap.fullName && (
+              <div className="border border-gray-100 rounded-[6px] overflow-hidden">
+                <div className="bg-gray-50 px-4 py-2.5 border-b border-gray-100 flex items-center gap-1.5">
+                  <FaMapMarkerAlt className="text-[var(--color-primary)] text-xs" />
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">آدرس تحویل</p>
+                </div>
+                <div className="px-4 py-3 space-y-1.5 text-sm">
+                  <div className="flex gap-2">
+                    <span className="text-gray-400 w-20 flex-shrink-0 text-xs mt-0.5">گیرنده:</span>
+                    <span className="font-semibold text-[var(--color-dark)] text-sm">{addressSnap.fullName}</span>
+                  </div>
+                  {addressSnap.phone && (
+                    <div className="flex gap-2">
+                      <span className="text-gray-400 w-20 flex-shrink-0 text-xs mt-0.5">تلفن:</span>
+                      <span className="text-[var(--color-dark)] font-mono text-sm">{addressSnap.phone}</span>
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <span className="text-gray-400 w-20 flex-shrink-0 text-xs mt-0.5">آدرس:</span>
+                    <span className="text-[var(--color-dark)] leading-relaxed text-sm">{addressSnap.addressLine}</span>
+                  </div>
+                  {addressSnap.postalCode && (
+                    <div className="flex gap-2">
+                      <span className="text-gray-400 w-20 flex-shrink-0 text-xs mt-0.5">کد پستی:</span>
+                      <span className="text-[var(--color-dark)] font-mono text-sm">{addressSnap.postalCode}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* تاریخ */}
+            <p className="text-center text-xs text-gray-400">
+              ثبت سفارش:{' '}
+              {new Date(order.createdAt).toLocaleDateString('fa-IR', {
+                year: 'numeric', month: 'long', day: 'numeric',
+                hour: '2-digit', minute: '2-digit'
+              })}
+            </p>
+
+          </div>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
+  )
+}
+
+/* ─── OrderCard ────────────────────────────────────────────────────── */
+
+function OrderCard({ order, onDelete, onViewDetail, reviewedIds, onReview, isStore = false }) {
+  const [expanded, setExpanded] = useState(false)
+  const payStatus = PAYMENT_STATUS[order.paymentStatus] ?? PAYMENT_STATUS.UNPAID
+  const fulStatus = FULFILLMENT_STATUS[order.fulfillmentStatus] ?? FULFILLMENT_STATUS.PENDING
+  const PayIcon   = payStatus.icon
+  const canDelete = order.paymentStatus === 'UNPAID'
+  const previewItems = order.items?.slice(0, 3) ?? []
+  const extraCount   = (order.items?.length ?? 0) - 3
+
+  // محصولاتِ یکتا (نو و دست دوم) که در سفارشِ ارسال/تحویل‌شده هستند
+  // و کاربر هنوز برایشان نظر ثبت نکرده — هر کدام یک دکمه‌ی «ثبت نظر» می‌گیرند
+  const isReviewable = REVIEWABLE_FULFILLMENT.includes(order.fulfillmentStatus)
+  const reviewableProducts = isReviewable
+    ? Array.from(
+        new Map(
+          (order.items ?? [])
+            .filter((it) => it.product?._id)
+            .map((it) => {
+              const isUsed = it.itemType === 'used_product'
+              const key = `${isUsed ? 'used' : 'product'}:${it.product._id}`
+              return [
+                key,
+                {
+                  ...it.product,
+                  reviewKey: key,
+                  reviewType: isUsed ? 'used_product' : 'product',
+                },
+              ]
+            })
+        ).values()
+      ).filter((p) => !reviewedIds?.has(p.reviewKey))
+    : []
+
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="bg-white border border-gray-100 rounded-[6px] overflow-hidden shadow-sm hover:shadow-md transition-shadow duration-200"
+    >
+      {/* ── Top bar: tracking + statuses ── */}
+      <div className="flex items-start justify-between px-4 pt-4 pb-3 gap-3">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-9 h-9 rounded-[6px] bg-[var(--color-primary)]/10 flex items-center justify-center flex-shrink-0">
+            <FaShoppingBag className="text-[var(--color-primary)] text-sm" />
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5">
+              <MdOutlineConfirmationNumber className="text-gray-400 text-sm flex-shrink-0" />
+              <span className="font-mono text-sm font-bold text-[var(--color-dark)] tracking-tight truncate">
+                {order.trackingCode}
+              </span>
+            </div>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {new Date(order.createdAt).toLocaleDateString('fa-IR', {
+                year: 'numeric', month: 'short', day: 'numeric'
+              })}
+            </p>
+          </div>
+        </div>
+
+        {/* وضعیت‌ها */}
+        <div className="flex flex-col items-end gap-1 flex-shrink-0">
+          <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-full border ${payStatus.color}`}>
+            <PayIcon className="text-[10px]" />
+            {payStatus.label}
+          </span>
+          <span className={`text-[11px] font-medium ${fulStatus.color}`}>
+            {fulStatus.label}
+          </span>
+        </div>
+      </div>
+
+      {/* ── محصولات preview ── */}
+      <div className="px-4 pb-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          {previewItems.map((item, idx) => {
+            const name    = item.product?.name ?? ''
+            const image   = item.product?.mainImage ?? ''
+            const { farsi, english } = splitName(name)
+            const variantAttrs = item.variant?.attributes ?? null
+
+            return (
+              <div key={item.product?._id ?? idx} className="flex items-start gap-2 bg-gray-50 rounded-[6px] px-2.5 py-1.5 min-w-0 w-full sm:w-[calc(50%-4px)]">
+                {image && (
+                  <img src={image} alt={name}
+                    className="w-9 h-9 rounded-lg object-cover border border-gray-100 flex-shrink-0" />
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-bold text-[var(--color-dark)] leading-relaxed whitespace-normal [overflow-wrap:anywhere] tracking-tight">
+                    {name}
+                  </p>
+                  {variantSummaryText(item) && (
+                    <p className="text-[10px] text-[var(--color-primary)] whitespace-normal [overflow-wrap:anywhere] mt-0.5">
+                      {variantSummaryText(item)}
+                    </p>
+                  )}
+                  <OrderFlowSelectionsView flowSelections={item.flowSelections} />
+                  <p className="text-[10px] text-gray-400 mt-0.5">× {item.quantity}</p>
+                  {/* قیمت یوروییِ قلم — فقط «فروشگاه» و فقط اگر ادمین ثبتش کرده باشد */}
+                  {isStore && item.priceEUR !== null && item.priceEUR !== undefined && (
+                    <p className="mt-0.5 text-[10px] font-bold text-[var(--color-primary)]" dir="ltr">
+                      € {formatEUR(item.priceEUR * (item.quantity ?? 1))}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+          {extraCount > 0 && (
+            <div className="bg-gray-50 rounded-[6px] px-3 py-1.5 text-xs text-gray-500 font-medium flex-shrink-0">
+              +{extraCount} کالا
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── روش پرداخت + قیمت ── */}
+      <div className="px-4 pb-3 flex items-center justify-between">
+        <span className="inline-flex items-center gap-1 text-[11px] text-gray-500 bg-gray-50 border border-gray-100 px-2.5 py-1 rounded-full">
+          <MdOutlinePayment className="text-xs" />
+          {PAYMENT_METHOD[order.paymentMethod] ?? order.paymentMethod}
+        </span>
+        <div className="flex items-baseline gap-1">
+          <span className="text-base font-bold text-[var(--color-primary)] tracking-tight">
+            {formatPrice(order.totalPrice)}
+          </span>
+          <span className="text-[11px] font-bold text-[var(--color-primary)]/60">{storeConfig.commerce.currency.label}</span>
+        </div>
+      </div>
+
+      {/* ── دعوت به ثبت نظر (سفارش ارسال/تحویل‌شده) ── */}
+      {reviewableProducts.length > 0 && (
+        <div className="border-t border-amber-100 bg-amber-50/50 px-4 py-3">
+          <div className="mb-2 flex items-center gap-1.5">
+            <FaStar className="text-[var(--color-secondary)] text-xs" />
+            <p className="text-xs font-bold text-[var(--color-dark)]">
+              تجربه‌ی خود را ثبت کنید
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {reviewableProducts.map((product) => {
+              const { farsi, english } = splitName(product.name)
+              return (
+                <button
+                  key={product.reviewKey}
+                  onClick={() => onReview(order, product)}
+                  className="inline-flex items-center gap-1.5 rounded-[6px] border border-[var(--color-primary)]/30 bg-white px-3 py-1.5 text-xs font-semibold text-[var(--color-primary)] transition-colors hover:bg-[var(--color-primary)] hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40"
+                >
+                  <FaStar className="text-[10px]" />
+                  <span className="max-w-[140px] truncate">
+                    نظر برای {farsi || english || product.name}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── Footer: actions ── */}
+      <div className="border-t border-gray-50 px-4 py-3 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          {/* دکمه جزئیات */}
+          <button
+            onClick={() => onViewDetail(order)}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-[6px] bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-dark)] transition-colors"
+          >
+            <FaReceipt className="text-[10px]" />
+            جزئیات
+          </button>
+
+          {/* دکمه پرداخت — پرداخت‌نشده، یا فیش‌بانکیِ دارای مانده (اقساطی از مسیر اقساط ادامه می‌یابد) */}
+          {(order.paymentStatus === 'UNPAID' ||
+            (order.paymentStatus === 'PARTIALLY_PAID' && order.paymentMethod === 'BANK_RECEIPT')) && (
+            <a
+              href={`/p-user/payments/${order.trackingCode}`}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-[6px] bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
+            >
+              <MdOutlinePayment className="text-sm" />
+              {order.paymentStatus === 'PARTIALLY_PAID' ? 'ادامه پرداخت' : 'پرداخت'}
+            </a>
+          )}
+
+          {/* پیگیری ارسال */}
+          {order.fulfillmentStatus === 'SHIPPED' && (
+            <button className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-[6px] border border-purple-200 text-purple-600 hover:bg-purple-50 transition-colors">
+              <FaTruck className="text-[10px]" />
+              پیگیری
+            </button>
+          )}
+        </div>
+
+        {/* حذف — فقط اگر UNPAID */}
+        {canDelete && (
+          <button
+            onClick={() => onDelete(order._id, order.trackingCode)}
+            className="inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-2 rounded-[6px] border border-red-100 text-red-400 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors"
+          >
+            <FaTrash className="text-[10px]" />
+            حذف
+          </button>
+        )}
+      </div>
+    </motion.div>
+  )
+}
+
+/* ─── OrdersModule ─────────────────────────────────────────────────── */
+
+const FILTER_OPTIONS = [
+  { key: 'ALL',      label: 'همه' },
+  { key: 'UNPAID',   label: 'پرداخت نشده' },
+  { key: 'PAID',     label: 'پرداخت شده' },
+  { key: 'PARTIALLY_PAID', label: 'جزئی' },
+]
+
+const OrdersModule = () => {
+  const [orders,       setOrders]       = useState([])
+  const [role,         setRole]         = useState('user')
+  const [loading,      setLoading]      = useState(true)
+  const [activeFilter, setActiveFilter] = useState('ALL')
+  const [detailOrder,  setDetailOrder]  = useState(null)
+  const [reviewedIds,  setReviewedIds]  = useState(() => new Set())
+  const [reviewTarget, setReviewTarget] = useState(null) // { order, product }
+
+  const fetchOrders = async () => {
+    try {
+      const res = await fetch('/api/orders', { credentials: 'include' })
+      if (res.ok) {
+        const data = await res.json()
+        const list = data.orders ?? []
+        setOrders(list)
+        setRole(data.role ?? 'user')
+
+        // دیپ‌لینک از بخشِ پرداخت‌ها: ?order=<trackingCode> → بازکردنِ خودکارِ جزئیات
+        try {
+          const code = new URLSearchParams(window.location.search).get('order')
+          if (code) {
+            const match = list.find((o) => o.trackingCode === code)
+            if (match) setDetailOrder(match)
+          }
+        } catch { /* بی‌صدا */ }
+      } else {
+        toast.error('خطا در بارگذاری سفارش‌ها')
+      }
+    } catch {
+      toast.error('خطا در اتصال')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // شناسه‌ی محصولاتی که کاربر قبلاً نظر داده — برای پنهان‌کردن دکمه‌ی ثبت نظر
+  const fetchReviewed = async () => {
+    try {
+      const res = await fetch('/api/comments/mine', { credentials: 'include' })
+      if (res.ok) {
+        const data = await res.json()
+        const productKeys = (data.reviewedProductIds ?? []).map((id) => `product:${id}`)
+        const usedProductKeys = (data.reviewedUsedProductIds ?? []).map((id) => `used:${id}`)
+        setReviewedIds(new Set([...productKeys, ...usedProductKeys]))
+      }
+    } catch {
+      /* بی‌صدا — نبودِ این داده فقط یعنی دکمه‌ها نمایش داده می‌شوند */
+    }
+  }
+
+  const markReviewed = (reviewKey) =>
+    setReviewedIds((prev) => new Set(prev).add(reviewKey))
+
+  useEffect(() => {
+    fetchOrders()
+    fetchReviewed()
+  }, [])
+
+  const handleDelete = async (orderId, trackingCode) => {
+    const result = await Swal.fire({
+      title:    'حذف سفارش؟',
+      html:     `<p style="font-family:Vazirmatn,sans-serif;direction:rtl;font-size:14px;color:#555;">سفارش <strong style="color:var(--color-primary)">${trackingCode}</strong> حذف شود؟<br>این عمل قابل بازگشت نیست.</p>`,
+      icon:     'warning',
+      showCancelButton: true,
+      confirmButtonText:  'بله، حذف شود',
+      cancelButtonText:   'انصراف',
+      confirmButtonColor: 'var(--color-primary)',
+      cancelButtonColor:  '#6b7280',
+      reverseButtons: true,
+    })
+    if (!result.isConfirmed) return
+
+    try {
+      const res = await fetch(`/api/orders/${trackingCode}`, {
+        method:      'DELETE',
+        credentials: 'include',
+      })
+      if (res.ok) {
+        setOrders((prev) => prev.filter((o) => o._id !== orderId))
+        toast.success('سفارش با موفقیت حذف شد')
+      } else {
+        const data = await res.json()
+        toast.error(data.message ?? 'خطا در حذف سفارش')
+      }
+    } catch {
+      toast.error('خطا در اتصال')
+    }
+  }
+
+  const filtered = activeFilter === 'ALL'
+    ? orders
+    : orders.filter((o) => o.paymentStatus === activeFilter)
+
+  if (loading) {
+    return (
+      <div className="flex h-56 items-center justify-center">
+        <div className="h-7 w-7 animate-spin rounded-full border-2 border-[var(--color-primary)] border-t-transparent" />
+      </div>
+    )
+  }
+
+  return (
+    <>
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.25 }}
+        className="space-y-5"
+        dir="rtl"
+      >
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <h1 className="flex items-center gap-2 text-lg font-bold text-[var(--color-dark)] tracking-tight">
+            <FaShoppingBag className="text-[var(--color-primary)] text-base" />
+            سفارش‌های من
+            {orders.length > 0 && (
+              <span className="text-sm font-medium text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+                {orders.length}
+              </span>
+            )}
+          </h1>
+
+          {/* Filters */}
+          {orders.length > 0 && (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {FILTER_OPTIONS.map((f) => (
+                <button
+                  key={f.key}
+                  onClick={() => setActiveFilter(f.key)}
+                  className={`text-xs font-semibold px-3 py-1.5 rounded-full transition-all duration-150 ${
+                    activeFilter === f.key
+                      ? 'bg-[var(--color-primary)] text-white shadow-sm'
+                      : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                  }`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Empty State */}
+        {filtered.length === 0 ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="rounded-[6px] border border-dashed border-gray-200 bg-white p-12 text-center"
+          >
+            <FaShoppingBag className="mx-auto mb-4 text-4xl text-gray-200" />
+            <p className="text-sm font-medium text-gray-400">
+              {activeFilter === 'ALL'
+                ? 'هیچ سفارشی ثبت نشده'
+                : 'سفارشی با این وضعیت یافت نشد'}
+            </p>
+            {activeFilter !== 'ALL' && (
+              <button
+                onClick={() => setActiveFilter('ALL')}
+                className="mt-3 text-xs text-[var(--color-primary)] hover:underline"
+              >
+                نمایش همه سفارشات
+              </button>
+            )}
+          </motion.div>
+        ) : (
+          <motion.div layout className="grid grid-cols-1 gap-4">
+            {filtered.map((order) => (
+              <OrderCard
+                key={order._id}
+                order={order}
+                onDelete={handleDelete}
+                onViewDetail={setDetailOrder}
+                reviewedIds={reviewedIds}
+                onReview={(o, p) => setReviewTarget({ order: o, product: p })}
+                isStore={role === 'store'}
+              />
+            ))}
+          </motion.div>
+        )}
+      </motion.div>
+
+      {/* Detail Modal */}
+      {detailOrder && (
+        <OrderDetailModal
+          order={detailOrder}
+          onClose={() => setDetailOrder(null)}
+          isStore={role === 'store'}
+        />
+      )}
+
+      {/* Review Modal */}
+      {reviewTarget && (
+        <ReviewModal
+          order={reviewTarget.order}
+          product={reviewTarget.product}
+          onClose={() => setReviewTarget(null)}
+          onDone={markReviewed}
+        />
+      )}
+    </>
+  )
+}
+
+export default OrdersModule

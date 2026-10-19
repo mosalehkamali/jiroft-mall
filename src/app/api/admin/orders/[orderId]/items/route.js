@@ -1,0 +1,406 @@
+/**
+ * src/app/api/admin/orders/[orderId]/items/route.js
+ *
+ * ویرایش اقلامِ یک سفارشِ ثبت‌شده توسط ادمین (پس از ثبت سفارش).
+ *
+ *   POST   → افزودن یک آیتم جدید (محصول + واریانت اختیاری + تعداد)
+ *   PATCH  → تغییر تعداد یک آیتم موجود
+ *   DELETE → حذف یک آیتم
+ *
+ * اصول ایمنی:
+ *  - محاسبات دو ارز مستقل‌اند: هیچ قیمتِ تومانی از روی یورو (یا برعکس) مشتق
+ *    نمی‌شود و paymentsEUR هرگز لمس نمی‌شود.
+ *  - تنها اثرِ این مسیر روی سیستم یورو، بازجمعِ مبلغ کلِ یورو است: چون سهمِ هر
+ *    قلم در مبلغ کلِ یورو برابرِ priceEUR × quantity است، تغییرِ تعداد یا حذفِ
+ *    قلمی که قیمت یورویی دارد باید مبلغ کل را به‌روز کند وگرنه ناسازگار می‌ماند.
+ *    این کار با applyOrderEurTotal انجام می‌شود که طبق قرارداد، اگر **هیچ** قلمی
+ *    قیمت یورویی نداشته باشد (یعنی همه‌ی سفارش‌های قدیمی) order.priceEUR را اصلاً
+ *    لمس نمی‌کند.
+ *  - قیمتِ آیتمِ جدید دقیقاً از همان مسیرِ ثبت سفارش (computeCartPrice در priceEngine)
+ *    گرفته می‌شود؛ هیچ مسیر قیمت‌گذاری موازی‌ای ساخته نمی‌شود.
+ *  - قیمتِ آیتم‌های موجود هرگز دوباره محاسبه نمی‌شود (اسنپ‌شات ثابت می‌ماند)؛ فقط
+ *    مجموع‌ها از روی همان اسنپ‌شات‌ها بازجمع می‌شوند (services/orderRecalc.js).
+ *  - همه‌ی نوشتن‌ها داخل یک transaction انجام می‌شوند تا با اجرای هم‌زمانِ چند
+ *    اکشنِ ادمین، سند سفارش نیمه‌کاره/خراب نشود.
+ */
+
+import { NextResponse } from "next/server";
+import mongoose from "mongoose";
+
+import connectToDB from "base/configs/db";
+import "base/models/registerModels";
+import Order from "base/models/Order";
+import Product from "base/models/Product";
+import Variant from "base/models/Variant";
+import UsedProduct from "base/models/UsedProduct";
+import { computeCartPrice } from "base/services/priceEngine";
+import { recalcAndApply } from "base/services/orderRecalc";
+import { applyOrderEurTotal } from "base/services/orderEurRecalc";
+import { buildVariantSnapshot } from "@/lib/variantImages";
+import { validateAdminItemFlow, mapAdminFlowSelection } from "base/services/adminOrderItemFlow";
+
+import { acquireTrackingMutation } from "base/services/orderTrackingMutation";
+import { manualTrackingCount, lineTracking } from "@/lib/manualTracking";
+import { connectWarehouseDB, getItemTrackingModel, warehouseEnabled } from "@/lib/warehouseDb";
+
+import requireAdminPermission from "@/lib/requireAdminPermission";
+
+import User from "base/models/User";
+const isId = (v) => v && mongoose.Types.ObjectId.isValid(v);
+
+/* ─── POST: افزودن آیتم جدید ─────────────────────────────────────────── */
+export async function POST(req, { params }) {
+  const { actor: admin, denied } = await requireAdminPermission("orders.editItems");
+  if (denied) return denied;
+
+  let release;
+  try {
+    await connectToDB();
+
+    const { orderId } = await params;
+    if (!isId(orderId)) {
+      return NextResponse.json({ message: "شناسه سفارش نامعتبر است" }, { status: 400 });
+    }
+
+    release = await acquireTrackingMutation(orderId);
+    const body = await req.json();
+    const { productId, variantId, quantity, flowSelections = [] } = body;
+
+    if (!isId(productId)) {
+      return NextResponse.json({ message: "شناسه محصول نامعتبر است" }, { status: 400 });
+    }
+    const qty = Number(quantity);
+    if (!Number.isSafeInteger(qty) || qty < 1) {
+      return NextResponse.json({ message: "تعداد باید عددی صحیح و حداقل ۱ باشد" }, { status: 400 });
+    }
+
+    // محصول و (در صورت وجود) واریانت باید معتبر باشند و واریانت متعلق به همین محصول باشد
+    const product = await Product.findById(productId).select("_id name variants category").lean();
+    if (!product) {
+      return NextResponse.json({ message: "محصول یافت نشد" }, { status: 404 });
+    }
+    if (!variantId && await Variant.exists({ productId })) {
+      return NextResponse.json({ message: "لطفاً یک واریانت انتخاب کنید" }, { status: 400 });
+    }
+    if (variantId) {
+      if (!isId(variantId)) {
+        return NextResponse.json({ message: "شناسه واریانت نامعتبر است" }, { status: 400 });
+      }
+      const variant = await Variant.findById(variantId).select("_id productId").lean();
+      if (!variant || String(variant.productId) !== String(productId)) {
+        return NextResponse.json(
+          { message: "واریانت انتخاب‌شده متعلق به این محصول نیست" },
+          { status: 400 }
+        );
+      }
+    }
+
+    const validatedSelections = await validateAdminItemFlow(product, flowSelections);
+
+    // اسنپ‌شاتِ واریانت برای نمایشِ پایدارِ سفارش (تصویر/چندواحدی)
+    let variantSnapshot = [];
+    if (variantId) {
+      const [snapProduct, snapVariant] = await Promise.all([
+        Product.findById(productId).populate("category", "variantAttributes").lean(),
+        Variant.findById(variantId).lean(),
+      ]);
+      if (snapVariant && snapProduct) {
+        variantSnapshot = buildVariantSnapshot(snapVariant, snapProduct);
+      }
+    }
+
+    // خواندنِ اولیه فقط برای گرفتنِ کاربرِ سفارش (قیمت‌گذاری سنگین است و نباید داخل
+    // تراکنش اجرا شود). سندِ نهایی دوباره داخل تراکنش و تازه خوانده می‌شود.
+    const orderForUser = await Order.findById(orderId).select("user").lean();
+    if (!orderForUser) {
+      return NextResponse.json({ message: "سفارش یافت نشد" }, { status: 404 });
+    }
+
+    // ─── قیمت‌گذاری از همان مسیرِ ثبت سفارش (priceEngine) با کانتکستِ کاربرِ سفارش ───
+    let userCtx = null;
+    try {
+      const buyer = await User.findById(orderForUser.user).select("role level").lean();
+      userCtx = { userId: String(orderForUser.user), role: buyer?.role, level: buyer?.level };
+    } catch {
+      userCtx = { userId: String(orderForUser.user) };
+    }
+
+    let priceResult;
+    try {
+      priceResult = await computeCartPrice(
+        [{ productId: String(productId), variantId: variantId ? String(variantId) : null, quantity: qty, itemType: "product", flowSelections: validatedSelections }],
+        userCtx,
+        null // بدون اعمال مجددِ کوپن روی آیتمِ افزوده‌شده
+      );
+    } catch (err) {
+      return NextResponse.json({ message: err.message || "خطا در محاسبه قیمت آیتم" }, { status: 400 });
+    }
+
+    if (priceResult?.flowConfigErrors?.length) {
+      return NextResponse.json({ message: priceResult.flowConfigErrors.join(" ") }, { status: 400 });
+    }
+    const priced = priceResult?.items?.[0];
+    if (!priced) {
+      return NextResponse.json({ message: "محاسبه قیمت آیتم ناموفق بود" }, { status: 400 });
+    }
+
+    const unitPrice = Math.max(0, Math.round(priced.unitFinalPrice || priced.unitPrice || 0));
+    const unitDiscount = Math.max(0, Math.round(priced.unitDiscount || 0));
+    // basePriceToman طبق تعریفِ orderRecalc: قیمت واحدِ قبل از تخفیف = unitPrice + unitDiscount
+    const basePriceToman = unitPrice + unitDiscount;
+
+    if (unitPrice <= 0) {
+      return NextResponse.json({ message: "قیمت محاسبه‌شده برای آیتم نامعتبر است" }, { status: 400 });
+    }
+
+    await release.assertOwned();
+    const session = await mongoose.startSession();
+    session.startTransaction();
+    try {
+      // خواندنِ تازه‌ی سند داخل تراکنش تا ویرایش‌های هم‌زمان از بین نروند
+      const order = await Order.findById(orderId).session(session);
+      if (!order) {
+        await session.abortTransaction();
+        session.endSession();
+        return NextResponse.json({ message: "سفارش یافت نشد" }, { status: 404 });
+      }
+
+      order.items.push({
+        product: new mongoose.Types.ObjectId(productId),
+        variant: variantId ? new mongoose.Types.ObjectId(variantId) : null,
+        usedProduct: null,
+        itemType: "product",
+        quantity: qty,
+        unitPrice,
+        unitDiscount,
+        basePriceToman,
+        flowSelections: (priced.flowSelections || []).map(mapAdminFlowSelection),
+        variantSnapshot,
+      });
+
+      order.reviewedBy = new mongoose.Types.ObjectId(admin.userId);
+      order.reviewedAt = new Date();
+      await recalcAndApply(order, session);
+      // مبلغ کلِ یورو فقط وقتی بازجمع می‌شود که دست‌کم یک قلم قیمت یورویی داشته
+      // باشد؛ در غیر این صورت (سفارش‌های قدیمی) هیچ فیلد یورویی لمس نمی‌شود.
+      applyOrderEurTotal(order);
+      await order.save({ session });
+
+      await session.commitTransaction();
+      session.endSession();
+
+      return NextResponse.json(
+        { message: "آیتم به سفارش افزوده شد", totalPrice: order.totalPrice, paymentStatus: order.paymentStatus },
+        { status: 200 }
+      );
+    } catch (err) {
+      await session.abortTransaction();
+      session.endSession();
+      throw err;
+    }
+  } catch (error) {
+    console.error("[admin/orders/:id/items POST]", error);
+    return NextResponse.json({ message: error.status ? error.message : "خطای داخلی سرور" }, { status: error.status || 500 });
+  } finally {
+    if (release) await release();
+  }
+}
+
+/* ─── PATCH: تغییر تعداد یک آیتم ─────────────────────────────────────── */
+export async function PATCH(req, { params }) {
+  const { actor: admin, denied } = await requireAdminPermission("orders.editItems");
+  if (denied) return denied;
+
+  let release;
+  try {
+    await connectToDB();
+
+    const { orderId } = await params;
+    if (!isId(orderId)) {
+      return NextResponse.json({ message: "شناسه سفارش نامعتبر است" }, { status: 400 });
+    }
+
+    release = await acquireTrackingMutation(orderId);
+    const body = await req.json();
+    const { itemId, quantity } = body;
+    if (!isId(itemId)) {
+      return NextResponse.json({ message: "شناسه آیتم نامعتبر است" }, { status: 400 });
+    }
+    const qty = Math.floor(Number(quantity));
+    if (!Number.isFinite(qty) || qty < 1) {
+      return NextResponse.json({ message: "تعداد باید عددی صحیح و حداقل ۱ باشد" }, { status: 400 });
+    }
+
+    await release.assertOwned();
+    const session = await mongoose.startSession();
+    session.startTransaction();
+    try {
+      const order = await Order.findById(orderId).session(session);
+      if (!order) {
+        await session.abortTransaction();
+        session.endSession();
+        return NextResponse.json({ message: "سفارش یافت نشد" }, { status: 404 });
+      }
+
+      const item = order.items.id(itemId);
+      if (!item) {
+        await session.abortTransaction();
+        session.endSession();
+        return NextResponse.json({ message: "آیتم در سفارش یافت نشد" }, { status: 404 });
+      }
+
+      // محصولات دست دوم همیشه تک‌عدد هستند
+      if (item.itemType === "used_product" && qty !== 1) {
+        await session.abortTransaction();
+        session.endSession();
+        return NextResponse.json(
+          { message: "تعداد محصول دست دوم قابل تغییر نیست (همیشه ۱ عدد)" },
+          { status: 400 }
+        );
+      }
+
+      if (order.manualTrackingEnabled && warehouseEnabled()) {
+        const conn = await connectWarehouseDB();
+        const tracked = await getItemTrackingModel(conn).find({ storeOrderId: orderId.toString() }).lean();
+        const index = order.items.indexOf(item);
+        const lines = [item, ...(item.flowSelections || []).filter((s) => s.nodeType === "category" && s.selectedProduct)];
+        const exceeds = lines.some((line) => manualTrackingCount(line) + lineTracking(item, index, line === item ? null : line.nodeId, tracked).length > qty);
+        if (exceeds) {
+          const error = new Error("ابتدا تعداد وضعیت‌های دستی یا ترکینگ‌های تخصیص‌یافته را کاهش دهید");
+          error.status = 409;
+          throw error;
+        }
+      }
+      item.quantity = qty;
+      order.reviewedBy = new mongoose.Types.ObjectId(admin.userId);
+      order.reviewedAt = new Date();
+      await recalcAndApply(order, session);
+      // مبلغ کلِ یورو فقط وقتی بازجمع می‌شود که دست‌کم یک قلم قیمت یورویی داشته
+      // باشد؛ در غیر این صورت (سفارش‌های قدیمی) هیچ فیلد یورویی لمس نمی‌شود.
+      applyOrderEurTotal(order);
+      await order.save({ session });
+
+      await session.commitTransaction();
+      session.endSession();
+
+      return NextResponse.json(
+        { message: "تعداد آیتم بروزرسانی شد", totalPrice: order.totalPrice, paymentStatus: order.paymentStatus },
+        { status: 200 }
+      );
+    } catch (err) {
+      await session.abortTransaction();
+      session.endSession();
+      throw err;
+    }
+  } catch (error) {
+    console.error("[admin/orders/:id/items PATCH]", error);
+    return NextResponse.json({ message: error.status ? error.message : "خطای داخلی سرور" }, { status: error.status || 500 });
+  } finally {
+    if (release) await release();
+  }
+}
+
+/* ─── DELETE: حذف یک آیتم ────────────────────────────────────────────── */
+export async function DELETE(req, { params }) {
+  const { actor: admin, denied } = await requireAdminPermission("orders.editItems");
+  if (denied) return denied;
+
+  let release;
+  try {
+    await connectToDB();
+
+    const { orderId } = await params;
+    if (!isId(orderId)) {
+      return NextResponse.json({ message: "شناسه سفارش نامعتبر است" }, { status: 400 });
+    }
+
+    release = await acquireTrackingMutation(orderId);
+    const body = await req.json();
+    const { itemId } = body;
+    if (!isId(itemId)) {
+      return NextResponse.json({ message: "شناسه آیتم نامعتبر است" }, { status: 400 });
+    }
+
+    await release.assertOwned();
+    const session = await mongoose.startSession();
+    session.startTransaction();
+    try {
+      const order = await Order.findById(orderId).session(session);
+      if (!order) {
+        await session.abortTransaction();
+        session.endSession();
+        return NextResponse.json({ message: "سفارش یافت نشد" }, { status: 404 });
+      }
+
+      const item = order.items.id(itemId);
+      if (!item) {
+        await session.abortTransaction();
+        session.endSession();
+        return NextResponse.json({ message: "آیتم در سفارش یافت نشد" }, { status: 404 });
+      }
+
+      // سفارش نباید بدون آیتم بماند
+      if (order.items.length <= 1) {
+        await session.abortTransaction();
+        session.endSession();
+        return NextResponse.json(
+          { message: "حذف تنها آیتم سفارش ممکن نیست؛ حداقل یک آیتم باید باقی بماند" },
+          { status: 400 }
+        );
+      }
+
+      // اگر آیتمِ حذف‌شده محصولِ دست دوم است، رزرو آن آزاد می‌شود تا در انبار قابل
+      // فروش مجدد شود (وضعیت → available و قطع ارجاع به این سفارش).
+      const releasedUsedId =
+        item.itemType === "used_product" && item.usedProduct ? item.usedProduct : null;
+
+      if (order.manualTrackingEnabled && warehouseEnabled()) {
+        const conn = await connectWarehouseDB();
+        const index = order.items.indexOf(item);
+        const assigned = await getItemTrackingModel(conn).exists({
+          storeOrderId: orderId.toString(),
+          $or: [{ orderItemIndex: { $gte: index } }, { orderItemIndex: null }],
+        });
+        if (assigned) {
+          const error = new Error("پیش از حذف آیتم، ترکینگ‌های آن و آیتم‌های بعدی را جدا کنید تا اتصال بارکدها جابه‌جا نشود");
+          error.status = 409;
+          throw error;
+        }
+      }
+      item.deleteOne();
+
+      if (releasedUsedId) {
+        await UsedProduct.updateOne(
+          { _id: releasedUsedId, order: order._id },
+          { $set: { status: "available" }, $unset: { order: "" } },
+          { session }
+        );
+      }
+
+      order.reviewedBy = new mongoose.Types.ObjectId(admin.userId);
+      order.reviewedAt = new Date();
+      await recalcAndApply(order, session);
+      // مبلغ کلِ یورو فقط وقتی بازجمع می‌شود که دست‌کم یک قلم قیمت یورویی داشته
+      // باشد؛ در غیر این صورت (سفارش‌های قدیمی) هیچ فیلد یورویی لمس نمی‌شود.
+      applyOrderEurTotal(order);
+      await order.save({ session });
+
+      await session.commitTransaction();
+      session.endSession();
+
+      return NextResponse.json(
+        { message: "آیتم از سفارش حذف شد", totalPrice: order.totalPrice, paymentStatus: order.paymentStatus },
+        { status: 200 }
+      );
+    } catch (err) {
+      await session.abortTransaction();
+      session.endSession();
+      throw err;
+    }
+  } catch (error) {
+    console.error("[admin/orders/:id/items DELETE]", error);
+    return NextResponse.json({ message: error.status ? error.message : "خطای داخلی سرور" }, { status: error.status || 500 });
+  } finally {
+    if (release) await release();
+  }
+}

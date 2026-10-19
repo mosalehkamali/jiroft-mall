@@ -1,0 +1,1201 @@
+'use client';
+
+import { getCategoryLabel } from "base/utils/categoryLabel";
+import AdminInput from "@/components/admin/AdminInput";
+import { useState, useEffect, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
+import { useSports, useBrands, useCategories, useAthletes, useLimitedEditions } from '@/hooks/useAdminRefData';
+import Button from '@/components/admin/Button';
+import Input from '@/components/admin/Input';
+import Textarea from '@/components/admin/Textarea';
+import Select from '@/components/admin/Select';
+import ImageUpload from '@/components/admin/ImageUpload';
+import VariantValueImageUpload from '@/components/admin/VariantValueImageUpload';
+import VariantValuesEditor from '@/components/admin/VariantValuesEditor';
+import { showToast } from '@/lib/toast';
+import { showError } from '@/lib/swal';
+import { getApiErrorMessage } from '@/lib/apiClientError';
+import { makeComboKey } from '@/lib/variantKey';
+import { validateProductVariants } from '@/lib/productVariantValidation';
+import { renameVariantValue } from '@/lib/variantValueOps';
+import { invalidateAdminCache } from '@/lib/adminCache';
+import {
+  TARGET_AUDIENCE_SELECT_OPTIONS,
+  filterAttributesByAudience,
+  normalizeTargetAudience,
+} from 'base/utils/targetAudience';
+import storeConfig from 'base/store.config';
+import useProductRules from '@/hooks/useProductRules';
+import { validateProductData } from '@/lib/productRules';
+import { PRICING_MODE, CURRENCY_LABEL } from '@/lib/currency';
+import { RuleLabel, CustomFieldsEditor, SaleFields } from '@/components/admin/ProductRuleFields';
+
+// برچسبِ واحدِ قیمت: در حالت exchange قیمت به ارزِ مبنا وارد می‌شود
+const PRICE_UNIT = PRICING_MODE === 'exchange' ? 'ارز مبنا' : CURRENCY_LABEL;
+
+// ---------------------------
+// Helpers
+// ---------------------------
+function normalizeInitialAttributes(attributes = {}, categoryAttributes = []) {
+  const result = {};
+  for (const attr of categoryAttributes) {
+    const value = attributes[attr.name];
+    if (attr.type === 'select') {
+      result[attr.name] = Array.isArray(value) ? value.join(', ') : '';
+    } else {
+      result[attr.name] = value ?? '';
+    }
+  }
+  return result;
+}
+
+/** Cartesian product of variantOptions — mirrors the backend logic exactly */
+function generateCombinations(options) {
+  const keys = Object.keys(options).filter(
+    k => Array.isArray(options[k]) && options[k].length > 0
+  );
+  if (keys.length === 0) return [];
+
+  const result = [];
+  function helper(index, currentCombo) {
+    if (index === keys.length) {
+      result.push({ ...currentCombo });
+      return;
+    }
+    const key = keys[index];
+    for (const val of options[key]) {
+      helper(index + 1, { ...currentCombo, [key]: val });
+    }
+  }
+  helper(0, {});
+  return result;
+}
+
+// کلید ترکیب از util مشترک ساخته می‌شود (makeComboKey) — هم‌خوان با سرور.
+
+// ---------------------------
+// Main Component
+// ---------------------------
+export default function ProductCreateForm({ initialData = {}, categoryId = '' }) {
+  const router = useRouter();
+  const [loading, setLoading] = useState(false);
+
+  // خطاهای فیلدیِ سرور ({ fieldErrors }) — تا پیش از این فقط داخلِ یک مودالِ
+  // خلاصه نمایش داده می‌شدند و ادمین نمی‌دانست کدام فیلد را باید درست کند.
+  const [fieldErrors, setFieldErrors] = useState({});
+
+  // شمارنده‌ی آپلودهای در جریان — ثبتِ فرم وسطِ آپلود، تصویر را جا می‌انداخت
+  const [uploadsInFlight, setUploadsInFlight] = useState(0);
+  const trackUpload = (busy) =>
+    setUploadsInFlight((count) => Math.max(0, count + (busy ? 1 : -1)));
+
+
+  // Normalize athlete from initialData to always be an array
+  const initialAthletes = Array.isArray(initialData.athlete)
+    ? initialData.athlete
+    : initialData.athlete
+    ? [initialData.athlete]
+    : [];
+
+  const [formData, setFormData] = useState({
+    name: '',
+    shortDescription: '',
+    longDescription: '',
+    color: '',
+    basePrice: '',
+    category: '',
+    tag: '',
+    mainImage: '',
+    gallery: [],
+    brand: '',
+    serie: '',
+    limitedEdition: '',
+    sport: '',
+    attributes: {},
+    technicalStats: {},
+    customTabItems: [],
+    label: 'none',
+    targetAudience: '',
+    isActive: true,
+    sku: '',
+    stock: '',
+    purchasable: true,
+    customFields: {},
+    ...initialData,
+    targetAudience: normalizeTargetAudience(initialData.targetAudience) || '',
+    // از مسیرِ «افزودن محصول به این دسته» دسته از پیش انتخاب می‌شود
+    category: initialData?.category || categoryId || '',
+    customTabItems: initialData?.customTabItems || [],
+    // Override athlete to guarantee array form
+    athlete: initialAthletes,
+  });
+
+  // Variant state — kept outside formData for clarity
+  const [variantOptions, setVariantOptions] = useState(
+    initialData.variantOptions || {}
+  );
+  const [variantInputBuffer, setVariantInputBuffer] = useState({});
+  // { "color=...&size=...": { price: "", images: [] } }
+  const [variantDetails, setVariantDetails] = useState(
+    initialData.variantDetails || {}
+  );
+
+  // ترکیب‌هایی که ادمین صریحاً تیکشان را برداشته (مجموعه‌ی استثناها). «انتخاب‌شده»
+  // در زمان رندر مشتق می‌شود: هر ترکیبی که در این مجموعه نباشد ساخته می‌شود. بنابراین
+  // ترکیب‌های تازه‌اضافه‌شده خودبه‌خود انتخاب‌اند و نیازی به effectِ همگام‌سازی نیست.
+  const [deselectedCombos, setDeselectedCombos] = useState(() => new Set());
+
+  // متادیتای سطحِ مقدار: تصاویرِ مشترکِ هر مقدار { [attr]: { [value]: { images: [] } } }
+  const [variantMeta, setVariantMeta] = useState(initialData.variantMeta || {});
+
+  // ترکیب‌هایی که ادمین «قیمت ویژه» را برایشان باز کرده. قیمت اختیاری است؛ خالی
+  // بودنش یعنی قیمت پایه‌ی محصول اعمال می‌شود (هیچ‌جا الزامی نیست).
+  const [expandedPrices, setExpandedPrices] = useState(() => new Set());
+
+  // ---------------------------
+  // Data Fetching
+  // ---------------------------
+  // 🟢 داده‌ی مرجع — کشِ مشترک با بقیه‌ی فرم‌های ادمین (۵ دقیقه)
+  const { sports } = useSports();
+  const { brands } = useBrands();
+  const { categories } = useCategories();
+  const { athletes: allAthletes } = useAthletes();
+
+  // ورزشکارها همان‌طور که قبلاً بود سمتِ کلاینت با ورزشِ انتخابی فیلتر می‌شوند
+  const athletes = formData.sport
+    ? allAthletes.filter((a) => (a.sport?._id || a.sport) === formData.sport)
+    : [];
+
+  // 🟢 نسخه‌های محدود — همان ردهٔ داده‌ی مرجع
+  const { limitedEditions } = useLimitedEditions();
+
+  // یک لیمیتد ادیشن فقط زیرِ برندِ مالکِ خودش انتخاب‌شدنی است (سرور هم همین را
+  // اعتبارسنجی می‌کند). هر مقدارِ خارج از این فهرست به "" می‌افتد.
+  const limitedEditionOptions = limitedEditions
+    .filter(c => (c.brand?._id || c.brand) === formData.brand)
+    .map(c => ({ value: c._id, label: getCategoryLabel(c) }));
+  const selectedLimitedEdition = limitedEditionOptions.some(
+    o => o.value === formData.limitedEdition
+  )
+    ? formData.limitedEdition
+    : '';
+
+  // ---------------------------
+  // Derived category data
+  // ---------------------------
+  const selectedCategory = categories.find(c => c._id === formData.category);
+  const categoryAttributes = selectedCategory?.attributes || [];
+  // ویژگی‌هایی که دسته به مخاطبِ دیگری محدودشان کرده اصلاً پرسیده نمی‌شوند.
+  // حلقه‌ی ساختِ payload عمداً روی categoryAttributes کامل می‌ماند: مقدارِ فیلدِ
+  // پنهان خالی است و همان‌جا رد می‌شود، پس چیزی جا نمی‌افتد و چیزی هم ساخته نمی‌شود.
+  const visibleCategoryAttributes = filterAttributesByAudience(
+    categoryAttributes,
+    formData.targetAudience,
+  );
+  const categoryVariantAttributes = selectedCategory?.variantAttributes || [];
+  const categoryTechnicalStats = selectedCategory?.technicalStats || [];
+  const categoryCustomTab = selectedCategory?.customTab;
+
+  // قوانینِ فروشگاه برای این دسته (store.config.js): کدام فیلد هست، کدام الزامی است
+  const rules = useProductRules(formData.category);
+  const show = (key) => rules.fields[key]?.admin;
+  const ruleOf = (key) => rules.fields[key];
+
+  /** When category changes, re-normalize attributes from initialData */
+  useEffect(() => {
+    if (!selectedCategory || !initialData.attributes) return;
+    setFormData(prev => ({
+      ...prev,
+      attributes: normalizeInitialAttributes(
+        initialData.attributes,
+        selectedCategory.attributes
+      ),
+    }));
+  }, [selectedCategory]);
+
+  // ---------------------------
+  // Variant combinations (memoized)
+  // ---------------------------
+  const combinations = useMemo(
+    () => generateCombinations(variantOptions),
+    [variantOptions]
+  );
+
+  /**
+   * When combinations change, keep existing detail entries and
+   * initialise any new combo key with empty defaults.
+   */
+  useEffect(() => {
+    setVariantDetails(prev => {
+      const next = {};
+      for (const combo of combinations) {
+        const key = makeComboKey(combo);
+        next[key] = prev[key] || { price: '', images: [] };
+      }
+      return next;
+    });
+  }, [combinations]);
+
+  const toggleCombo = (key) => {
+    setDeselectedCombos((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const setAllCombos = (select) => {
+    setDeselectedCombos(
+      select ? new Set() : new Set(combinations.map(makeComboKey))
+    );
+  };
+
+  // تنظیم تصاویرِ یک مقدار مشخص (مثلاً تصاویرِ رنگ «قرمز»)
+  const setValueImages = (attrName, value, images) => {
+    setVariantMeta((prev) => ({
+      ...prev,
+      [attrName]: {
+        ...(prev[attrName] || {}),
+        [value]: { ...(prev[attrName]?.[value] || {}), images },
+      },
+    }));
+  };
+
+  // فقط متادیتای مقادیرِ موجود را نگه می‌دارد (هرسِ مقادیرِ حذف‌شده)
+  const buildCleanVariantMeta = () => {
+    const clean = {};
+    for (const attr of categoryVariantAttributes) {
+      for (const val of variantOptions[attr.name] || []) {
+        const entry = variantMeta[attr.name]?.[val];
+        if (!entry) continue;
+        const imgs = Array.isArray(entry.images) ? entry.images.filter(Boolean) : [];
+        const hasUnits = entry.units && Object.keys(entry.units).length > 0;
+        if (imgs.length || hasUnits) {
+          if (!clean[attr.name]) clean[attr.name] = {};
+          clean[attr.name][val] = { ...entry, images: imgs };
+        }
+      }
+    }
+    return clean;
+  };
+
+  // تعداد ترکیب‌های انتخاب‌شده (مشتق در رندر، بدون state اضافه)
+  const selectedComboCount = combinations.reduce(
+    (n, c) => (deselectedCombos.has(makeComboKey(c)) ? n : n + 1),
+    0
+  );
+
+  // ---------------------------
+  // Field updaters
+  // ---------------------------
+  function updateField(key, value) {
+    setFormData(prev => ({ ...prev, [key]: value }));
+  }
+
+  // Helper to validate hex color format safely for HTML input[type=color]
+  const isValidHex = (hex) => {
+    return typeof hex === 'string' && /^#[0-9A-F]{6}$/i.test(hex);
+  };
+
+  function updateAttribute(key, value) {
+    setFormData(prev => ({
+      ...prev,
+      attributes: { ...prev.attributes, [key]: value },
+    }));
+  }
+
+  function updateTechnicalStat(key, value) {
+    setFormData(prev => ({
+      ...prev,
+      technicalStats: { ...prev.technicalStats, [key]: value },
+    }));
+  }
+
+  /** Toggle a single athlete ID in/out of the athlete array */
+  function toggleAthlete(athleteId) {
+    setFormData(prev => {
+      const current = Array.isArray(prev.athlete) ? prev.athlete : [];
+      const exists = current.includes(athleteId);
+      return {
+        ...prev,
+        athlete: exists
+          ? current.filter(id => id !== athleteId)
+          : [...current, athleteId],
+      };
+    });
+  }
+
+  // ---------------------------
+  // Variant option tag-input
+  // ---------------------------
+  function addVariantValue(attr) {
+    const attrName = attr.name;
+
+    if (attr.multiUnit) {
+      const units = attr.units || [];
+      const buf = variantInputBuffer[attrName] || {};
+      const primary = (buf[units[0]] || '').trim();
+      if (!primary) return; // مقدارِ واحدِ اصلی الزامی است
+
+      setVariantOptions(prev => {
+        const existing = prev[attrName] || [];
+        if (existing.includes(primary)) return prev;
+        return { ...prev, [attrName]: [...existing, primary] };
+      });
+
+      const unitsMap = {};
+      for (const u of units) unitsMap[u] = (buf[u] || '').trim();
+      setVariantMeta(prev => ({
+        ...prev,
+        [attrName]: {
+          ...(prev[attrName] || {}),
+          [primary]: { ...(prev[attrName]?.[primary] || {}), units: unitsMap },
+        },
+      }));
+      setVariantInputBuffer(prev => ({ ...prev, [attrName]: {} }));
+      return;
+    }
+
+    const value = (variantInputBuffer[attrName] || '').trim();
+    if (!value) return;
+
+    setVariantOptions(prev => {
+      const existing = prev[attrName] || [];
+      if (existing.includes(value)) return prev;
+      return { ...prev, [attrName]: [...existing, value] };
+    });
+    setVariantInputBuffer(prev => ({ ...prev, [attrName]: '' }));
+  }
+
+  function removeVariantValue(attrName, value) {
+    setVariantOptions(prev => ({
+      ...prev,
+      [attrName]: (prev[attrName] || []).filter(v => v !== value),
+    }));
+  }
+
+  // جابه‌جایی (drag & drop) — فقط ترتیبِ آرایه‌ی مقادیر عوض می‌شود؛ کلیدهای ترکیب
+  // (makeComboKey) به مقدار وابسته‌اند نه ترتیب، پس قیمت/تصویر/انتخابِ ترکیب‌ها دست‌نخورده می‌ماند.
+  function reorderVariantValue(attrName, newValues) {
+    setVariantOptions(prev => ({ ...prev, [attrName]: newValues }));
+  }
+
+  // ویرایشِ نامِ یک مقدار — استیت‌های وابسته یک‌جا و هماهنگ مهاجرت می‌کنند.
+  function handleRenameVariantValue(attrName, oldVal, newVal, newUnits) {
+    const res = renameVariantValue({
+      attrName, oldVal, newVal, newUnits,
+      variantOptions, variantMeta, variantDetails,
+      deselectedCombos, expandedPrices,
+    });
+    setVariantOptions(res.variantOptions);
+    setVariantMeta(res.variantMeta);
+    setVariantDetails(res.variantDetails);
+    setDeselectedCombos(res.deselectedCombos);
+    setExpandedPrices(res.expandedPrices);
+  }
+
+  // ---------------------------
+  // Variant detail updater
+  // ---------------------------
+  function updateVariantDetail(comboKey, field, value) {
+    setVariantDetails(prev => ({
+      ...prev,
+      [comboKey]: {
+        ...(prev[comboKey] || { price: '', images: [] }),
+        [field]: value,
+      },
+    }));
+  }
+
+  // ── قیمت ویژه (اختیاری، جمع‌شونده) ──
+  // ورودیِ قیمت پیش‌فرض پنهان است؛ فقط وقتی نمایش داده می‌شود که ادمین «قیمت ویژه»
+  // را باز کرده باشد یا ترکیب از قبل قیمت سفارشی داشته باشد. خالی = قیمت پایه.
+  const isPriceVisible = (key, detail) =>
+    expandedPrices.has(key) || (detail.price !== '' && detail.price != null);
+  const showPriceInput = (key) =>
+    setExpandedPrices(prev => new Set(prev).add(key));
+  const clearCustomPrice = (key) => {
+    updateVariantDetail(key, 'price', '');
+    setExpandedPrices(prev => {
+      const next = new Set(prev);
+      next.delete(key);
+      return next;
+    });
+  };
+
+  // ---------------------------
+  // Submit
+  // ---------------------------
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setLoading(true);
+    setFieldErrors({});
+
+    try {
+      if (formData.category && !selectedCategory) throw new Error('لطفاً تا بارگذاری دسته‌بندی صبر کنید');
+      const validation = validateProductVariants(
+        categoryVariantAttributes,
+        variantOptions,
+        combinations.map(makeComboKey).filter((key) => !deselectedCombos.has(key)),
+      );
+      if (validation.error) {
+        setFieldErrors(validation.fieldErrors || {});
+        throw new Error(validation.error);
+      }
+
+      // Normalize category attributes
+      const normalizedAttributes = {};
+      for (const attr of categoryAttributes) {
+        const rawValue = formData.attributes?.[attr.name];
+        if (!rawValue) continue;
+
+        if (attr.type === 'select') {
+          normalizedAttributes[attr.name] = rawValue
+            .split(',')
+            .map(v => v.trim())
+            .filter(Boolean);
+        } else if (attr.type === 'number') {
+          normalizedAttributes[attr.name] = Number(rawValue);
+        } else {
+          normalizedAttributes[attr.name] = rawValue;
+        }
+      }
+
+      // Normalize technical stats
+      const normalizedStats = {};
+      for (const stat of categoryTechnicalStats) {
+        const val = formData.technicalStats?.[stat.name];
+        if (val !== undefined && val !== '') {
+          normalizedStats[stat.name] = Number(val);
+        }
+      }
+
+      // Normalize variant details (price → number)
+      const normalizedVariantDetails = {};
+      for (const [key, detail] of Object.entries(variantDetails)) {
+        normalizedVariantDetails[key] = {
+          price: Number(detail.price) || 0,
+          images: detail.images || [],
+          ...(detail.stock !== undefined ? { stock: detail.stock } : {}),
+        };
+      }
+
+      // Normalize tags
+      const normalizedTag = formData.tag
+        ? Array.isArray(formData.tag)
+          ? formData.tag
+          : formData.tag
+              .split(',')
+              .map(t => t.trim())
+              .filter(Boolean)
+        : [];
+
+      const payload = {
+        ...formData,
+        // پیش‌نویسِ AI می‌تواند ادیشنی از برندِ دیگر پیشنهاد دهد؛ سرور آن را رد
+        // می‌کند، پس همان مقداری فرستاده می‌شود که در select دیده شده است.
+        limitedEdition: selectedLimitedEdition,
+        attributes: normalizedAttributes,
+        technicalStats: normalizedStats,
+        customTabItems: formData.customTabItems || [],
+        basePrice: Number(formData.basePrice) || 0,
+        tag: normalizedTag,
+        athlete: Array.isArray(formData.athlete) ? formData.athlete : [],
+        label: formData.label,
+        // Only include variant fields if they have data
+        ...(Object.keys(variantOptions).length > 0 && {
+          variantOptions,
+          variantDetails: normalizedVariantDetails,
+          // فقط ترکیب‌های انتخاب‌شده (غیرِ استثناشده) ساخته می‌شوند
+          selectedCombos: combinations
+            .map(makeComboKey)
+            .filter((k) => !deselectedCombos.has(k)),
+          // تصاویرِ سطحِ مقدار (مشترک بین واریانت‌ها)
+          variantMeta: buildCleanVariantMeta(),
+        }),
+      };
+
+      // همان قوانینی که سرور اجرا می‌کند — بازخوردِ فوری روی خودِ فیلدها
+      const ruleCheck = validateProductData(payload, rules, {
+        stage: payload.isActive === false ? 'draft' : 'published',
+        variants: Object.values(normalizedVariantDetails),
+      });
+      if (ruleCheck.error) {
+        setFieldErrors(ruleCheck.fieldErrors);
+        throw new Error(ruleCheck.error);
+      }
+
+      const res = await fetch('/api/product/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setFieldErrors(data?.fieldErrors || {});
+        throw new Error(getApiErrorMessage(data, 'خطا در ایجاد محصول'));
+      }
+
+      invalidateAdminCache('/api/product');
+
+      showToast.success('محصول ساخته شد');
+      router.push(
+        selectedCategory
+          ? `/p-admin/admin-categories/category-products/${selectedCategory._id}`
+          : '/p-admin/admin-products'
+      );
+    } catch (err) {
+      showError('خطا', err.message || 'خطا در ایجاد محصول');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // ---------------------------
+  // Render
+  // ---------------------------
+  return (
+    <form
+      onSubmit={handleSubmit}
+      className="space-y-6 bg-white p-8 rounded-lg shadow"
+    >
+      {/* ── Name ── */}
+      <div className="grid md:grid-cols-2 gap-6">
+        <Input
+          label="نام محصول"
+          value={formData.name}
+          error={fieldErrors.name}
+          onChange={e => updateField('name', e.target.value)}
+        />
+      </div>
+
+      {/* ── Descriptions ── */}
+      {show('shortDescription') && <Textarea
+        label={<RuleLabel rule={ruleOf('shortDescription')} />}
+        rows={3}
+        error={fieldErrors.shortDescription}
+        value={formData.shortDescription}
+        onChange={e => updateField('shortDescription', e.target.value)}
+      />}
+      {show('longDescription') && <Textarea
+        label={<RuleLabel rule={ruleOf('longDescription')} />}
+        rows={6}
+        error={fieldErrors.longDescription}
+        value={formData.longDescription}
+        onChange={e => updateField('longDescription', e.target.value)}
+      />}
+
+      {/* ── Brand / Serie / Sport ── */}
+      <div className="grid md:grid-cols-3 gap-6">
+        {show('brand') && <Select
+          label={<RuleLabel rule={ruleOf('brand')} />}
+          error={fieldErrors.brand}
+          value={formData.brand}
+          onChange={e => {
+            setFormData(prev => ({
+              ...prev,
+              brand: e.target.value,
+              serie: '',
+              limitedEdition: '',
+              color: ''
+            }));
+          }}
+          options={[{ value: '', label: '—' }, ...brands.map(b => ({ value: b._id, label: b.name }))]}
+        />}
+
+        {formData.brand && show('serie') && (
+          <Select
+            label={<RuleLabel rule={ruleOf('serie')} />}
+            value={formData.serie}
+            onChange={e => {
+              const selectedSerieId = e.target.value;
+              const currentBrand = brands.find(b => b._id === formData.brand);
+              const selectedSerie = currentBrand?.series?.find(s => s._id === selectedSerieId);
+              const primaryColor = selectedSerie?.colors?.primary || '';
+              
+              setFormData(prev => ({
+                ...prev,
+                serie: selectedSerieId,
+                color: primaryColor // Auto-fill on selection change
+              }));
+            }}
+            options={
+              brands
+                .find(b => b._id === formData.brand)
+                ?.series?.map(s => ({ value: s._id, label: s.name })) || []
+            }
+          />
+        )}
+
+        {show('sport') && <Select
+          label={<RuleLabel rule={ruleOf('sport')} />}
+          error={fieldErrors.sport}
+          value={formData.sport}
+          onChange={e => updateField('sport', e.target.value)}
+          options={[{ value: '', label: '—' }, ...sports.map(s => ({ value: s._id, label: s.name }))]}
+        />}
+
+        {/* لیمیتد ادیشن — مخصوص برند انتخاب‌شده */}
+        {formData.brand && show('limitedEdition') && (
+          <Select
+            label="لیمیتد ادیشن (Limited Edition)"
+            error={fieldErrors.limitedEdition}
+            value={selectedLimitedEdition}
+            onChange={e => updateField('limitedEdition', e.target.value)}
+            options={[
+              { value: '', label: 'بدون لیمیتد ادیشن' },
+              ...limitedEditionOptions,
+            ]}
+          />
+        )}
+      </div>
+
+      {/* ── Athletes (multi-select checkboxes) ── */}
+      {show('athlete') && athletes.length > 0 && (
+        <div className="border rounded-lg p-4">
+          <h3 className="font-bold mb-1 text-gray-700">ورزشکاران</h3>
+          <p className="text-xs text-gray-400 mb-3">
+            می‌توانید چند ورزشکار انتخاب کنید.
+          </p>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 max-h-52 overflow-y-auto pr-1">
+            {athletes.map(a => {
+              const selected =
+                Array.isArray(formData.athlete) &&
+                formData.athlete.includes(a._id);
+              return (
+                <label
+                  key={a._id}
+                  className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer border transition-colors select-none ${
+                    selected
+                      ? 'bg-[var(--color-primary)]/10 border-[var(--color-primary)] text-[var(--color-primary)]'
+                      : 'border-gray-200 hover:bg-gray-50 text-gray-700'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selected}
+                    onChange={() => toggleAthlete(a._id)}
+                    className="accent-[var(--color-primary)] w-4 h-4 shrink-0"
+                  />
+                  <span className="text-sm truncate">{a.title}</span>
+                </label>
+              );
+            })}
+          </div>
+          {Array.isArray(formData.athlete) && formData.athlete.length > 0 && (
+            <p className="text-xs text-[var(--color-primary)] mt-2 font-medium">
+              {formData.athlete.length} ورزشکار انتخاب شده
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* ── Category / Price / Label / Color ── */}
+      <div className="grid md:grid-cols-2 gap-6">
+        {show('category') && <Select
+          label={<RuleLabel rule={ruleOf('category')} />}
+          error={fieldErrors.category}
+          value={formData.category}
+          onChange={e => updateField('category', e.target.value)}
+          options={[{ value: '', label: 'بدون دسته‌بندی' }, ...categories.map(c => ({ value: c._id, label: getCategoryLabel(c) }))]}
+        />}
+
+        {show('basePrice') && <Input
+          label={<RuleLabel rule={ruleOf('basePrice')}>{`${ruleOf('basePrice').label} (${PRICE_UNIT})`}</RuleLabel>}
+          type="number"
+          formatNumber
+          error={fieldErrors.basePrice}
+          value={formData.basePrice}
+          onChange={e => updateField('basePrice', e.target.value)}
+        />}
+
+        {/* Dynamic & Editable Color Field */}
+        {show('color') && <div className="flex gap-2 items-end">
+          <div className="flex-1">
+            <Input
+              label="رنگ محصول (کد Hex)"
+              value={formData.color}
+              onChange={e => updateField('color', e.target.value)}
+              placeholder="مثال: #ff0000"
+            />
+          </div>
+          <input
+            type="color"
+            value={isValidHex(formData.color) ? formData.color : '#ffffff'}
+            onChange={e => updateField('color', e.target.value)}
+            className="w-12 h-10 p-1 border rounded bg-white cursor-pointer mb-1 shadow-sm transition-transform hover:scale-105"
+            title="انتخابگر رنگ کمکی"
+          />
+        </div>}
+
+        {show('label') && <Select
+          label={<RuleLabel rule={ruleOf('label')} />}
+          value={formData.label}
+          onChange={e => updateField('label', e.target.value)}
+          options={[
+            { value: 'none', label: 'بدون برچسب' },
+            { value: 'new', label: 'جدید' },
+            { value: 'hot', label: 'پرطرفدار' },
+            { value: 'discount', label: 'تخفیف‌دار' },
+            { value: 'limited', label: 'تعداد محدود' },
+          ]}
+        />}
+
+        {show('targetAudience') && <Select
+          label={<RuleLabel rule={ruleOf('targetAudience')} />}
+          error={fieldErrors.targetAudience}
+          value={formData.targetAudience}
+          onChange={e => updateField('targetAudience', e.target.value)}
+          options={TARGET_AUDIENCE_SELECT_OPTIONS}
+        />}
+
+        <Select
+          label="وضعیت نمایش محصول"
+          value={formData.isActive ? 'true' : 'false'}
+          onChange={e => updateField('isActive', e.target.value === 'true')}
+          options={[
+            { value: 'true', label: 'منتشرشده (نمایش در سایت)' },
+            { value: 'false', label: 'پیش‌نویس (مخفی در سایت)' },
+          ]}
+        />
+      </div>
+
+      <SaleFields rules={rules} formData={formData} updateField={updateField} errors={fieldErrors} />
+
+      <CustomFieldsEditor
+        rules={rules}
+        values={formData.customFields}
+        onChange={(v) => updateField('customFields', v)}
+        errors={fieldErrors}
+      />
+
+      {/* ── Category Attributes (fixed) ── */}
+      {visibleCategoryAttributes.length > 0 && (
+        <div className="border-t pt-6">
+          <h3 className="font-bold mb-4">ویژگی‌های ثابت</h3>
+          <table className="w-full border rounded-lg">
+            <tbody>
+              {visibleCategoryAttributes.map(attr => (
+                <tr key={attr.name} className="border-b">
+                  <td className="p-3 font-medium bg-gray-50 whitespace-nowrap">
+                    {attr.label}
+                    {attr.required && (
+                      <span className="text-red-500 mr-1">*</span>
+                    )}
+                  </td>
+                  <td className="p-3">
+                    <Input
+                      type={attr.type === 'number' ? 'number' : 'text'}
+                      error={fieldErrors[attr.name]}
+                      value={formData.attributes?.[attr.name] || ''}
+                      onChange={e =>
+                        updateAttribute(attr.name, e.target.value)
+                      }
+                      placeholder={
+                        attr.type === 'select'
+                          ? 'مثال: L2, L3, L4'
+                          : `مقدار ${attr.label}`
+                      }
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ── Variant Attributes (dynamic) ── */}
+      {categoryVariantAttributes.length > 0 && (
+        <div className="border-t pt-6">
+          <h3 className="font-bold mb-1 text-purple-800">
+            ویژگی‌های متغیر (واریانت‌ها)
+          </h3>
+          <p className="text-xs text-gray-500 mb-5">
+            برای هر ویژگی مقادیر موجود را اضافه کنید. تصاویر در بخش «تصاویر هر مقدار»
+            بارگذاری می‌شوند؛ تعیین قیمت برای هر ترکیب اختیاری است (خالی = قیمت پایه).
+          </p>
+
+          {/* ── Tag inputs per variantAttribute ── */}
+          <div className="space-y-4 mb-6">
+            {categoryVariantAttributes.map(attr => (
+              <div
+                key={attr.name}
+                className="border rounded-lg p-4 bg-purple-50/30"
+              >
+                <label className="block font-medium text-gray-700 mb-2">
+                  {attr.label}
+                  {attr.prompt && (
+                    <span className="text-xs text-gray-400 mr-2 font-normal">
+                      ({attr.prompt})
+                    </span>
+                  )}
+                </label>
+
+                {/* Input + Add button */}
+                {attr.multiUnit ? (
+                  <div className="mb-3 space-y-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {(attr.units || []).map((unit, ui) => (
+                        <input
+                          key={unit}
+                          type="text"
+                          dir="ltr"
+                          style={{ direction: "ltr", unicodeBidi: "isolate" }}
+                          className="border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400"
+                          placeholder={`${attr.label} — ${unit}${ui === 0 ? ' (اصلی)' : ''}`}
+                          value={variantInputBuffer[attr.name]?.[unit] || ''}
+                          onChange={e =>
+                            setVariantInputBuffer(prev => ({
+                              ...prev,
+                              [attr.name]: { ...(prev[attr.name] || {}), [unit]: e.target.value },
+                            }))
+                          }
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              addVariantValue(attr);
+                            }
+                          }}
+                        />
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => addVariantValue(attr)}
+                      className="px-4 py-2 bg-purple-600 text-white rounded text-sm hover:bg-purple-700 transition-colors"
+                    >
+                      + افزودن مقدار
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex gap-2 mb-3">
+                    <input
+                      type="text"
+                      dir="ltr"
+                      style={{ direction: "ltr", unicodeBidi: "isolate" }}
+                      className="flex-1 border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400"
+                      placeholder={`مقدار جدید برای ${attr.label}…`}
+                      value={variantInputBuffer[attr.name] || ''}
+                      onChange={e =>
+                        setVariantInputBuffer(prev => ({
+                          ...prev,
+                          [attr.name]: e.target.value,
+                        }))
+                      }
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          addVariantValue(attr);
+                        }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => addVariantValue(attr)}
+                      className="px-4 py-2 bg-purple-600 text-white rounded text-sm hover:bg-purple-700 transition-colors"
+                    >
+                      + افزودن
+                    </button>
+                  </div>
+                )}
+
+                {/* Value tags — قابلِ ویرایش و جابه‌جایی (drag & drop) */}
+                {fieldErrors[attr.name] && (
+                  <p className="mb-2 text-xs text-red-500 font-bold">! {fieldErrors[attr.name]}</p>
+                )}
+
+                <VariantValuesEditor
+                  attr={attr}
+                  values={variantOptions[attr.name] || []}
+                  variantMeta={variantMeta}
+                  onReorder={reorderVariantValue}
+                  onRename={handleRenameVariantValue}
+                  onRemove={removeVariantValue}
+                />
+              </div>
+            ))}
+          </div>
+
+          {/* ── تصاویرِ هر مقدار (مشترک بین واریانت‌ها) ── */}
+          {categoryVariantAttributes.some(
+            (attr) => (variantOptions[attr.name] || []).length > 0
+          ) && (
+            <div className="mb-6 border rounded-lg p-4 bg-blue-50/30">
+              <h4 className="font-semibold mb-1 text-blue-800">تصاویر هر مقدار</h4>
+              <p className="text-xs text-gray-500 mb-4">
+                تصاویری که برای هر مقدار (مثلاً هر رنگ) بارگذاری می‌کنید بین همه‌ی
+                واریانت‌هایی که آن مقدار را دارند مشترک است؛ لازم نیست برای هر سایز جدا آپلود کنید.
+              </p>
+              <div className="space-y-5">
+                {categoryVariantAttributes.map((attr) => {
+                  const values = variantOptions[attr.name] || [];
+                  if (!values.length) return null;
+                  return (
+                    <div key={attr.name}>
+                      <p className="text-sm font-bold text-gray-700 mb-2">{attr.label}</p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {values.map((val) => (
+                          <div key={val} className="border rounded-lg p-3 bg-white">
+                            <p className="text-xs font-semibold text-gray-600 mb-2">{val}</p>
+                            <VariantValueImageUpload
+                              value={variantMeta[attr.name]?.[val]?.images || []}
+                              onChange={(imgs) => setValueImages(attr.name, val, imgs)}
+                              onUploadingChange={trackUpload}
+                              folder="product/variant-values"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ── Combination detail cards ── */}
+          {combinations.length > 0 && (
+            <div>
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+                <h4 className="font-semibold text-gray-700">
+                  جزئیات ترکیب‌ها
+                  <span className="mr-2 text-xs font-normal text-gray-400">
+                    ({selectedComboCount} از {combinations.length} انتخاب‌شده)
+                  </span>
+                </h4>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setAllCombos(true)}
+                    className="px-3 py-1.5 text-xs font-bold rounded-lg border border-purple-200 text-purple-700 hover:bg-purple-50 transition-colors"
+                  >
+                    انتخاب همه
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAllCombos(false)}
+                    className="px-3 py-1.5 text-xs font-bold rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors"
+                  >
+                    حذف همه
+                  </button>
+                </div>
+              </div>
+
+              <p className="text-xs text-gray-500 mb-4">
+                فقط ترکیب‌هایی که تیک دارند ساخته می‌شوند؛ ترکیب‌های بدون تیک نادیده گرفته می‌شوند.
+              </p>
+
+              <div className="space-y-4">
+                {combinations.map(combo => {
+                  const key = makeComboKey(combo);
+                  const detail = variantDetails[key] || {
+                    price: '',
+                    images: [],
+                  };
+                  const isSelected = !deselectedCombos.has(key);
+
+                  return (
+                    <div
+                      key={key}
+                      className={`border rounded-lg p-4 bg-white shadow-sm transition-opacity ${
+                        isSelected ? 'border-purple-200' : 'border-gray-200 opacity-60'
+                      }`}
+                    >
+                      {/* Combo label + انتخاب ساخت */}
+                      <div className="flex flex-wrap items-center gap-2 mb-4">
+                        <label className="flex items-center cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleCombo(key)}
+                            className="w-5 h-5 rounded accent-purple-600 shrink-0"
+                          />
+                          <span className="sr-only">ساخت این ترکیب</span>
+                        </label>
+                        {Object.entries(combo).map(([k, v]) => (
+                          <span
+                            key={k}
+                            className="px-2 py-0.5 bg-gray-100 rounded text-sm font-medium text-gray-700"
+                          >
+                            {k}:{' '}
+                            <span className="text-purple-700 font-semibold">
+                              {v}
+                            </span>
+                          </span>
+                        ))}
+                        {!isSelected && (
+                          <span className="text-[11px] font-bold text-gray-400 bg-gray-100 border border-gray-200 px-2 py-0.5 rounded-full mr-auto">
+                            ساخته نمی‌شود
+                          </span>
+                        )}
+                      </div>
+
+                      {/* قیمت ویژه (اختیاری) — تصاویر در بخش «تصاویر هر مقدار» مدیریت می‌شوند */}
+                      {isPriceVisible(key, detail) ? (
+                        <div className="flex items-end gap-2">
+                          <div className="flex-1">
+                            <label className="block text-xs text-gray-500 mb-1 font-medium">
+                              قیمت ویژه ({PRICE_UNIT}){' '}
+                              <span className="text-gray-400 font-normal">— خالی = قیمت پایه</span>
+                            </label>
+                            <AdminInput
+                              type="number"
+                              min="0"
+                              className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                              placeholder="قیمت پایه‌ی محصول"
+                              value={detail.price}
+                              onChange={e =>
+                                updateVariantDetail(key, 'price', e.target.value)
+                              }
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => clearCustomPrice(key)}
+                            className="px-2 py-2 text-xs font-bold text-gray-400 hover:text-red-600 transition-colors"
+                            title="حذف قیمت ویژه (استفاده از قیمت پایه)"
+                          >
+                            حذف
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => showPriceInput(key)}
+                          className="text-xs font-bold text-blue-600 hover:text-blue-700 transition-colors"
+                        >
+                          + قیمت ویژه
+                        </button>
+                      )}
+                      {show('stock') && (
+                        <div className="mt-3 max-w-xs">
+                          <label className="block text-xs text-gray-500 mb-1 font-medium">موجودی این ترکیب <span className="text-gray-400 font-normal">— خالی = بدون کنترل موجودی</span></label>
+                          <AdminInput
+                            type="number"
+                            min="0"
+                            className="w-full border rounded px-3 py-2 text-sm"
+                            value={detail.stock ?? ''}
+                            onChange={e => updateVariantDetail(key, 'stock', e.target.value)}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Technical Stats ── */}
+      {show('technicalStats') && categoryTechnicalStats.length > 0 && (
+        <div className="border-t pt-6 bg-blue-50/30 p-4 rounded-lg">
+          <h3 className="font-bold mb-4 text-blue-800">
+            شاخص‌های فنی (نمودار رادار)
+          </h3>
+          <p className="text-xs text-gray-500 mb-4">
+            نمره‌ای بین 0 تا 100 وارد کنید.
+          </p>
+          <div className="grid md:grid-cols-2 gap-4">
+            {categoryTechnicalStats.map(stat => (
+              <div
+                key={stat.name}
+                className="flex items-center space-x-reverse space-x-3 bg-white p-2 border rounded shadow-sm"
+              >
+                <label className="w-1/2 text-sm font-medium text-gray-700">
+                  {stat.label}
+                </label>
+                <div className="w-1/2">
+                  <Input
+                    type="number"
+                    min="0"
+                    max="100"
+                    placeholder="0-100"
+                    error={fieldErrors[stat.name]}
+                    value={formData.technicalStats?.[stat.name] || ''}
+                    onChange={e =>
+                      updateTechnicalStat(stat.name, e.target.value)
+                    }
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {categoryCustomTab?.enabled && categoryCustomTab.items?.length > 0 && (
+        <div className="space-y-3 border-t pt-6">
+          <h3 className="text-sm font-bold text-neutral-700">{categoryCustomTab.name || 'تب سفارشی'}</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {categoryCustomTab.items.map((item) => {
+              const checked = (formData.customTabItems || []).includes(item.title);
+              return (
+                <label
+                  key={item._id}
+                  className="flex items-center gap-2 p-2.5 bg-neutral-50 border border-neutral-200 rounded-lg cursor-pointer text-sm"
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={(e) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        customTabItems: e.target.checked
+                          ? [...(prev.customTabItems || []), item.title]
+                          : (prev.customTabItems || []).filter((t) => t !== item.title),
+                      }))
+                    }
+                  />
+                  <span className="font-bold truncate">{item.title}</span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── Tags ── */}
+      {show('tag') && <Input
+        label={<RuleLabel rule={ruleOf('tag')}>{`${ruleOf('tag').label} (با کاما جدا کنید)`}</RuleLabel>}
+        value={formData.tag}
+        onChange={e => updateField('tag', e.target.value)}
+      />}
+
+      {/* ── Images ── */}
+      {show('mainImage') && <ImageUpload
+        label={ruleOf('mainImage').label}
+        required={Boolean(ruleOf('mainImage').required)}
+        value={formData.mainImage}
+        onChange={v => updateField('mainImage', v)}
+        onUploadingChange={trackUpload}
+        folder="product"
+      />}
+      {fieldErrors.mainImage && (
+        <p className="-mt-4 mb-4 text-xs text-red-500 font-bold">! {fieldErrors.mainImage}</p>
+      )}
+
+      {show('gallery') && <ImageUpload
+        label={ruleOf('gallery').label}
+        multiple
+        value={formData.gallery}
+        onChange={v => updateField('gallery', v)}
+        onUploadingChange={trackUpload}
+        folder="product"
+      />}
+
+      {uploadsInFlight > 0 && (
+        <p className="text-xs font-bold text-amber-600">
+          تا پایانِ بارگذاری تصاویر، امکان ثبت وجود ندارد.
+        </p>
+      )}
+      <Button type="submit" loading={loading} disabled={uploadsInFlight > 0}>
+        ایجاد محصول
+      </Button>
+    </form>
+  );
+}

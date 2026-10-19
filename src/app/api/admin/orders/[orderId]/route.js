@@ -1,0 +1,406 @@
+/**
+ * src/app/api/admin/orders/[orderId]/route.js
+ *
+ * GET   → جزئیات کامل یک سفارش (ادمین)
+ *         وقتی ادمین صفحه سفارش را باز می‌کند، reviewedAt ست می‌شود
+ * PATCH → بروزرسانی وضعیت سفارش (paymentStatus / fulfillmentStatus)
+ * DELETE → حذف دائمی سفارش + همه‌ی پرداخت‌هایش (کلید orders.delete + تأیید کد سفارش)
+ */
+
+import { NextResponse } from "next/server";
+import mongoose from "mongoose";
+
+import connectToDB from "base/configs/db";
+import Order from "base/models/Order";
+import Installment from "base/models/Installment";
+import { deriveCheckStatus, summarizeInstallment } from "base/services/installmentService";
+import { syncOrderFulfillmentFromTracking } from "@/lib/orderFulfillmentSync";
+import { markOrderUsedProductsSold } from "@/lib/usedProductOrderStatus";
+import { deleteOrderPermanently } from "base/services/orderDeletion";
+import { updateOrderWithWallet } from "base/services/walletOrder.service";
+
+// فقط برای ثبت شدن مدل‌ها در Mongoose / جلوگیری از MissingSchemaError
+import "base/models/Payment";
+import "base/models/Product";
+import "base/models/Variant";
+import "base/models/UsedProduct";
+import "base/models/User";
+
+import requireAdminPermission from "@/lib/requireAdminPermission";
+import { InventoryError, releaseOrderStock, reserveOrderStock } from "base/services/inventory.service";
+
+// تبدیل attributes واریانت (Map) به آبجکت ساده تا در JSON درست سریالایز شود
+function normalizeVariant(variant) {
+  if (!variant) return variant;
+  const attrs =
+    variant.attributes instanceof Map
+      ? Object.fromEntries(variant.attributes)
+      : variant.attributes || {};
+  return { ...variant, attributes: attrs };
+}
+
+// طرح اقساط مرتبط با این سفارش را (در صورت وجود) به‌صورت خلاصه برمی‌گرداند
+async function loadInstallmentForOrder(orderId) {
+  const inst = await Installment.findOne({ order: orderId })
+    .populate({ path: "downPayment", select: "amount status bankReceipt" })
+    .lean();
+  if (!inst) return null;
+
+  const now = new Date();
+  const summary = summarizeInstallment(inst, now);
+
+  return {
+    _id: inst._id,
+    status: inst.status,
+    derivedStatus: summary.derivedStatus,
+    numberOfChecks: inst.numberOfChecks,
+    totalAmount: inst.totalAmount,
+    createdAt: inst.createdAt,
+    orderConfirmedAt: inst.orderConfirmedAt || null,
+    downPayment: {
+      _id: inst.downPayment?._id || null,
+      amount: summary.downPaymentAmount,
+      paid: summary.downPaymentPaid,
+      status: inst.downPayment?.status || "PENDING",
+      reviewStatus: inst.downPayment?.bankReceipt?.reviewStatus || "PENDING",
+    },
+    paidAmount: summary.paidAmount,
+    remainingAmount: summary.remainingAmount,
+    paidChecksCount: summary.paidChecksCount,
+    remainingChecksCount: summary.remainingChecksCount,
+    nextDueDate: summary.nextDueDate,
+    overdueCount: summary.overdueCount,
+    checks: (inst.checks || [])
+      .slice()
+      .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate))
+      .map((c, idx) => ({
+        _id: c._id,
+        number: idx + 1,
+        checkNumber: c.checkNumber || null,
+        amount: c.amount,
+        dueDate: c.dueDate,
+        status: c.status,
+        displayStatus: deriveCheckStatus(c, now),
+        paidAt: c.paidAt || null,
+        receiptImageUrl: c.receiptImageUrl || null,
+        notes: c.notes || "",
+        bounceReason: c.bounceReason || "",
+      })),
+  };
+}
+
+function normalizeOrderItems(items = []) {
+  return items.map((item) => {
+    const variant = normalizeVariant(item.variant);
+
+    if (item?.itemType === "used_product") {
+      const usedProduct = item.usedProduct || null;
+
+      return {
+        ...item,
+        variant,
+        usedProduct,
+        product: {
+          _id: usedProduct?._id || item.product?._id || null,
+          name: usedProduct?.name || item.product?.name || "محصول دست دوم",
+          slug: usedProduct?.slug || null,
+          mainImage: usedProduct?.images?.[0] || item.product?.mainImage || null,
+          sku: usedProduct?.sku || "USED-ITEM",
+        },
+      };
+    }
+
+    return { ...item, variant };
+  });
+}
+
+/* ─── GET: جزئیات سفارش ─────────────────────────────────────────────── */
+export async function GET(req, { params }) {
+  const { actor: admin, denied } = await requireAdminPermission("orders.view");
+  if (denied) return denied;
+
+  try {
+    await connectToDB();
+
+    const { orderId } =await params;
+
+    if (!mongoose.Types.ObjectId.isValid(orderId)) {
+      return NextResponse.json(
+        { message: "شناسه سفارش نامعتبر است" },
+        { status: 400 }
+      );
+    }
+
+    // فقط بار اولی که ادمین سفارش را باز می‌کند reviewedAt ست شود
+    await Order.updateOne(
+      {
+        _id: orderId,
+        reviewedAt: { $exists: false },
+      },
+      {
+        $set: {
+          reviewedAt: new Date(),
+          reviewedBy: new mongoose.Types.ObjectId(admin.userId),
+        },
+      }
+    );
+
+    // read-repair: همگام‌سازی وضعیت سفارش با وضعیت بارکدهای انبار
+    // (وضعیت بارکدها در پروژه‌ی انبار — خارج از این اپ — تغییر می‌کند)
+    await syncOrderFulfillmentFromTracking(orderId);
+
+    const fullOrder = await Order.findById(orderId)
+      .populate({
+        path: "user",
+        select: "name lastName phone email coach",
+        populate: { path: "coach", model: "User", select: "name lastName _id" },
+      })
+      .populate({
+        path: "payments",
+        select: "method amount status bankReceipt onlinePayment createdAt meta",
+      })
+      .populate({
+        path: "items.product",
+        model: "Product",
+        select: "name slug mainImage sku",
+      })
+      .populate({
+        path: "items.usedProduct",
+        model: "UsedProduct",
+      })
+      .populate({
+        path: "items.variant",
+        model: "Variant",
+        select: "sku attributes images",
+      })
+      .populate({
+        path: "items.flowSelections.selectedProduct",
+        model: "Product",
+        select: "name mainImage",
+      })
+      .lean();
+
+    if (!fullOrder) {
+      return NextResponse.json(
+        { message: "سفارش یافت نشد" },
+        { status: 404 }
+      );
+    }
+
+    fullOrder.items = normalizeOrderItems(fullOrder.items);
+
+    // طرح اقساط مرتبط (در صورت وجود) برای نمایش تبِ «اقساط» در جزئیات سفارش
+    const installment =
+      fullOrder.paymentMethod === "INSTALLMENT"
+        ? await loadInstallmentForOrder(orderId)
+        : null;
+
+    return NextResponse.json({ order: fullOrder, installment }, { status: 200 });
+  } catch (error) {
+    console.error("[admin/orders/:id GET]", error);
+    return NextResponse.json(
+      { message: "خطای داخلی سرور" },
+      { status: 500 }
+    );
+  }
+}
+
+/* ─── PATCH: بروزرسانی وضعیت ────────────────────────────────────────── */
+export async function PATCH(req, { params }) {
+  const { actor: admin, denied } = await requireAdminPermission("orders.changeStatus");
+  if (denied) return denied;
+
+  try {
+    await connectToDB();
+
+    const { orderId } =await params;
+
+    if (!mongoose.Types.ObjectId.isValid(orderId)) {
+      return NextResponse.json(
+        { message: "شناسه سفارش نامعتبر است" },
+        { status: 400 }
+      );
+    }
+
+    const body = await req.json();
+    const { paymentStatus, fulfillmentStatus } = body;
+
+    const VALID_PAYMENT_STATUSES = ["UNPAID", "PARTIALLY_PAID", "PAID"];
+    const VALID_FULFILLMENT_STATUSES = [
+      "WAITING",
+      "NEEDS_PURCHASE",
+      "PROCESSING",
+      "SENT",
+      "DELIVERED",
+      "CANCELED",
+    ];
+
+    if (paymentStatus && !VALID_PAYMENT_STATUSES.includes(paymentStatus)) {
+      return NextResponse.json(
+        { message: "وضعیت پرداخت نامعتبر است" },
+        { status: 400 }
+      );
+    }
+
+    if (
+      fulfillmentStatus &&
+      !VALID_FULFILLMENT_STATUSES.includes(fulfillmentStatus)
+    ) {
+      return NextResponse.json(
+        { message: "وضعیت ارسال نامعتبر است" },
+        { status: 400 }
+      );
+    }
+
+    const update = {
+      reviewedBy: new mongoose.Types.ObjectId(admin.userId),
+      reviewedAt: new Date(),
+    };
+
+    if (paymentStatus) update.paymentStatus = paymentStatus;
+    if (fulfillmentStatus) update.fulfillmentStatus = fulfillmentStatus;
+
+    // موجودی: لغو آزادش می‌کند، خروج از لغو دوباره رزروش می‌کند (اگر هنوز هست).
+    // ponytail: جدا از به‌روزرسانیِ وضعیت (بدونِ تراکنش)؛ اگر لازم شد هر دو در یک session.
+    if (fulfillmentStatus) {
+      const current = await Order.findById(orderId).select("fulfillmentStatus inventoryReserved items").lean();
+      if (current && fulfillmentStatus === "CANCELED" && current.fulfillmentStatus !== "CANCELED" && current.inventoryReserved) {
+        await releaseOrderStock(current.items);
+        update.inventoryReserved = false;
+      } else if (current && fulfillmentStatus !== "CANCELED" && current.fulfillmentStatus === "CANCELED" && !current.inventoryReserved) {
+        try {
+          update.inventoryReserved = await reserveOrderStock(current.items);
+        } catch (err) {
+          if (err instanceof InventoryError) {
+            return NextResponse.json({ message: `بازگرداندنِ سفارش ممکن نیست: ${err.message}` }, { status: 409 });
+          }
+          throw err;
+        }
+      }
+    }
+
+    await updateOrderWithWallet(orderId, update);
+    const order = await Order.findById(orderId)
+      .populate({
+        path: "user",
+        select: "name lastName phone email coach",
+        populate: { path: "coach", model: "User", select: "name lastName _id" },
+      })
+      .populate({
+        path: "payments",
+        select: "method amount status bankReceipt onlinePayment createdAt meta",
+      })
+      .populate({
+        path: "items.product",
+        model: "Product",
+        select: "name slug mainImage sku",
+      })
+      .populate({
+        path: "items.usedProduct",
+        model: "UsedProduct",
+      })
+      .populate({
+        path: "items.variant",
+        model: "Variant",
+        select: "sku attributes images",
+      })
+      .populate({
+        path: "items.flowSelections.selectedProduct",
+        model: "Product",
+        select: "name mainImage",
+      })
+      .lean();
+
+    if (!order) {
+      return NextResponse.json(
+        { message: "سفارش یافت نشد" },
+        { status: 404 }
+      );
+    }
+
+    if (order.paymentStatus === "PAID") {
+      await markOrderUsedProductsSold(order);
+    }
+
+    order.items = normalizeOrderItems(order.items);
+
+    const installment =
+      order.paymentMethod === "INSTALLMENT"
+        ? await loadInstallmentForOrder(orderId)
+        : null;
+
+    return NextResponse.json(
+      { message: "وضعیت سفارش با موفقیت بروزرسانی شد", order, installment },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error("[admin/orders/:id PATCH]", error);
+    if (error.code === "WALLET_CHECKOUT_ERROR") return NextResponse.json({ message: error.message }, { status: error.status || 409 });
+    return NextResponse.json(
+      { message: "خطای داخلی سرور" },
+      { status: 500 }
+    );
+  }
+}
+
+/* ─── DELETE: حذف دائمی سفارش ───────────────────────────────────────── */
+/**
+ * حذفِ برگشت‌ناپذیرِ سفارش به‌همراهِ همه‌ی پرداخت‌هایش.
+ *
+ * دو گاردِ *مستقل* دارد و هیچ‌کدام به رابط کاربری تکیه نمی‌کند:
+ *   ۱) کلیدِ `orders.delete` — پنهان‌بودنِ «منطقه‌ی خطر» در UI امنیت نیست؛
+ *      اجرای واقعی همین‌جاست.
+ *   ۲) تأییدِ کدِ سفارش در بدنه‌ی درخواست. اگر این بررسی فقط داخلِ دیالوگِ
+ *      SweetAlert2 بود، یک `fetch` ساده از کنسول از رویش رد می‌شد.
+ * تطبیق عمداً *دقیق* است (فقط فضای دو سرِ رشته گرفته می‌شود): نه
+ * case-insensitive و نه جزئی — کدِ رهگیری حروفِ بزرگ دارد و «تقریباً درست»
+ * برای یک حذفِ برگشت‌ناپذیر کافی نیست.
+ */
+export async function DELETE(req, { params }) {
+  const { denied } = await requireAdminPermission("orders.delete");
+  if (denied) return denied;
+
+  try {
+    await connectToDB();
+
+    const { orderId } = await params;
+
+    if (!mongoose.Types.ObjectId.isValid(orderId)) {
+      return NextResponse.json({ message: "شناسه سفارش نامعتبر است" }, { status: 400 });
+    }
+
+    // بدنه‌ی خالی/نامعتبر = تأییدِ غایب، نه ۵۰۰.
+    const body = await req.json().catch(() => ({}));
+    const confirm = typeof body?.confirm === "string" ? body.confirm.trim() : "";
+
+    const order = await Order.findById(orderId).select("trackingCode").lean();
+    if (!order) {
+      return NextResponse.json({ message: "سفارش یافت نشد" }, { status: 404 });
+    }
+
+    const expected = String(order.trackingCode || "");
+    if (!confirm || confirm !== expected) {
+      return NextResponse.json(
+        { message: "کد سفارش وارد‌شده با کد این سفارش مطابقت ندارد" },
+        { status: 400 }
+      );
+    }
+
+    const summary = await deleteOrderPermanently(orderId);
+    if (!summary) {
+      // بین بررسی و تراکنش حذف شده — همان ۴۰۴، نه خطای سرور.
+      return NextResponse.json({ message: "سفارش یافت نشد" }, { status: 404 });
+    }
+
+    console.info("[admin/orders/:id DELETE]", orderId, summary);
+
+    return NextResponse.json(
+      { message: "سفارش و همه‌ی پرداخت‌های آن برای همیشه حذف شد", summary },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error("[admin/orders/:id DELETE]", error);
+    if (error.code === "WALLET_CHECKOUT_ERROR") return NextResponse.json({ message: error.message }, { status: error.status || 409 });
+    return NextResponse.json({ message: "خطای داخلی سرور" }, { status: 500 });
+  }
+}

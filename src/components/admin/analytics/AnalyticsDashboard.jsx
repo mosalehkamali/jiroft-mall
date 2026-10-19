@@ -1,0 +1,173 @@
+"use client";
+
+import storeConfig from "base/store.config";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { toast } from "react-toastify";
+import { BarChart3, Sparkles, AlertTriangle } from "lucide-react";
+
+import GlobalFilter, { presetRange } from "./GlobalFilter";
+import ExportMenu from "./ExportMenu";
+import KpiCards from "./KpiCards";
+import RevenueTrends from "./RevenueTrends";
+import SalesHeatmap from "./SalesHeatmap";
+import ReceivablesPanel from "./ReceivablesPanel";
+import CustomerAnalytics from "./CustomerAnalytics";
+import ProductAnalytics from "./ProductAnalytics";
+import CategoryBrandAnalytics from "./CategoryBrandAnalytics";
+import OrderAnalytics from "./OrderAnalytics";
+import InsightCards from "./InsightCards";
+import { FadeIn, SectionTitle } from "./primitives";
+import { faDate } from "./format";
+import { useAdminPermissions } from "@/components/admin/AdminPermissionProvider";
+import { AnalyticsCurrencyContext } from "./CurrencyContext";
+import EuroReceivables from "./EuroReceivables";
+import EuroCollections from "./EuroCollections";
+
+export default function AnalyticsDashboard() {
+  const { can } = useAdminPermissions();
+  const [currency, setCurrency] = useState("IRT");
+  const [preset, setPreset] = useState("last30");
+  const [range, setRange] = useState(() => presetRange("last30"));
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const reqId = useRef(0);
+
+  const fetchData = useCallback(async (r, selectedCurrency = currency) => {
+    const id = ++reqId.current;
+    setLoading(true);
+    setData(null);
+    setError(false);
+    try {
+      const sp = new URLSearchParams({ from: r.from.toISOString(), to: r.to.toISOString(), currency: selectedCurrency });
+      const res = await fetch(`/api/admin/analytics?${sp.toString()}`);
+      const json = await res.json();
+      if (id !== reqId.current) return; // درخواستِ منسوخ
+      if (!res.ok) throw new Error(json.message || "خطا در دریافت داده");
+      setData(json);
+    } catch (e) {
+      if (id !== reqId.current) return;
+      setError(true);
+      toast.error(e.message || "خطا در دریافت تحلیل‌ها");
+    } finally {
+      if (id === reqId.current) setLoading(false);
+    }
+  }, [currency]);
+
+  // واکشیِ اولیه — با تأخیرِ صفر تا setStateِ همگام در بدنه‌ی افکت رخ ندهد
+  useEffect(() => {
+    const t = setTimeout(() => fetchData(range), 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const onFilterChange = useCallback(({ preset: p, range: r }) => {
+    setPreset(p);
+    setRange(r);
+    fetchData(r);
+  }, [fetchData]);
+
+  const rangeLabel = useMemo(
+    () => (range ? `${faDate(range.from)} تا ${faDate(range.to)}` : ""),
+    [range]
+  );
+
+  return (
+    <AnalyticsCurrencyContext.Provider value={currency}>
+    <div dir="rtl" className="space-y-5">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-[var(--radius,8px)] flex items-center justify-center" style={{ background: "color-mix(in srgb, var(--color-primary) 10%, transparent)" }}>
+            <BarChart3 size={18} style={{ color: "var(--color-primary)" }} />
+          </div>
+          <div>
+            <h1 className="text-base font-bold text-gray-900">تحلیل مالی و هوش فروش</h1>
+            <p className="text-xs font-bold text-gray-400">بینش‌های عملیاتی برای رشد فروش و بهبود جریان نقدی</p>
+          </div>
+        </div>
+        {can("analytics.export") && (
+          <ExportMenu data={data} rangeLabel={rangeLabel} disabled={loading || !data} />
+        )}
+      </div>
+
+      <div role="tablist" aria-label="واحد تحلیل مالی" className="flex gap-2 border-b border-gray-200">
+        {[["IRT", `آنالیز ${storeConfig.commerce.currency.label}ی`], ["EUR", "آنالیز یورویی"]].map(([key, label]) => (
+          <button key={key} type="button" role="tab" id={`analytics-tab-${key}`} aria-selected={currency === key}
+            aria-controls="analytics-panel"
+            tabIndex={currency === key ? 0 : -1}
+            onKeyDown={(event) => {
+              if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+              event.preventDefault();
+              const next = event.key === "Home" ? "IRT" : event.key === "End" ? "EUR" : currency === "EUR" ? "IRT" : "EUR";
+              document.getElementById(`analytics-tab-${next}`)?.focus();
+              if (next !== currency) { setCurrency(next); fetchData(range, next); }
+            }}
+            onClick={() => { if (currency !== key) { setCurrency(key); fetchData(range, key); } }}
+            className={`min-h-11 px-4 py-2 text-sm font-bold border-b-2 transition-colors focus-visible:outline-2 focus-visible:outline-[var(--color-primary)] ${currency === key ? "border-[var(--color-primary)] text-[var(--color-primary)]" : "border-transparent text-gray-500 hover:text-gray-800"}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <div id="analytics-panel" role="tabpanel" aria-labelledby={`analytics-tab-${currency}`} className="space-y-5">
+      {currency === "EUR" && <p className="rounded-xl bg-amber-50 border border-amber-100 p-3 text-xs leading-6 text-amber-900">
+        منبع مبالغ فقط اطلاعات یورویی ثبت‌شده توسط ادمین در سفارش‌هاست؛ قیمت محصولات و تبدیل {storeConfig.commerce.currency.label} استفاده نمی‌شود.
+        وصول‌شده بر اساس تاریخ ثبت پرداخت است و پرداخت سفارش‌های قدیمی یا بدون مبلغ کل یورویی را هم شامل می‌شود.
+        فروش، تعداد سفارش، مانده و نرخ وصول سفارش‌های بازه بر اساس تاریخ ایجاد سفارش و مبلغ کل یورویی هستند؛ نرخ وصول، نسبت پرداخت‌های همان سفارش‌ها به مبلغ آن‌هاست.
+        تحلیل محصول، دسته و برند فقط اقلام دارای قیمت یورویی ثبت‌شده را شامل می‌شود؛ بنابراین جمع آن می‌تواند با مبلغ کل سفارش‌ها متفاوت باشد. مبالغ به یورو هستند.
+      </p>}
+      {/* Global filter */}
+      <GlobalFilter preset={preset} range={range} onChange={onFilterChange} onRefresh={() => fetchData(range)} loading={loading} />
+
+      {error ? (
+        <div className="bg-white rounded-2xl border border-red-100 p-10 text-center">
+          <AlertTriangle size={34} className="mx-auto text-red-300 mb-2" />
+          <p className="text-sm font-bold text-gray-500">خطا در دریافت داده‌های تحلیلی</p>
+          <button onClick={() => fetchData(range)} className="mt-3 text-xs font-bold text-[var(--color-primary)] hover:underline">تلاش مجدد</button>
+        </div>
+      ) : (
+        <>
+          {/* Executive summary */}
+          <FadeIn>
+            <SectionTitle icon={Sparkles} title="خلاصه‌ی اجرایی" subtitle={`مقایسه با دوره‌ی قبلیِ هم‌طول · ${rangeLabel}`} />
+            <KpiCards kpis={data?.kpis} loading={loading} />
+          </FadeIn>
+
+          {/* Insights */}
+          {currency === "EUR" && <EuroCollections data={data?.collections} loading={loading} />}
+          {!loading && data?.insights?.length > 0 && (
+            <FadeIn delay={0.05}><InsightCards insights={data.insights} loading={loading} /></FadeIn>
+          )}
+
+          {/* Revenue + heatmap */}
+          <FadeIn delay={0.05}>
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+              <div className="xl:col-span-2"><RevenueTrends daily={data?.revenue?.daily} monthly={data?.revenue?.monthly} loading={loading} /></div>
+              <div><SalesHeatmap weekday={data?.heatmap?.weekday} dayOfMonth={data?.heatmap?.dayOfMonth} loading={loading} /></div>
+            </div>
+          </FadeIn>
+
+          {/* Orders */}
+          <FadeIn delay={0.05}><OrderAnalytics daily={data?.revenue?.daily} loading={loading} /></FadeIn>
+
+          {/* Receivables */}
+          <FadeIn delay={0.05}>
+            <SectionTitle icon={AlertTriangle} title="مطالبات و بدهی‌ها" subtitle={currency === "EUR" ? "مانده‌ی سفارش‌ها بر اساس پرداخت‌های یورویی" : "تحلیل سنی و بدهکاران"} />
+            {currency === "EUR" ? <EuroReceivables data={data?.receivables} loading={loading} /> : <ReceivablesPanel data={data?.receivables} loading={loading} />}
+          </FadeIn>
+
+          {/* Customers */}
+          <FadeIn delay={0.05}><CustomerAnalytics data={data?.customers} loading={loading} /></FadeIn>
+
+          {/* Products */}
+          <FadeIn delay={0.05}><ProductAnalytics data={data?.products} loading={loading} /></FadeIn>
+
+          {/* Category & brand */}
+          <FadeIn delay={0.05}><CategoryBrandAnalytics categories={data?.categories} brands={data?.brands} loading={loading} /></FadeIn>
+        </>
+      )}
+      </div>
+    </div>
+    </AnalyticsCurrencyContext.Provider>
+  );
+}

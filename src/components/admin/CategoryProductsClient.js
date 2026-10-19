@@ -1,0 +1,418 @@
+"use client";
+
+import { getCategoryLabel } from "base/utils/categoryLabel";
+import { useMemo, useState } from "react";
+import useSWR from "swr";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { ProductCard } from "@/components/admin";
+import { showToast } from "@/lib/toast";
+import { confirmCategoryDelete, confirmDelete, showError } from "@/lib/swal";
+import {
+  FaPlus,
+  FaEdit,
+  FaTrash,
+  FaArrowRight,
+  FaBox,
+  FaLayerGroup,
+  FaTags,
+  FaInfoCircle,
+  FaFilter,
+  FaTimes,
+} from "react-icons/fa";
+import { useSeries, ADMIN_REF_TTL } from "@/hooks/useAdminRefData";
+import { useAdminPermissions } from "@/components/admin/AdminPermissionProvider";
+
+export default function CategoryProductsClient({ categoryId }) {
+  const router = useRouter();
+  const { can } = useAdminPermissions();
+
+  // فیلترها
+  const [brandFilter, setBrandFilter] = useState("all");
+  const [serieFilter, setSerieFilter] = useState("all");
+
+  const { data: categoryRes } = useSWR(
+    categoryId ? `/api/categories/${categoryId}` : null,
+    ADMIN_REF_TTL,
+  );
+  const category = categoryRes?.category;
+
+  // 🟢 محصولات این دسته
+  const {
+    data: productsRes,
+    isLoading: loading,
+    mutate: fetchProducts,
+  } = useSWR(
+    categoryId
+      ? `/api/product?${new URLSearchParams({
+          isAdmin: "true",
+          all: "true",
+          category: categoryId,
+        })}`
+      : null,
+    ADMIN_REF_TTL,
+  );
+  const products = productsRes?.products || [];
+
+  // ایندکس کامل سری‌ها — populate لیست محصولات parentSerie ندارد، پس زنجیره‌ی
+  // والدها (برای فیلتر سلسله‌مراتبی سری) از این ایندکس ساخته می‌شود
+  const { series: seriesIndex } = useSeries();
+
+  // زنجیره‌ی والدهای هر سری (خودش + والد + ... تا ریشه) — همان منطق فیلتر
+  // سری در ویترین (SportPageClient) تا ادمین و سایت هم‌رفتار بمانند
+  const serieChains = useMemo(() => {
+    const byId = new Map(seriesIndex.map((s) => [String(s._id), s]));
+    const cache = new Map();
+    const chainOf = (id) => {
+      const key = String(id);
+      if (cache.has(key)) return cache.get(key);
+      const chain = [key];
+      const seen = new Set([key]);
+      let cur = byId.get(key);
+      while (cur?.parentSerie && byId.has(String(cur.parentSerie))) {
+        const parentId = String(cur.parentSerie);
+        if (seen.has(parentId)) break; // محافظ در برابر حلقه در داده
+        seen.add(parentId);
+        chain.push(parentId);
+        cur = byId.get(parentId);
+      }
+      cache.set(key, chain);
+      return chain;
+    };
+    return { byId, chainOf };
+  }, [seriesIndex]);
+
+  const categoryProducts = useMemo(
+    () =>
+      products
+        .filter((p) => p.category?._id === categoryId)
+        // ترتیب دستی از این صفحه حذف شده (به صفحه محصولات سری منتقل شد) —
+        // اینجا فقط بر اساس آخرین ویرایش (جدیدترین اول) نمایش می‌دهیم
+        .sort(
+          (a, b) =>
+            new Date(b.updatedAt || b.createdAt) -
+            new Date(a.updatedAt || a.createdAt)
+        ),
+    [products, categoryId]
+  );
+
+  // برندهای موجود در این دسته
+  const availableBrands = useMemo(() => {
+    const map = new Map();
+    categoryProducts.forEach((p) => {
+      if (p.brand?._id) map.set(p.brand._id, p.brand);
+    });
+    return Array.from(map.values());
+  }, [categoryProducts]);
+
+  // سری‌های موجود در محصولاتی که با برند انتخاب‌شده تطبیق دارند — سری خود
+  // محصول + همه‌ی والدها، مسطح‌شده به‌صورت درختی (والد و بعد زیرسری‌ها) با depth
+  const availableSeries = useMemo(() => {
+    const present = new Map(); // id → doc
+    categoryProducts
+      .filter((p) =>
+        brandFilter === "all" ? true : p.brand?._id === brandFilter
+      )
+      .forEach((p) => {
+        if (!p.serie?._id) return;
+        for (const id of serieChains.chainOf(p.serie._id)) {
+          if (present.has(id)) continue;
+          const doc =
+            serieChains.byId.get(id) ||
+            (id === String(p.serie._id) ? p.serie : null);
+          if (doc) present.set(id, doc);
+        }
+      });
+
+    const kept = new Set(present.keys());
+    const childrenOf = new Map();
+    const roots = [];
+    for (const [id, doc] of present) {
+      const parentId =
+        doc?.parentSerie && kept.has(String(doc.parentSerie))
+          ? String(doc.parentSerie)
+          : null;
+      if (parentId) {
+        if (!childrenOf.has(parentId)) childrenOf.set(parentId, []);
+        childrenOf.get(parentId).push({ id, doc });
+      } else {
+        roots.push({ id, doc });
+      }
+    }
+    const byOrder = (a, b) =>
+      (a.doc.order ?? Number.MAX_SAFE_INTEGER) -
+      (b.doc.order ?? Number.MAX_SAFE_INTEGER);
+    const out = [];
+    const walk = ({ id, doc }, depth) => {
+      out.push({ id, doc, depth });
+      (childrenOf.get(id) || []).sort(byOrder).forEach((c) => walk(c, depth + 1));
+    };
+    roots.sort(byOrder).forEach((r) => walk(r, 0));
+    return out;
+  }, [categoryProducts, brandFilter, serieChains]);
+
+  // اگر برند عوض شد و سری قدیم دیگر معتبر نیست → ریست
+  const filteredProducts = useMemo(() => {
+    return categoryProducts.filter((p) => {
+      if (brandFilter !== "all" && p.brand?._id !== brandFilter) return false;
+      if (serieFilter !== "all") {
+        // انتخاب والد = کل زیرمجموعه؛ انتخاب زیرسری = فقط همان شاخه
+        if (!p.serie?._id) return false;
+        if (!serieChains.chainOf(p.serie._id).includes(serieFilter)) return false;
+      }
+      return true;
+    });
+  }, [categoryProducts, brandFilter, serieFilter, serieChains]);
+
+  const hasActiveFilter = brandFilter !== "all" || serieFilter !== "all";
+
+  const handleDelete = async () => {
+    if (!category) return;
+    const confirmationSlug = await confirmCategoryDelete(category);
+    if (!confirmationSlug) return;
+
+    try {
+      const res = await fetch(`/api/categories/${categoryId}`, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirmationSlug }) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || data.message || "خطا در حذف دسته‌بندی");
+      showToast.success(data.message);
+      router.push("/p-admin/admin-categories");
+    } catch (error) {
+      showError("خطا", error.message);
+    }
+  };
+
+  const handleDeleteProduct = async (product) => {
+    const confirmed = await confirmDelete(
+      "حذف محصول",
+      `آیا مطمئن هستید که می‌خواهید "${product.name}" را حذف کنید؟`
+    );
+    if (!confirmed) return;
+
+    try {
+      const res = await fetch(`/api/product/${product._id}`, { method: "DELETE" });
+      if (res.ok) {
+        showToast.success("محصول با موفقیت حذف شد");
+        fetchProducts();
+      } else {
+        const data = await res.json();
+        showError("خطا", data.error || "خطا در حذف محصول");
+      }
+    } catch {
+      showError("خطا", "خطا در حذف محصول");
+    }
+  };
+
+  if (!category && !loading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 bg-white rounded-2xl border border-dashed border-gray-200">
+        <FaInfoCircle size={40} className="text-gray-300 mb-3" />
+        <p className="text-gray-500 font-bold text-sm">دسته‌بندی مورد نظر یافت نشد</p>
+        <Link
+          href="/p-admin/admin-categories"
+          className="text-[var(--color-primary)] mt-2 underline text-sm font-bold"
+        >
+          بازگشت به لیست دسته‌ها
+        </Link>
+      </div>
+    );
+  }
+
+  return (
+    <div dir="rtl" className="w-full space-y-6">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-3">
+            <div
+              className="w-11 h-11 rounded-[var(--radius)] flex items-center justify-center text-white"
+              style={{ background: "var(--color-primary)" }}
+            >
+              <FaLayerGroup size={16} />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold text-gray-900">{getCategoryLabel(category)}</h1>
+              <p className="text-xs font-bold text-gray-400 mt-0.5 flex items-center gap-1.5">
+                <FaTags style={{ color: "var(--color-secondary)" }} size={10} />
+                مدیریت محصولات این مجموعه
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          {can("products.create") && (
+          <button
+            onClick={() =>
+              router.push(
+                `/p-admin/admin-categories/category-products/${categoryId}/add-product`
+              )
+            }
+            className="flex items-center gap-2 px-4 py-2.5 rounded-[var(--radius)] text-sm font-bold text-white hover:shadow-lg hover:shadow-[var(--color-primary)]/25 hover:-translate-y-0.5 active:scale-95 transition-all"
+            style={{ background: "var(--color-primary)" }}
+          >
+            <FaPlus size={12} /> افزودن محصول
+          </button>
+          )}
+
+          {can("categories.edit") && (
+          <button
+            onClick={() => router.push(`/p-admin/admin-categories/edit/${categoryId}`)}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-[var(--radius)] text-sm font-bold bg-white border-2 border-gray-200 text-gray-700 hover:border-gray-300 transition-all"
+          >
+            <FaEdit size={12} /> ویرایش دسته
+          </button>
+          )}
+
+          {(can("categories.delete") && can("products.delete")) && (
+          <button
+            onClick={handleDelete}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-[var(--radius)] text-sm font-bold bg-white border-2 border-red-100 text-red-500 hover:bg-red-50 transition-all"
+          >
+            <FaTrash size={12} /> حذف دسته
+          </button>
+          )}
+        </div>
+      </div>
+
+      {/* Filters + stats */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-col lg:flex-row gap-4 items-stretch lg:items-center">
+        <div className="flex items-center gap-2 text-xs font-bold text-gray-500 shrink-0">
+          <FaFilter style={{ color: "var(--color-primary)" }} />
+          فیلتر بر اساس:
+        </div>
+
+        <div className="flex flex-1 flex-col sm:flex-row gap-3">
+          <FilterSelect
+            label="برند"
+            value={brandFilter}
+            onChange={(v) => {
+              setBrandFilter(v);
+              setSerieFilter("all");
+            }}
+            options={[
+              { value: "all", label: "همه برندها" },
+              ...availableBrands.map((b) => ({ value: b._id, label: b.title || b.name })),
+            ]}
+          />
+
+          <FilterSelect
+            label="سری"
+            value={serieFilter}
+            onChange={(v) => setSerieFilter(v)}
+            disabled={availableSeries.length === 0}
+            options={[
+              { value: "all", label: "همه سری‌ها" },
+              // زیرسری‌ها با تورفتگی و «└» زیر والدشان — داخل <option> فقط
+              // متن قابل استایل است
+              ...availableSeries.map((s) => ({
+                value: s.id,
+                label: `${"   ".repeat(s.depth)}${
+                  s.depth > 0 ? "└ " : ""
+                }${s.doc.title || s.doc.name}`,
+              })),
+            ]}
+          />
+        </div>
+
+        {hasActiveFilter && (
+          <button
+            onClick={() => {
+              setBrandFilter("all");
+              setSerieFilter("all");
+            }}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-[var(--radius)] text-xs font-bold text-gray-500 bg-gray-50 border border-gray-100 hover:bg-gray-100 transition-all"
+          >
+            <FaTimes size={10} /> پاک کردن
+          </button>
+        )}
+
+        <div className="flex items-center gap-2 pr-3 lg:border-r border-gray-100 text-xs font-bold text-gray-500 shrink-0">
+          <span>نمایش</span>
+          <span className="text-sm font-bold text-gray-900">{filteredProducts.length}</span>
+          <span>از</span>
+          <span className="text-sm font-bold text-gray-900">{categoryProducts.length}</span>
+          <span>محصول</span>
+        </div>
+      </div>
+
+      {/* Products grid */}
+      {loading ? (
+        <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-5">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="h-72 bg-gray-100 animate-pulse rounded-2xl" />
+          ))}
+        </div>
+      ) : filteredProducts.length === 0 ? (
+        <div className="bg-white rounded-2xl border-2 border-dashed border-gray-200 py-16 text-center">
+          <div className="w-14 h-14 bg-gray-50 rounded-2xl flex items-center justify-center mx-auto mb-4 text-gray-300">
+            <FaBox size={22} />
+          </div>
+          <h3 className="text-gray-700 font-bold text-sm mb-1">
+            {hasActiveFilter
+              ? "محصولی با این فیلتر یافت نشد"
+              : "قفسه این دسته خالی است"}
+          </h3>
+          <p className="text-gray-400 text-xs mb-4">
+            {hasActiveFilter
+              ? "فیلترها را تغییر داده یا پاک کنید."
+              : `هنوز هیچ محصولی برای دسته‌بندی ${getCategoryLabel(category)} ثبت نکرده‌اید.`}
+          </p>
+          {!hasActiveFilter && can("products.create") && (
+            <button
+              onClick={() =>
+                router.push(
+                  `/p-admin/admin-categories/category-products/${categoryId}/add-product`
+                )
+              }
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-[var(--radius)] text-sm font-bold text-white hover:-translate-y-0.5 transition-all"
+              style={{ background: "var(--color-primary)" }}
+            >
+              <FaPlus size={12} /> افزودن اولین محصول
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-5">
+          {filteredProducts.map((product) => (
+            <ProductCard
+              key={product._id}
+              product={product}
+              onDelete={handleDeleteProduct}
+              onEdit={() => router.push(`/p-admin/admin-products/edit/${product._id}`)}
+              onViewVariants={() =>
+                router.push(`/p-admin/admin-products/${product._id}/variants`)
+              }
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FilterSelect({ label, value, onChange, options, disabled = false }) {
+  return (
+    <label
+      className={`flex-1 flex items-center gap-2 bg-gray-50 border border-gray-100 rounded-[var(--radius)] px-3 py-2 focus-within:border-[var(--color-primary)] transition-all ${
+        disabled ? "opacity-60" : ""
+      }`}
+    >
+      <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400 shrink-0">
+        {label}
+      </span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        className="flex-1 bg-transparent text-sm font-bold text-gray-800 focus:outline-none cursor-pointer disabled:cursor-not-allowed"
+      >
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}

@@ -1,0 +1,8 @@
+import ArticlePreview from "@/components/admin/articles/ArticlePreview";
+
+export const metadata = { title: "پیش‌نمایش مقاله | پنل مدیریت" };
+
+export default async function PreviewArticlePage({ params }) {
+  const { articleId } = await params;
+  return <ArticlePreview articleId={articleId} />;
+}

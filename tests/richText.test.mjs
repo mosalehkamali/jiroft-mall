@@ -1,0 +1,241 @@
+/**
+ * tests/richText.test.mjs
+ *
+ * واژگانِ متنِ غنی عمداً بسیار کوچک است: فقط تگ‌های درون‌خطیِ قالب‌بندی، و از
+ * میانِ صفت‌ها فقط href و یک style با دو خاصیتِ محدود. هر چیزِ دیگری باید دور
+ * ریخته شود — این فایل همان مرزِ اعتماد را می‌سنجد.
+ *
+ * نکته‌ی سازگاریِ عقب‌رو: richTextValue وقتی هیچ قالب‌بندیِ واقعی وجود ندارد
+ * رشته‌ی خالی می‌دهد، تا کلیدِ html اصلاً ذخیره نشود و بلوک دقیقاً از همان
+ * مسیرِ رندرِ فعلی (متنِ ساده) عبور کند.
+ */
+
+import test from "node:test";
+import assert from "node:assert/strict";
+import { RICH_TEXT_LEGACY_EM_SIZES, RICH_TEXT_PX_RANGE, RICH_TEXT_PX_SIZES, normalizeFontSizePx, richTextValue, sanitizeRichText } from "../src/lib/sanitizeRichText.js";
+
+// ——— ورودی‌های غیررشته‌ای ————————————————————————————————————————————
+
+test("ورودی غایب یا غیررشته‌ای رشته‌ی خالی می‌دهد", () => {
+  for (const value of [undefined, null, "", 0, false, [], {}]) {
+    assert.equal(sanitizeRichText(value), "");
+    assert.equal(richTextValue(value), "");
+  }
+});
+
+// ——— تگ‌های مجاز ————————————————————————————————————————————————————
+
+test("تگ‌های قالب‌بندیِ درون‌خطی حفظ می‌شوند", () => {
+  assert.equal(
+    sanitizeRichText("<b>پررنگ</b><i>کج</i><u>زیرخط</u><s>خط‌خورده</s><em>e</em><strong>s</strong>"),
+    "<b>پررنگ</b><i>کج</i><u>زیرخط</u><s>خط‌خورده</s><em>e</em><strong>s</strong>",
+  );
+});
+
+test("متنِ ساده دست‌نخورده می‌ماند و کاراکترهای خطرناک escape می‌شوند", () => {
+  assert.equal(sanitizeRichText("یک جمله‌ی مهم"), "یک جمله‌ی مهم");
+  assert.equal(sanitizeRichText("a < b & c"), "a &lt; b &amp; c");
+});
+
+// ——— حمله‌ها ————————————————————————————————————————————————————————
+
+test("تگ‌ها و صفت‌های خطرناک کاملاً حذف می‌شوند", () => {
+  const attacks = [
+    ["<script>alert(1)</script>", ""],
+    ["<img src=x onerror=alert(1)>", ""],
+    ["<iframe src=\"https://evil.test\"></iframe>", ""],
+    ["<style>body{display:none}</style>", ""],
+    ["<b onclick=\"alert(1)\">x</b>", "<b>x</b>"],
+    ["<span onmouseover=alert(1)>x</span>", "<span>x</span>"],
+    ["<svg/onload=alert(1)>", ""],
+    ["<object data=\"x\"></object>", ""],
+    ["<form action=\"/x\"><input name=\"p\"></form>", ""],
+  ];
+  for (const [input, expected] of attacks) {
+    assert.equal(sanitizeRichText(input), expected, input);
+  }
+});
+
+test("طرح‌های خطرناک در پیوند پذیرفته نمی‌شوند", () => {
+  for (const href of ["javascript:alert(1)", "data:text/html,<script>x</script>", "vbscript:x", "//evil.test/x"]) {
+    const result = sanitizeRichText(`<a href="${href}">متن</a>`);
+    assert.equal(result.includes("href"), false, href);
+    assert.equal(result.includes("متن"), true, "متنِ پیوند باید بماند");
+  }
+});
+
+test("طرح‌های مجاز در پیوند حفظ می‌شوند", () => {
+  for (const href of ["https://example.com/x", "http://tenador.com", "mailto:a@b.test", "tel:+982100"]) {
+    assert.equal(sanitizeRichText(`<a href="${href}">م</a>`).includes(`href="${href}"`), true, href);
+  }
+});
+
+test("پیوندِ تبِ جدید همیشه rel امن می‌گیرد", () => {
+  const result = sanitizeRichText('<a href="https://x.test" target="_blank">م</a>');
+  assert.equal(result.includes('rel="noopener noreferrer"'), true);
+});
+
+// ——— استایلِ درون‌خطی: هیچ CSSِ دلخواهی نباید عبور کند ————————————————
+
+test("فقط رنگِ هگز یا rgb پذیرفته می‌شود", () => {
+  assert.equal(sanitizeRichText('<span style="color:#aa4725">x</span>'), '<span style="color:#aa4725">x</span>');
+  assert.equal(sanitizeRichText('<span style="color:rgb(170, 71, 37)">x</span>'), '<span style="color:rgb(170, 71, 37)">x</span>');
+  for (const bad of ["red", "var(--x)", "url(javascript:alert(1))", "expression(alert(1))", "#fff", "#12345678"]) {
+    assert.equal(sanitizeRichText(`<span style="color:${bad}">x</span>`), "<span>x</span>", bad);
+  }
+});
+
+test("اندازه‌ی پیکسلی در بازه و اندازه‌های قدیمیِ em پذیرفته می‌شوند", () => {
+  const sizes = [...RICH_TEXT_PX_SIZES.map((px) => `${px}px`), "8px", "13px", "96px", ...RICH_TEXT_LEGACY_EM_SIZES];
+  for (const size of sizes) {
+    assert.equal(sanitizeRichText(`<span style="font-size:${size}">x</span>`), `<span style="font-size:${size}">x</span>`, size);
+  }
+  // مرورگر style را با فاصله و ; سریال می‌کند؛ همان شکل هم باید بماند.
+  assert.equal(sanitizeRichText(`<span style="font-size: 20px;">x</span>`), `<span style="font-size:20px">x</span>`);
+  for (const bad of ["7px", "97px", "200px", "16.5px", "0px", "-12px", "99em", "1.3em", "300%", "xx-large", "calc(1em + 5px)", "20PX", "20 px"]) {
+    assert.equal(sanitizeRichText(`<span style="font-size:${bad}">x</span>`), "<span>x</span>", bad);
+  }
+});
+
+test("ورودیِ دستیِ اندازه نرمال می‌شود و خارج از بازه رد می‌شود", () => {
+  const ok = { "18": 18, "18px": 18, " 24 ": 24, "۱۸": 18, "۳۲px": 32, "13.4": 13, "13.6": 14, "8": 8, "96": 96, "96PX": 96 };
+  for (const [input, expected] of Object.entries(ok)) assert.equal(normalizeFontSizePx(input), expected, input);
+  for (const bad of ["", "  ", "7", "97", "200", "-5", "abc", "12pt", "1e2", null, undefined]) {
+    assert.equal(normalizeFontSizePx(bad), null, String(bad));
+  }
+  // هر عددی که نرمال‌ساز می‌پذیرد، پاک‌ساز هم می‌پذیرد — دو سمت نباید جدا شوند.
+  for (let px = RICH_TEXT_PX_RANGE.min; px <= RICH_TEXT_PX_RANGE.max; px += 1) {
+    assert.equal(sanitizeRichText(`<span style="font-size:${px}px">x</span>`), `<span style="font-size:${px}px">x</span>`, `${px}px`);
+  }
+});
+
+test("خاصیت‌های CSSِ خارج از واژگان دور ریخته می‌شوند", () => {
+  const result = sanitizeRichText('<span style="color:#aa4725;position:fixed;background:url(x);width:9999px">x</span>');
+  assert.equal(result, '<span style="color:#aa4725">x</span>');
+});
+
+test("style روی تگی که اجازه ندارد نمی‌نشیند", () => {
+  // br هیچ صفتی نمی‌گیرد. (پیش‌تر این تست <a> را مثال می‌زد — همان رفتاری که
+  // رنگِ پیوند را دور می‌ریخت؛ پیوند حالا style می‌گیرد، تست پایین.)
+  assert.equal(sanitizeRichText('م<br style="color:#aa4725">ن').includes("style"), false);
+});
+
+test("رنگِ پیوند حفظ می‌شود — کروم آن را مستقیم روی خودِ <a> می‌نویسد", () => {
+  // دقیقاً خروجیِ execCommand("foreColor") وقتی کلِ متنِ یک پیوند انتخاب شده است.
+  const chrome = 'سلام <a href="https://x.test" style="color: rgb(255, 0, 0);">دنیا</a> متن';
+  assert.match(sanitizeRichText(chrome), /<a href="https:\/\/x\.test" style="color:rgb\(255, 0, 0\)">دنیا<\/a>/);
+  assert.match(sanitizeRichText('<a href="https://x.test" style="color:#aa4725">م</a>'), /style="color:#aa4725"/);
+  // و ذخیره هم می‌شود (richTextValue همان مسیرِ ذخیره است).
+  assert.match(richTextValue(chrome), /style="color:rgb\(255, 0, 0\)"/);
+  // اندازه و ارتفاعِ خطِ مجاز هم روی پیوند همان رفتارِ span را دارند.
+  assert.match(sanitizeRichText('<a href="https://x.test" style="font-size:20px">م</a>'), /font-size:20px/);
+});
+
+test("روی پیوند هم فقط واژگانِ مجاز می‌ماند", () => {
+  for (const bad of ["color:red", "color:var(--x)", "background:url(x)", "position:fixed", "font-size:200px"]) {
+    assert.equal(sanitizeRichText(`<a href="https://x.test" style="${bad}">م</a>`).includes("style"), false, bad);
+  }
+  // و طرحِ خطرناک در پیوند با داشتنِ style هم رد می‌شود.
+  assert.equal(sanitizeRichText('<a href="javascript:alert(1)" style="color:#aa4725">م</a>').includes("javascript"), false);
+});
+
+// ——— شکستِ خط ————————————————————————————————————————————————————————
+
+test("بلوک‌هایی که contentEditable می‌سازد به br تبدیل می‌شوند", () => {
+  assert.equal(sanitizeRichText("خط۱<div>خط۲</div><div>خط۳</div>"), "خط۱<br />خط۲<br />خط۳");
+  assert.equal(sanitizeRichText("<p>الف</p><p>ب</p>"), "الف<br />ب");
+});
+
+test("br های ابتدا و انتها حذف می‌شوند", () => {
+  assert.equal(sanitizeRichText("<br>متن<br><br>"), "متن");
+  assert.equal(sanitizeRichText("  <br /> متن "), "متن");
+});
+
+// ——— richTextValue: تصمیمِ «ذخیره بشود یا نه» ————————————————————————
+
+test("متنِ بدونِ قالب‌بندی ذخیره نمی‌شود", () => {
+  assert.equal(richTextValue("یک جمله‌ی ساده"), "");
+  assert.equal(richTextValue("a < b & c"), "");
+  assert.equal(richTextValue("<script>alert(1)</script>سلام"), "");
+});
+
+test("شکستِ خطِ تنها هم قالب‌بندی به حساب نمی‌آید", () => {
+  // خطِ چندتایی از راهِ data.text و whitespace-pre-line هم درست رندر می‌شود،
+  // پس بلوک بی‌دلیل به مسیرِ HTML منتقل نمی‌شود.
+  assert.equal(richTextValue("خط۱<div>خط۲</div>"), "");
+  assert.equal(richTextValue("خط۱<br>خط۲"), "");
+});
+
+test("قالب‌بندیِ واقعی ذخیره می‌شود", () => {
+  assert.equal(richTextValue("این یک جمله‌ی <b>مهم</b> است"), "این یک جمله‌ی <b>مهم</b> است");
+  assert.equal(richTextValue('<span style="color:#aa4725">رنگی</span>'), '<span style="color:#aa4725">رنگی</span>');
+  assert.equal(richTextValue('یک <a href="https://x.test">پیوند</a>'), 'یک <a href="https://x.test">پیوند</a>');
+});
+
+test("قالب‌بندی همراه با شکستِ خط ذخیره می‌شود", () => {
+  assert.equal(richTextValue("<b>الف</b><div>ب</div>"), "<b>الف</b><br />ب");
+});
+
+test("spanِ خالی‌شده پس از حذفِ استایل، قالب‌بندی به حساب نمی‌آید", () => {
+  // <span style="color:red"> استایلش رد می‌شود و <span> بی‌خاصیت می‌ماند؛ این
+  // نباید بلوک را از مسیرِ متنِ ساده خارج کند.
+  assert.equal(richTextValue('<span style="color:red">متن</span>'), "");
+});
+
+// ——— محدودیتِ اندازه ————————————————————————————————————————————————
+
+test("خروجی بیش از سقف رشد نمی‌کند", () => {
+  const long = `<b>${"ا".repeat(300000)}</b>`;
+  assert.equal(sanitizeRichText(long).length <= 200000, true);
+});
+
+// ——— شکلِ دادهٔ ذخیره‌شده (سازگاریِ عقب‌رو) ————————————————————————————
+// مهم‌ترین ادعای این تغییر: بلوکِ بدونِ قالب‌بندی باید دقیقاً همان شیئی بماند که
+// پیش از این ساخته می‌شد — نه کلیدِ اضافه، نه مقدارِ عوض‌شده.
+
+const { sanitizeArticleBlockData } = await import("../src/lib/articleBlockValidation.js");
+const clean = (type, data) => sanitizeArticleBlockData(type, data, {}, "blocks.0.data");
+
+test("بلوک‌های متنیِ قدیمی بایت‌به‌بایت همان می‌مانند", () => {
+  assert.deepEqual(clean("paragraph", { text: "متنِ ساده" }), { text: "متنِ ساده" });
+  assert.deepEqual(clean("heading", { text: "تیتر", level: "h3" }), { text: "تیتر", level: "h3" });
+  assert.deepEqual(clean("quote", { text: "نقل", author: "کسی" }), { text: "نقل", author: "کسی" });
+});
+
+test("htmlِ بی‌قالب‌بندی هم ذخیره نمی‌شود", () => {
+  assert.deepEqual(clean("paragraph", { text: "متن", html: "متن" }), { text: "متن" });
+  assert.deepEqual(clean("paragraph", { text: "خط۱\nخط۲", html: "خط۱<div>خط۲</div>" }), { text: "خط۱\nخط۲" });
+});
+
+test("قالب‌بندیِ واقعی در کنارِ متنِ ساده ذخیره می‌شود", () => {
+  assert.deepEqual(
+    clean("paragraph", { text: "یک جمله‌ی مهم", html: "یک جمله‌ی <b>مهم</b>" }),
+    { text: "یک جمله‌ی مهم", html: "یک جمله‌ی <b>مهم</b>" },
+  );
+});
+
+test("htmlِ آلوده پیش از ذخیره پاک می‌شود", () => {
+  assert.deepEqual(
+    clean("quote", { text: "نقل", author: "", html: '<b>نقل</b><script>alert(1)</script><img src=x onerror=alert(1)>' }),
+    { text: "نقل", html: "<b>نقل</b>", author: "" },
+  );
+});
+
+// رگرسیونِ «قالب‌بندی در ویرایشگر بود ولی در صفحه‌ی عمومی نبود»: ویرایشگر با
+// styleWithCSS=true فرمانِ bold/italic/underline را اجرا می‌کرد و مرورگر
+// <span style="font-weight:bold"> می‌ساخت. این شکل عمداً مجاز نیست (استایلِ
+// دلخواه به DOM نمی‌رسد)، پس پاک‌سازی استایل را می‌انداخت و richTextValue
+// خروجی را «بدونِ قالب‌بندی» می‌دید — یعنی data.html اصلاً ذخیره نمی‌شد.
+// RichTextField حالا این فرمان‌ها را با styleWithCSS=false اجرا می‌کند.
+test("قالب‌بندیِ CSSای ذخیره نمی‌شود ولی شکلِ تگی می‌ماند", () => {
+  for (const css of [
+    '<span style="font-weight: bold;">م</span>',
+    '<span style="font-style: italic;">م</span>',
+    '<span style="text-decoration: underline;">م</span>',
+  ]) {
+    assert.equal(richTextValue(css), "", `باید خالی بماند: ${css}`);
+  }
+  assert.equal(richTextValue("<b>پ</b><i>ک</i><u>ز</u>"), "<b>پ</b><i>ک</i><u>ز</u>");
+  // رنگ تنها حالتی است که span با style در آن معتبر می‌ماند.
+  assert.equal(richTextValue('<span style="color: rgb(170, 71, 37)">ر</span>'), '<span style="color:rgb(170, 71, 37)">ر</span>');
+});

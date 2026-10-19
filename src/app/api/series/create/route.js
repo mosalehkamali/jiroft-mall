@@ -1,0 +1,252 @@
+import { NextResponse } from "next/server";
+
+import connectToDB from "base/configs/db";
+
+import Serie from "base/models/Serie";
+import Brand from "base/models/Brand";
+// ۱. ایمپورت کردن اکشن رجیستر اسلاگ
+import { registerSlug } from "base/actions/registerSlug";
+import { purgeSportPagesCdn, revalidateContent } from "@/lib/revalidate";
+import { sanitizeSerieSportEntries } from "@/lib/serieSportContent";
+import { apiError, handleApiError } from "@/lib/apiError";
+import { sanitizeArticleBlocks } from "@/lib/articleValidation";
+import requireAdminPermission from "@/lib/requireAdminPermission";
+
+export async function POST(req) {
+  const { denied } = await requireAdminPermission("series.create");
+  if (denied) return denied;
+
+  try {
+    await connectToDB();
+
+    const body = await req.json();
+
+    const {
+      name,
+      title,
+      description,
+      shortDescription,
+      colors,
+      logo,
+      headImage,
+      image = "",
+      sportImages = [],
+
+      brand,
+
+      parentSerie = null,
+
+      isLimitedEdition = false,
+
+      isNewSerie = false,
+
+      articleBlocks = [],
+    } = body;
+
+    /*
+     |--------------------------------------------------------------------------
+     | Validation
+     |--------------------------------------------------------------------------
+     |
+     */
+
+    if (!name || !title || !brand) {
+      return NextResponse.json(
+        {
+          error: "فیلدهای نام، عنوان و برند الزامی هستند",
+        },
+
+        { status: 422 }
+      );
+    }
+
+    /*
+     |--------------------------------------------------------------------------
+     | Brand Check
+     |--------------------------------------------------------------------------
+     |
+     */
+
+    const existingBrand = await Brand.findById(brand);
+
+    if (!existingBrand) {
+      return NextResponse.json(
+        {
+          error: "برند انتخاب شده یافت نشد",
+        },
+
+        { status: 404 }
+      );
+    }
+
+    /*
+     |--------------------------------------------------------------------------
+     | Parent Serie Check
+     |--------------------------------------------------------------------------
+     |
+     */
+
+    let parentSerieDoc = null;
+
+    if (parentSerie) {
+      parentSerieDoc = await Serie.findById(parentSerie);
+
+      if (!parentSerieDoc) {
+        return NextResponse.json(
+          {
+            error: "سری والد یافت نشد",
+          },
+
+          { status: 404 }
+        );
+      }
+
+      // parent باید متعلق به همان برند باشد
+      if (parentSerieDoc.brand.toString() !== brand) {
+        return NextResponse.json(
+          {
+            error: "سری والد باید متعلق به همان برند باشد",
+          },
+
+          { status: 400 }
+        );
+      }
+    }
+
+    /*
+     |--------------------------------------------------------------------------
+     | Duplicate Check
+     |--------------------------------------------------------------------------
+     |
+     | اسم تکراری فقط داخل یک parent ممنوع باشد
+     |
+     */
+
+    const duplicateSerie = await Serie.findOne({
+      name: {
+        $regex: new RegExp(`^${name}$`, "i"),
+      },
+
+      brand,
+
+      parentSerie: parentSerie || null,
+    });
+
+    if (duplicateSerie) {
+      return NextResponse.json(
+        {
+          error: "سری با این نام قبلاً ثبت شده است",
+        },
+
+        { status: 409 }
+      );
+    }
+
+    /*
+     |--------------------------------------------------------------------------
+     | Level Calculation
+     |--------------------------------------------------------------------------
+     |
+     */
+
+    const level = parentSerieDoc ? parentSerieDoc.level + 1 : 0;
+
+    const sanitizedSportImages = sanitizeSerieSportEntries(sportImages);
+
+    const blockErrors = {};
+    const sanitizedArticleBlocks = sanitizeArticleBlocks(articleBlocks, blockErrors);
+    if (Object.keys(blockErrors).length > 0) {
+      return apiError("بلوک‌های مینی مقاله معتبر نیستند", 400, {
+        fieldErrors: blockErrors,
+      });
+    }
+
+    /*
+     |--------------------------------------------------------------------------
+     | Create Serie
+     |--------------------------------------------------------------------------
+     |
+     */
+
+    const newSerie = await Serie.create({
+      name,
+      title,
+      description,
+      shortDescription,
+
+      colors,
+
+      logo,
+      headImage,
+      image: image.trim(),
+      sportImages: sanitizedSportImages,
+
+      brand,
+
+      parentSerie,
+
+      level,
+
+      isLimitedEdition,
+
+      isNewSerie,
+
+      articleBlocks: sanitizedArticleBlocks,
+    });
+
+    /*
+     |--------------------------------------------------------------------------
+     | Register Slug
+     |--------------------------------------------------------------------------
+     |
+     */
+
+    // ۲. ثبت اسلاگ سری جدید در جدول اسلاگ‌ها
+    await registerSlug({
+      slug: newSerie.slug,
+      type: "serie",
+      model: "Serie",
+      refId: newSerie._id,
+      filterField: "serie",
+      filterValue: newSerie._id,
+      label: newSerie.name || newSerie.title,
+      parentSlug: parentSerieDoc ? parentSerieDoc.slug : null, // اگر والد داشت، اسلاگ والد پاس داده می‌شود
+    });
+
+    /*
+     |--------------------------------------------------------------------------
+     | Push To Brand
+     |--------------------------------------------------------------------------
+     |
+     */
+
+    await Brand.findByIdAndUpdate(brand, {
+      $addToSet: {
+        series: newSerie._id,
+      },
+    });
+
+    /*
+     |--------------------------------------------------------------------------
+     | Response
+     |--------------------------------------------------------------------------
+     |
+     */
+
+    revalidateContent(["navbar", "series", "brands"]);
+    // The serie article renders on /[sport]/[brand]/[serie], which the CDN caches.
+    if (sanitizedArticleBlocks.length > 0) await purgeSportPagesCdn();
+
+    return NextResponse.json(
+      {
+        message: "سری جدید با موفقیت ایجاد شد",
+
+        data: newSerie,
+      },
+
+      { status: 201 }
+    );
+  } catch (error) {
+    return handleApiError(error, "خطا در ایجاد سری");
+  }
+}

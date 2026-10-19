@@ -1,0 +1,125 @@
+import "base/models/registerModels";
+import { unstable_cache } from "next/cache";
+import mongoose from "mongoose";
+import connectToDB from "base/configs/db";
+import Product from "base/models/Product";
+import Serie from "base/models/Serie";
+import LimitedEdition from "base/models/LimitedEdition";
+import { applyProductSportVisibility } from "base/services/categorySportVisibility.service";
+import { buildStorefrontAudienceMatch } from "base/utils/targetAudience";
+import { applyCategorySubtree, getCategorySubtree } from "base/services/categorySubtree.service";
+import { collectCategorySubtree, filterCategoriesBySelection, selectedCategoryIds } from "base/utils/categorySubtree";
+import { buildCollaborationScopes, collaborationMatchBranches } from "base/utils/brandCollaboration";
+import { buildAttributeMeta, mergeAttributeMeta, productMatchesAttrFilters } from "@/lib/attributeFilters";
+
+const oid = (value) => new mongoose.Types.ObjectId(String(value));
+
+// A lightweight, unpriced snapshot of the WHOLE listing, not its first batch.
+// It stays server-side; only category names and filter options reach the browser.
+const getCatalog = unstable_cache(async (scope) => {
+  await connectToDB();
+  let match = { isActive: true };
+  if (scope.serieId) {
+    const parent = await Serie.findById(scope.serieId).select("brand").lean();
+    if (!parent) return { products: [], categories: [] };
+    match.brand = parent.brand;
+    const ids = new Set([String(scope.serieId)]);
+    if (scope.descendants !== false) {
+      const tree = await Serie.find({ brand: parent.brand }).select("parentSerie").lean();
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (const child of tree) {
+          if (ids.has(String(child.parentSerie)) && !ids.has(String(child._id))) {
+            ids.add(String(child._id));
+            changed = true;
+          }
+        }
+      }
+    }
+    match.serie = { $in: [...ids].map(oid) };
+  } else if (scope.brandId) {
+    const editions = await LimitedEdition.find({ relatedBrands: scope.brandId }).select("brand").lean();
+    const branches = collaborationMatchBranches(buildCollaborationScopes(editions, scope.brandId), oid);
+    match.$or = [{ brand: oid(scope.brandId) }, ...branches];
+  } else if (!scope.categoryId) {
+    return { products: [], categories: [] };
+  }
+  match.targetAudience = buildStorefrontAudienceMatch(scope.targetAudience);
+  if (scope.categoryId) match = await applyCategorySubtree(match, scope);
+  else if (scope.sportId) match = await applyProductSportVisibility(match, {
+    sportId: scope.sportId, categoryId: scope.categoryId || null,
+  });
+  const products = await Product.find(match).select("category attributes color variants")
+    .populate({ path: "category", select: "title name order attributes" })
+    .populate({ path: "variants", select: "attributes color" }).lean();
+  const categories = new Map();
+  for (const product of products) {
+    const category = product.category;
+    if (!category?._id) continue;
+    const id = String(category._id);
+    if (!categories.has(id)) categories.set(id, { ...category, products: [] });
+    categories.get(id).products.push(product);
+  }
+  if (scope.categoryId) {
+    const tree = await getCategorySubtree(scope.categoryId, scope.sportId);
+    const present = new Set(categories.keys());
+    for (const category of tree) {
+      const descendantIds = collectCategorySubtree(tree, category._id)
+        .map((c) => String(c._id)).filter((id) => present.has(id));
+      if (!descendantIds.length) continue;
+      const id = String(category._id);
+      if (!categories.has(id)) categories.set(id, { ...category, products: [] });
+      categories.get(id).descendantIds = descendantIds;
+    }
+  }
+  return JSON.parse(JSON.stringify({
+    products: products.map((p) => ({ ...p, category: p.category?._id || null })),
+    categories: [...categories.values()]
+      .sort((a, b) => (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER))
+      .map((category) => ({
+        _id: category._id, title: category.title || category.name,
+        ...(category.descendantIds && { descendantIds: category.descendantIds }),
+        attributeMeta: buildAttributeMeta(category.attributes, category.products),
+      })),
+  }));
+}, ["listing-filter-catalog-v2-kids-subtree"], {
+  revalidate: 300, tags: ["products", "categories", "series", "brands", "limited-editions"],
+});
+
+export async function getListingFilterOptions(scope) {
+  return (await getCatalog(scope)).categories;
+}
+
+export async function buildCategorySelectionMatch(scope, ids = []) {
+  if (!ids.length) return {};
+  const { categories } = await getCatalog(scope);
+  return { category: { $in: selectedCategoryIds(categories, ids.map(String)).map(oid) } };
+}
+
+// دامنه‌ی دسته‌ها را به لیستی از رشته‌های id تبدیل می‌کند (یکی، چندتا، یا هیچ).
+const toIdList = (value) =>
+  (Array.isArray(value) ? value : value ? [value] : []).map(String).filter(Boolean);
+
+/**
+ * فیلترِ ویژگی‌های دسته → یک شرطِ _id روی محصولات.
+ *
+ * categoryIds می‌تواند یک id، آرایه‌ای از idها، یا خالی باشد؛ خالی یعنی «همه‌ی
+ * دسته‌های این لیست» — دقیقاً همان مجموعه‌ای که سایدبار ویژگی‌هایش را نشان
+ * می‌دهد. متادیتا سمتِ سرور ساخته می‌شود، پس نامِ فیلدی که کاربر می‌فرستد
+ * هرگز به یک مسیرِ Mongo تبدیل نمی‌شود.
+ */
+export async function buildCategoryAttributeMatch(scope, categoryIds, selections = {}) {
+  if (!Object.values(selections || {}).some((v) => Array.isArray(v) && v.length)) return {};
+  const ids = toIdList(categoryIds);
+  const { categories, products } = await getCatalog(scope);
+  const active = filterCategoriesBySelection(categories, ids);
+  if (active.length === 0) return { _id: { $in: [] } };
+  // ادغامِ متادیتا همان چیزی است که کلاینت می‌بیند، پس نتیجه‌ی دو طرف یکی است.
+  const meta = mergeAttributeMeta(active);
+  const activeIds = new Set(active.map((c) => c._id));
+  const matched = products
+    .filter((p) => activeIds.has(p.category) && productMatchesAttrFilters(p, selections, meta))
+    .map((p) => oid(p._id));
+  return { _id: { $in: matched } };
+}

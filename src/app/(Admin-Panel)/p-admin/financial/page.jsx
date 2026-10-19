@@ -1,0 +1,107 @@
+"use client";
+
+/**
+ * فاز ۳ — بازطراحی صفحه‌ی «مدیریت مالی»
+ * - جایگزینی تب‌های قدیمی با «Segmented Control» مشترک (SectionTabs)
+ * - استفاده از PageHeader مشترک (عنوان + توضیح + آیکن)
+ * - لینک‌های بیرونی (تحلیل، اقساط، تخفیف‌ها) به‌صورت چیپ‌های ثانویه‌ی هماهنگ
+ * - بدون هیچ تغییر در منطق یا API — فقط لایه‌ی نمایشی
+ */
+
+import { useState } from "react";
+import Link from "next/link";
+import { motion } from "framer-motion";
+import { MdAccountBalance, MdOutlineCurrencyExchange, MdPercent } from "react-icons/md";
+import { FiTag, FiArrowLeft, FiCalendar, FiBarChart2, FiGift } from "react-icons/fi";
+import { FaMoneyBillWave } from "react-icons/fa";
+import BankAccountManager from "@/components/admin/financial/BankAccountManager";
+import ExchangeRateManager from "@/components/admin/financial/ExchangeRateManager";
+import FinancingSettingsManager from "@/components/admin/financial/FinancingSettingsManager";
+import ReviewCreditSettingsManager from "@/components/admin/financial/ReviewCreditSettingsManager";
+import PageHeader from "@/components/admin/PageHeader";
+import SectionTabs from "@/components/admin/SectionTabs";
+import { useAdminPermissions } from "@/components/admin/AdminPermissionProvider";
+
+/**
+ * تب‌های این صفحه فقط useState محلی‌اند (هیچ `?tab=` ای در URL نیست)، پس در
+ * ADMIN_TAB_PERMISSIONS جایی ندارند و کلیدِ ماژولی‌شان همین‌جا نوشته می‌شود —
+ * همان کلیدهایی که API های متناظر با آن‌ها گیت شده‌اند.
+ */
+const TABS = [
+  { value: "bank", label: "حساب بانکی", icon: MdAccountBalance, permission: "bankAccount.view" },
+  { value: "exchange", label: "نرخ تبدیل ارز", icon: MdOutlineCurrencyExchange, permission: "exchangeRate.view" },
+  { value: "financing", label: "تنظیمات اقساط", icon: MdPercent, permission: "financingSettings.view" },
+  { value: "review-credit", label: "پاداش نظر", icon: FiGift, permission: "reviewCredit.view" },
+];
+
+const EXTERNAL_LINKS = [
+  { href: "/p-admin/financial/analytics", label: "تحلیل و هوش فروش", icon: FiBarChart2 },
+  { href: "/p-admin/financial/installments", label: "مدیریت اقساط", icon: FiCalendar },
+  { href: "/p-admin/discounts", label: "تخفیف‌ها", icon: FiTag },
+];
+
+export default function FinancialManagementPage() {
+  const { can, canRoute } = useAdminPermissions();
+
+  // آرایه‌ها قبل از رندر کوتاه می‌شوند و تبِ پیش‌فرض هم از همان فهرست می‌آید،
+  // وگرنه ادمینی که فقط «پاداش نظر» را دارد داخل تبِ حساب بانکی می‌افتاد.
+  const tabs = TABS.filter((t) => can(t.permission));
+  const links = EXTERNAL_LINKS.filter((l) => canRoute(l.href));
+
+  const [active, setActive] = useState(() => tabs[0]?.value || null);
+
+  return (
+    <div dir="rtl" className="space-y-5">
+      <PageHeader
+        icon={<FaMoneyBillWave size={16} />}
+        title="مدیریت مالی"
+        subtitle="نرخ تبدیل ارز، تخفیف‌ها و اطلاعات حساب بانکی"
+      />
+
+      {/* Segmented Control — بخش‌های اصلی مالی */}
+      <div className="flex flex-wrap items-center gap-3">
+        <SectionTabs tabs={tabs} value={active} onChange={setActive} />
+
+        {/* لینک‌های بیرونی هماهنگ با تم — چیپ ثانویه */}
+        <div className="flex flex-wrap items-center gap-2">
+          {links.map((l) => {
+            const Icon = l.icon;
+            return (
+              <Link
+                key={l.href}
+                href={l.href}
+                className="group inline-flex items-center gap-2 px-3 py-2 text-xs font-bold transition-colors border"
+                style={{
+                  color: "var(--admin-text-muted)",
+                  background: "var(--admin-card)",
+                  borderColor: "var(--admin-border)",
+                  borderRadius: "var(--admin-radius)",
+                }}
+              >
+                <Icon size={13} />
+                <span>{l.label}</span>
+                <FiArrowLeft
+                  size={12}
+                  className="opacity-50 group-hover:-translate-x-0.5 transition-transform"
+                />
+              </Link>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* محتوای تب فعال */}
+      <motion.div
+        key={active}
+        initial={{ opacity: 0, y: 6 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.22 }}
+      >
+        {active === "bank" && <BankAccountManager />}
+        {active === "exchange" && <ExchangeRateManager />}
+        {active === "financing" && <FinancingSettingsManager />}
+        {active === "review-credit" && <ReviewCreditSettingsManager />}
+      </motion.div>
+    </div>
+  );
+}

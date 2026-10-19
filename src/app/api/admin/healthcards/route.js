@@ -1,0 +1,66 @@
+import "base/models/registerModels";
+import { NextResponse } from "next/server";
+import connectToDB from "base/configs/db";
+import HealthCard from "base/models/HealthCard";
+import Category from "base/models/Category";
+
+import requireAdminPermission from "@/lib/requireAdminPermission";
+
+export async function GET() {
+  const { denied } = await requireAdminPermission("healthCards.view");
+  if (denied) return denied;
+
+  try {
+    await connectToDB();
+    const cards = await HealthCard.find()
+      .populate({ path: "category", select: "title slug sport additionalSports", populate: { path: "sport", select: "title name" } })
+      .sort({ createdAt: -1 })
+      .lean();
+    return NextResponse.json({ cards });
+  } catch (err) {
+    console.error(err);
+    return NextResponse.json({ error: "خطای سرور" }, { status: 500 });
+  }
+}
+
+export async function POST(req) {
+  const { denied } = await requireAdminPermission("healthCards.create");
+  if (denied) return denied;
+
+  try {
+    await connectToDB();
+    const body = await req.json();
+    const { category, fields } = body;
+
+    if (!category) {
+      return NextResponse.json({ error: "دسته‌بندی الزامی است" }, { status: 400 });
+    }
+
+    // Unique keys check
+    const keys = (fields || []).map((f) => f.key);
+    if (new Set(keys).size !== keys.length) {
+      return NextResponse.json({ error: "کلیدهای تکراری در fields" }, { status: 400 });
+    }
+
+    // One per category
+    const existing = await HealthCard.findOne({ category });
+    if (existing) {
+      return NextResponse.json(
+        { error: "این دسته‌بندی قبلاً HealthCard دارد" },
+        { status: 409 }
+      );
+    }
+
+    const card = await HealthCard.create({ category, fields: fields || [] });
+    return NextResponse.json({ card }, { status: 201 });
+  } catch (err) {
+    console.error(err);
+    if (err.code === 11000) {
+      return NextResponse.json(
+        { error: "این دسته‌بندی قبلاً HealthCard دارد" },
+        { status: 409 }
+      );
+    }
+    return NextResponse.json({ error: "خطای سرور" }, { status: 500 });
+  }
+}

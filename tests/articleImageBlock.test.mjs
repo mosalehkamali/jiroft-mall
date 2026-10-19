@@ -1,0 +1,295 @@
+/**
+ * tests/articleImageBlock.test.mjs
+ *
+ * بلوکِ تصویر: چند تصویر، ارتفاعِ نمایش، متنِ روی تصویر و پیوند.
+ * قاعده‌ی اصلی سازگاریِ عقب‌رو است: بلوکِ قدیمی بدونِ کلیدهای جدید باید دقیقاً
+ * همان خروجیِ قبلی را بدهد و از همان مسیرِ رندرِ قبلی عبور کند.
+ */
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { sanitizeArticleBlockData } from "../src/lib/articleBlockValidation.js";
+import { register } from "node:module";
+import { imageBlockItems, imageShadeLayer, imageShadeSettings, mirrorFirstImage, normalizeHexColor } from "../src/lib/articleImageBlock.js";
+
+// articleValidation با نام‌های مستعار (base/ و @/) به بقیه ارجاع می‌دهد.
+register("./aliasHooks.mjs", import.meta.url);
+
+const URL1 = "https://ik.imagekit.io/tenador/a.jpg";
+const URL2 = "https://ik.imagekit.io/tenador/b.jpg";
+const sanitize = (data) => {
+  const errors = {};
+  const out = sanitizeArticleBlockData("image", data, errors, "blocks.0.data");
+  return { out, errors };
+};
+
+test("legacy single-image block sanitizes to exactly the old shape", () => {
+  const { out, errors } = sanitize({ url: URL1, alt: "a", caption: "c", width: 1200, height: 600 });
+  assert.deepEqual(errors, {});
+  assert.deepEqual(out, { url: URL1, alt: "a", caption: "c", width: 1200, height: 600 });
+  assert.deepEqual(Object.keys(out), ["url", "alt", "caption", "width", "height"], "no new keys added");
+});
+
+test("multiple images are kept, capped, and the first is mirrored into the legacy fields", () => {
+  const { out, errors } = sanitize({
+    url: "", caption: "",
+    images: [
+      { url: URL1, alt: "one", width: 800, height: 400, href: "/tennis/racket" },
+      { url: "", alt: "empty slot is dropped" },
+      { url: URL2, alt: "two", href: "https://example.com/x" },
+    ],
+  });
+  assert.deepEqual(errors, {});
+  assert.equal(out.images.length, 2);
+  assert.deepEqual(out.images[0], { url: URL1, alt: "one", width: 800, height: 400, href: "/tennis/racket" });
+  assert.deepEqual(out.images[1], { url: URL2, alt: "two", href: "https://example.com/x" });
+  assert.equal(out.url, URL1);
+  assert.equal(out.alt, "one");
+  assert.equal(out.width, 800);
+
+  const tooMany = sanitize({ images: Array.from({ length: 20 }, () => ({ url: URL1 })) });
+  assert.equal(tooMany.out.images.length, 12);
+  assert.ok(tooMany.errors["blocks.0.data.images"]);
+});
+
+test("unsafe links and image urls are rejected, never stored", () => {
+  const { out, errors } = sanitize({ images: [{ url: URL1, href: "javascript:alert(1)" }, { url: "data:image/png;base64,xx" }] });
+  assert.ok(errors["blocks.0.data.images.0.href"]);
+  assert.ok(errors["blocks.0.data.images.1.url"]);
+  assert.equal(out.images.length, 1);
+  assert.equal("href" in out.images[0], false);
+});
+
+test("image links: what admins type is normalized; only unsafe links are rejected (never blocks the save)", async () => {
+  const { normalizeImageHref } = await import("../src/lib/articleImageBlock.js");
+  const cases = {
+    "": "",
+    "   ": "",
+    "/tennis/racket": "/tennis/racket",
+    "tennis/racket": "/tennis/racket",
+    "tenador.com/tennis": "https://example.com/tennis",
+    "www.tenador.com": "https://www.tenador.com/",
+    "https://example.com/x?y=1": "https://example.com/x?y=1",
+    "/تنیس/راکت": "/تنیس/راکت",
+    "tel:02100000000": "tel:02100000000",
+  };
+  for (const [input, expected] of Object.entries(cases)) assert.equal(normalizeImageHref(input), expected, input);
+  for (const bad of ["javascript:alert(1)", "//evil.com", "data:text/html,x", "/a b"]) assert.equal(normalizeImageHref(bad), null, bad);
+
+  // The reported "stuck" scenario: a protocol-less link used to 400 the whole brand save.
+  const { out, errors } = sanitize({ images: [{ url: URL1, href: "tenador.com/tennis" }] });
+  assert.deepEqual(errors, {});
+  assert.equal(out.images[0].href, "https://example.com/tennis");
+});
+
+test("displayHeight is clamped; blank means no key", () => {
+  assert.equal(sanitize({ url: URL1, displayHeight: 320 }).out.displayHeight, 320);
+  assert.equal(sanitize({ url: URL1, displayHeight: "5" }).out.displayHeight, 80);
+  assert.equal(sanitize({ url: URL1, displayHeight: 99999 }).out.displayHeight, 1200);
+  for (const blank of [undefined, null, "", "abc"]) {
+    assert.equal("displayHeight" in sanitize({ url: URL1, displayHeight: blank }).out, false, String(blank));
+  }
+});
+
+test("متنِ روی تصویر دیگر ذخیره نمی‌شود — بلوک‌های رویی جایش را گرفته‌اند", () => {
+  const { out } = sanitize({ url: URL1, images: [{ url: URL1, overlayText: "راکت‌ها" }], overlay: { size: "xl", color: "#ffaa00" } });
+  assert.equal("overlayText" in out.images[0], false);
+  assert.equal("overlay" in out, false);
+});
+
+test("لایه‌ی تیره و جای محتوا: پیش‌فرض ذخیره نمی‌شود، نامعتبر می‌افتد", () => {
+  // ۰ و هر مقدارِ نامعتبر یعنی «بدونِ لایه»، پس کلید اصلاً نوشته نمی‌شود —
+  // بلوکِ تصویرِ موجود بایت‌به‌بایت همان داده‌ی قبلی را نگه می‌دارد.
+  for (const blank of [undefined, null, "", 0, -20, "نه"]) {
+    assert.equal("shade" in sanitize({ url: URL1, shade: blank }).out, false, String(blank));
+  }
+  assert.equal(sanitize({ url: URL1, shade: 40 }).out.shade, 40);
+  // درصدِ دقیق (۰ تا ۱۰۰، عددِ صحیح) — پیش‌تر پله‌ی ۵ و سقفِ ۹۰ بود.
+  assert.equal(sanitize({ url: URL1, shade: 43 }).out.shade, 43);
+  assert.equal(sanitize({ url: URL1, shade: 42.6 }).out.shade, 43);
+  assert.equal(sanitize({ url: URL1, shade: 500 }).out.shade, 100);
+  assert.equal("contentPosition" in sanitize({ url: URL1, contentPosition: "center" }).out, false);
+  assert.equal("contentPosition" in sanitize({ url: URL1, contentPosition: "sideways" }).out, false);
+  assert.equal(sanitize({ url: URL1, contentPosition: "bottom" }).out.contentPosition, "bottom");
+});
+
+test("بلوک‌های روی تصویر از همان مسیرِ بازگشتیِ بلوک رد می‌شوند", async () => {
+  const { sanitizeArticleBlocks } = await import("../src/lib/articleValidation.js");
+  const errors = {};
+  const [image] = sanitizeArticleBlocks([{
+    id: "img", type: "image", version: 1,
+    data: { url: URL1, blocks: [{ id: "p", type: "paragraph", version: 1, data: { text: "روی تصویر" } }] },
+  }], errors);
+  assert.deepEqual(errors, {});
+  assert.equal(image.data.blocks.length, 1);
+  assert.equal(image.data.blocks[0].type, "paragraph");
+  assert.equal(image.data.blocks[0].data.text, "روی تصویر");
+
+  // نوعِ ناشناخته از راهِ تصویر هم رد می‌شود، نه اینکه بی‌صدا ذخیره شود.
+  const bad = {};
+  sanitizeArticleBlocks([{ id: "img2", type: "image", version: 1, data: { url: URL1, blocks: [{ id: "x", type: "evil", data: {} }] } }], bad);
+  assert.ok(bad["blocks.0.data.blocks.0.type"]);
+
+  // شناسه‌ها در کلِ درخت یکتا می‌مانند.
+  const dup = {};
+  sanitizeArticleBlocks([{ id: "same", type: "image", version: 1, data: { url: URL1, blocks: [{ id: "same", type: "paragraph", data: {} }] } }], dup);
+  assert.ok(dup["blocks.0.data.blocks.0.id"]);
+
+  // بدونِ فرزند، کلیدِ blocks اصلاً نوشته نمی‌شود.
+  const [plain] = sanitizeArticleBlocks([{ id: "img3", type: "image", version: 1, data: { url: URL1 } }], {});
+  assert.equal("blocks" in plain.data, false);
+});
+
+test("imageBlockItems reads both shapes and ignores empty slots", () => {
+  assert.deepEqual(imageBlockItems({ url: URL1, alt: "a", width: 1, height: 2 }), [{ url: URL1, alt: "a", width: 1, height: 2 }]);
+  assert.deepEqual(imageBlockItems({ url: "" }), []);
+  assert.deepEqual(imageBlockItems({ url: URL1, images: [{ url: "" }, { url: URL2 }] }).map((i) => i.url), [URL2]);
+  assert.deepEqual(imageBlockItems({ url: URL1, images: [] }).map((i) => i.url), [URL1], "empty images falls back to legacy");
+  assert.deepEqual(mirrorFirstImage([]), { url: "", alt: "", width: undefined, height: undefined });
+});
+
+// رندرکننده JSX و next/image دارد و زیرِ node خام اجرا نمی‌شود؛ پس سیم‌کشی
+// از روی سورس قفل می‌شود.
+test("renderer: plain blocks keep the legacy markup path; links open in the same tab", async () => {
+  const src = await readFile(new URL("../src/components/features/articles/ArticleBlockRenderer.jsx", import.meta.url), "utf8");
+  assert.match(src, /block\.type === "image" && !isPlainImageBlock\(data\)\) \{/);
+  // بلوک‌های رویی خواهرِ تصویرند: کاشیِ پیونددار یک <Link> است و بلوکِ تعاملی
+  // داخلش هم HTML نامعتبر است هم کلیک را می‌دزدد.
+  assert.match(src, /overlay\.length \? <div className="a-image-overlay pointer-events-none absolute inset-0">/);
+  assert.match(src, /pointer-events-auto min-w-0/);
+  // لایه‌ی رنگ لایه‌ی خودش است، نه opacity روی محتوا.
+  assert.match(src, /const shade = imageShadeLayer\(data\);/);
+  assert.match(src, /block\.type === "image" && data\.url\) return <figure key=\{block\.id\} className=\{blockSection\} style=\{v\.spacing \|\| undefined\}><Image src=\{data\.url\} alt=\{data\.alt \|\| "تصویر مقاله"\} width=\{data\.width \|\| 1600\} height=\{data\.height \|\| 900\}/);
+  const tile = src.slice(src.indexOf("function ImageTile"), src.indexOf("function ImageBlock"));
+  assert.doesNotMatch(tile, /target=/);
+});
+
+test("editor: block library and move dialog are portaled into an admin-scope wrapper", async () => {
+  const src = await readFile(new URL("../src/components/admin/articles/BlockEditor.jsx", import.meta.url), "utf8");
+  // AdminPortal حالا مشترک است (ویرایشگرِ پیش‌نمایش هم همان را باز می‌کند)، پس
+  // تعریفش در blockUi است؛ قاعده همان است: پورتال داخلِ .admin-scope می‌نشیند.
+  const ui = await readFile(new URL("../src/components/admin/articles/blockUi.jsx", import.meta.url), "utf8");
+  assert.match(ui, /createPortal\(<div className="admin-scope contents"/);
+  for (const name of ["function MoveDialog", "function BlockLibrary"]) {
+    const start = src.indexOf(name);
+    const body = src.slice(start, src.indexOf("\nfunction ", start + 1) === -1 ? undefined : src.indexOf("\nfunction ", start + 1));
+    assert.match(body, /return <AdminPortal><div className="fixed inset-0/, name);
+  }
+});
+
+// ——— تصویر به‌عنوانِ ظرف ————————————————————————————————————————
+test("فرزندانِ تصویر از همان BlockEditor می‌آیند، نه یک نسخه‌ی محدود", async () => {
+  const registry = await readFile(new URL("../src/components/admin/articles/blockRegistry.js", import.meta.url), "utf8");
+  const definition = registry.slice(registry.indexOf("  image: {"), registry.indexOf("  imageSlider: {"));
+  assert.deepEqual([...definition.matchAll(/text\("(\w+)"/g)].map((m) => m[1]), ["images", "displayHeight", "caption", "shade", "blocks"]);
+  // همان kind ای که فرزندانِ بلوکِ ادغام‌شده را ویرایش می‌کند: یعنی همان
+  // ویرایشگر، با همه‌ی تنظیماتِ همیشگیِ هر بلوک.
+  assert.match(definition, /text\("blocks", "[^"]+", "mergedBlocks"[,)]/);
+
+  const editor = await readFile(new URL("../src/components/admin/articles/BlockEditor.jsx", import.meta.url), "utf8");
+  assert.match(editor, /if \(field\.kind === "mergedBlocks"\) return <BlockEditor/);
+  assert.ok(!editor.includes("overlayText"), "فیلدِ متنِ روی تصویر باید رفته باشد");
+});
+
+test("جمع‌کردنِ درختِ بلوک‌ها هم خودِ تصویر را می‌بیند هم بلوک‌های رویش", async () => {
+  const { flattenArticleBlocks } = await import("../src/lib/articleBlockTypes.js");
+  const flat = flattenArticleBlocks([{
+    id: "img", type: "image", data: { url: URL1, blocks: [{ id: "p", type: "paragraph", data: { text: "x" } }] },
+  }, {
+    id: "m", type: "merged", data: { blocks: [{ id: "q", type: "quote", data: {} }] },
+  }]);
+  // تصویر خودش محتواست (اسکریپتِ ابعاد باید ببیندش)، بلوکِ ادغام‌شده نه.
+  assert.deepEqual(flat.map((block) => block.id), ["img", "p", "q"]);
+});
+
+
+// ——— شفافیت ————————————————————————————————————————————————————
+// یک PNG شفاف باید پس‌زمینه‌ی صفحه را نشان دهد، نه رنگی که بلوک زیرش گذاشته.
+test("هیچ بلوکی زیرِ تصویر رنگِ توپُر نمی‌گذارد", async () => {
+  const src = await readFile(new URL("../src/components/features/articles/ArticleBlockRenderer.jsx", import.meta.url), "utf8");
+  const branch = (from, to) => src.slice(src.indexOf(from), src.indexOf(to));
+
+  // کاشیِ گالری یک bg-gray-100 داشت که هر تصویرِ شفافی را روی مستطیلِ خاکستری صاف می‌کرد.
+  const gallery = branch('block.type === "gallery"', 'block.type === "video"');
+  assert.doesNotMatch(gallery, /\bbg-(?!black\/60)/, "گالری نباید زیرِ تصویر رنگ بگذارد");
+
+  // بلوکِ تصویر (هر دو مسیر) و کاشی‌اش هم همین‌طور.
+  const tile = branch("function ImageTile", "function ImageBlock");
+  assert.doesNotMatch(tile, /\bbg-/);
+  const imageBlock = branch("function ImageBlock", "const BUTTON_SIZE_CLASS");
+  // تنها رنگِ مجاز، لایه‌ای است که ادمین خودش خواسته (data.shade*).
+  assert.doesNotMatch(imageBlock, /\bbg-(?!\[)/);
+  assert.match(imageBlock, /style=\{\{ background: shade\.background \}\}/);
+  // و اسلایدر فقط اندازه را ثابت می‌کند، رنگ نمی‌گذارد.
+  const css = await readFile(new URL("../src/app/globals.css", import.meta.url), "utf8");
+  const slide = css.slice(css.indexOf(".a-slider {"), css.indexOf(".a-slide figcaption"));
+  // زیرنویس روی تصویر می‌نشیند نه پشتِ آن، پس رنگش اینجا حساب نمی‌شود.
+  assert.doesNotMatch(slide, /background(-color)?:/);
+});
+
+test("لودرِ ImageKit شفافیت را صاف نمی‌کند", async () => {
+  // خروجیِ لودر به متغیّرِ محیطی وابسته است، پس خودِ قاعده‌ی ساختِ پارامترها سنجیده می‌شود.
+  const src = await readFile(new URL("../src/lib/imagekitLoader.js", import.meta.url), "utf8");
+  // f-auto برای مرورگرهای امروزی WebP/AVIF می‌دهد که آلفا دارند (سنجیده‌شده روی
+  // یک PNG شفاف: خروجیِ WebP پرچمِ آلفا دارد و گوشه‌هایش alpha=0 است).
+  assert.match(src, /"f-auto"/);
+  // bg-… پارامترِ ImageKit است و ناحیه‌ی شفاف را با رنگ پر می‌کند؛ هرگز ساخته نشود.
+  assert.doesNotMatch(src, /`bg-/);
+  assert.doesNotMatch(src, /"bg-/);
+});
+
+// ——— لایه‌ی رنگ: رنگ، گرادیان، جا، شدت ——————————————————————————————
+test("لایه‌ی رنگ: محتوای قدیمی دقیقاً همان لایه‌ی سیاهِ روی تصویر را می‌گیرد", () => {
+  // بلوکی که فقط shade دارد (همه‌ی محتوای پیش از این تغییر) همان rgba قبلی را می‌دهد.
+  assert.deepEqual(imageShadeLayer({ shade: 40 }), { layer: "above", background: "rgba(0, 0, 0, 0.4)" });
+  assert.deepEqual(imageShadeLayer({ shade: 35 }), { layer: "above", background: "rgba(0, 0, 0, 0.35)" });
+  // بدونِ شدت، هیچ لایه‌ای — حتی اگر رنگ یا جا تنظیم شده باشد.
+  assert.equal(imageShadeLayer({}), null);
+  assert.equal(imageShadeLayer({ shade: 0, shadeColor: "#ff0000", shadeLayer: "below" }), null);
+  assert.deepEqual(imageShadeSettings({}), { shade: 0, mode: "solid", layer: "above", color: "#000000", color2: "#ffffff", direction: "to-bottom" });
+});
+
+test("لایه‌ی رنگ: شدت در آلفای رنگ‌هاست، گرادیان در هر چهار جهت، و پشتِ تصویر", () => {
+  assert.equal(imageShadeLayer({ shade: 60, shadeColor: "#aa4725" }).background, "rgba(170, 71, 37, 0.6)");
+  const directions = { "to-bottom": "to bottom", "to-top": "to top", "to-right": "to right", "to-left": "to left" };
+  for (const [key, css] of Object.entries(directions)) {
+    assert.equal(
+      imageShadeLayer({ shade: 50, shadeMode: "gradient", shadeColor: "#ff0000", shadeColor2: "#0000ff", shadeDirection: key }).background,
+      `linear-gradient(${css}, rgba(255, 0, 0, 0.5), rgba(0, 0, 255, 0.5))`,
+    );
+  }
+  assert.equal(imageShadeLayer({ shade: 100, shadeLayer: "below", shadeColor: "#ffffff" }).layer, "below");
+  assert.equal(imageShadeLayer({ shade: 100, shadeLayer: "below", shadeColor: "#ffffff" }).background, "rgba(255, 255, 255, 1)");
+});
+
+test("لایه‌ی رنگ: پاک‌سازی فقط مقدارِ معتبر و غیرپیش‌فرض را نگه می‌دارد", () => {
+  assert.equal(normalizeHexColor("#ABC"), "#aabbcc");
+  assert.equal(normalizeHexColor("12ab9F"), "#12ab9f");
+  for (const bad of ["", "#12", "red", "#gggggg", "rgb(0,0,0)", null, 42]) assert.equal(normalizeHexColor(bad), null, String(bad));
+
+  // پیش‌فرض‌ها ذخیره نمی‌شوند: بلوکِ قدیمی همان داده‌ی قبلی را دارد.
+  const plain = sanitize({ url: URL1, shade: 40, shadeColor: "#000000", shadeColor2: "#FFFFFF", shadeMode: "solid", shadeDirection: "to-bottom", shadeLayer: "above" }).out;
+  for (const key of ["shadeColor", "shadeColor2", "shadeMode", "shadeDirection", "shadeLayer"]) assert.equal(key in plain, false, key);
+
+  const full = sanitize({ url: URL1, shade: 70, shadeColor: "#F00", shadeColor2: "00ff00", shadeMode: "gradient", shadeDirection: "to-left", shadeLayer: "below" }).out;
+  assert.deepEqual(
+    { shade: full.shade, shadeColor: full.shadeColor, shadeColor2: full.shadeColor2, shadeMode: full.shadeMode, shadeDirection: full.shadeDirection, shadeLayer: full.shadeLayer },
+    { shade: 70, shadeColor: "#ff0000", shadeColor2: "#00ff00", shadeMode: "gradient", shadeDirection: "to-left", shadeLayer: "below" },
+  );
+
+  const junk = sanitize({ url: URL1, shade: 30, shadeColor: "red", shadeColor2: "#12", shadeMode: "radial", shadeDirection: "diagonal", shadeLayer: "behind" }).out;
+  for (const key of ["shadeColor", "shadeColor2", "shadeMode", "shadeDirection", "shadeLayer"]) assert.equal(key in junk, false, key);
+});
+
+test("لایه‌ی رنگ: «پشتِ تصویر» پس‌زمینه‌ی قاب است، «روی تصویر» لایه‌ی جدا", async () => {
+  const src = await readFile(new URL("../src/components/features/articles/ArticleBlockRenderer.jsx", import.meta.url), "utf8");
+  const body = src.slice(src.indexOf("function ImageBlock"), src.indexOf("const BUTTON_SIZE_CLASS"));
+  // عنصرِ absolute همیشه روی شبکه‌ی غیرpositionedِ تصویرها رنگ می‌شود؛ پس «پشت»
+  // پس‌زمینه‌ی خودِ قاب است، و «روی» همان لایه‌ی absoluteِ قبلی.
+  assert.match(body, /<div className="relative overflow-hidden rounded-\[var\(--radius\)\]" style=\{shade\?\.layer === "below" \? \{ background: shade\.background \} : undefined\}>/);
+  assert.match(body, /\{shade\?\.layer === "above" \? <div aria-hidden="true" className="pointer-events-none absolute inset-0/);
+  // و ویرایشگر همان تابع را برای پیش‌نمایش می‌خواند.
+  const editor = await readFile(new URL("../src/components/admin/articles/BlockEditor.jsx", import.meta.url), "utf8");
+  assert.match(editor, /const layer = imageShadeLayer\(data\);/);
+});
+

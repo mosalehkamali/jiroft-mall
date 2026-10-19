@@ -1,0 +1,394 @@
+/**
+ * models/Order.js
+ *
+ * مدل سفارش — با پشتیبانی از محصولات معمولی و دست دوم
+ */
+
+import mongoose from "mongoose";
+import { MANUAL_TRACKING_STATUSES } from "../src/lib/manualTracking.js";
+
+const ManualTrackingSchema = new mongoose.Schema({
+  status: { type: String, enum: Object.keys(MANUAL_TRACKING_STATUSES), required: true },
+  quantity: { type: Number, min: 1, required: true, validate: Number.isSafeInteger },
+}, { _id: false });
+
+const manualTrackingFields = () => ({
+  manualTracking: { type: [ManualTrackingSchema], default: undefined },
+  manualTrackingRevision: { type: Number, default: 0 },
+  manualTrackingHistory: {
+    type: [new mongoose.Schema({
+      before: [ManualTrackingSchema],
+      after: [ManualTrackingSchema],
+      by: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+      at: { type: Date, default: Date.now },
+    }, { _id: false })],
+    default: undefined,
+    select: false,
+  },
+});
+
+// انتخاب‌های فرایند سفارش برای هر آیتم (خدمات + محصولات انتخاب‌شده)
+const OrderFlowSelectionSchema = new mongoose.Schema(
+  {
+    ...manualTrackingFields(),
+    nodeId:    { type: String },
+    nodeLabel: { type: String, default: "" },
+    nodeType:  { type: String, enum: ["service", "category"] },
+
+    // نود نوع service
+    serviceName: { type: String, default: "" }, // نامِ خدمت در لحظه‌ی ثبت
+    // ⚠️ قدیمی — انتخابِ تک‌گزینه‌ای. برای سفارش‌های قبلی خوانده می‌شود.
+    serviceLabel: { type: String, default: "" },
+    serviceValue: { type: String, default: "" },
+
+    // اسنپ‌شاتِ کاملِ پیکربندیِ خدمت در لحظه‌ی ثبتِ سفارش.
+    // عمداً denormalized است: تغییرِ بعدیِ تعریفِ خدمت نباید سفارشِ ثبت‌شده را عوض کند.
+    // هر عضو: { optionKey, title, inputType, choiceKey?, value?, unit?, label, image?, priceModifier }
+    serviceConfig: { type: [mongoose.Schema.Types.Mixed], default: [] },
+
+    // نود نوع category
+    selectedProduct: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Product",
+      default: null,
+    },
+    selectedVariant: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Variant",
+      default: null,
+    },
+    selectedProductName:  { type: String, default: "" },
+    selectedVariantLabel: { type: String, default: null },
+
+    // افزوده‌ی قیمت این انتخاب (تومان، تأییدشده سمت سرور)
+    addonToman: { type: Number, default: 0 },
+
+    // وضعیت تأمین این انتخاب فرایند: موجود در انبار / باید خریداری شود / خریداری شد
+    procurementStatus: {
+      type: String,
+      enum: ["IN_STOCK", "TO_PURCHASE", "PURCHASED"],
+      default: null,
+    },
+  },
+  { _id: false }
+);
+
+// ─────────────────────────────────────────────────────────────────────────
+// سیستم یورو (EUR) — کاملاً مستقل از سیستم تومان
+// این بخش هیچ ربطی به فیلدهای تومانی (totalPrice / payments / ...) ندارد و
+// به‌صورت دستی توسط ادمین مدیریت می‌شود. هیچ تبدیل خودکاری بین یورو و تومان
+// انجام نمی‌شود.
+// ─────────────────────────────────────────────────────────────────────────
+const EurPaymentSchema = new mongoose.Schema(
+  {
+    // مبلغ پرداخت‌شده به یورو (وارد‌شده دستی توسط ادمین)
+    amount: { type: Number, required: true, min: 0 },
+    // یادداشت اختیاری (مثلاً روش پرداخت یا شماره تراکنش)
+    note: { type: String, default: "" },
+    confirmedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    confirmedAt: { type: Date, default: Date.now },
+
+    // ─── ردپای ممیزی ویرایش مبلغ (مستقل از تومان) ───
+    editedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    editedAt: { type: Date, default: null },
+    editHistory: {
+      type: [
+        {
+          _id: false,
+          oldAmount: Number,
+          newAmount: Number,
+          at: { type: Date, default: Date.now },
+          by: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+        },
+      ],
+      default: [],
+    },
+  },
+  { _id: true, timestamps: true }
+);
+
+const OrderSchema = new mongoose.Schema(
+  {
+    manualTrackingEnabled: { type: Boolean, default: false },
+    trackingMutationLock: {
+      type: new mongoose.Schema({ token: String, expiresAt: Date }, { _id: false }),
+      default: undefined,
+      select: false,
+    },
+    trackingCode: {
+      type: String,
+      unique: true,
+      index: true,
+    },
+
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+      index: true,
+    },
+
+    items: [
+      {
+        ...manualTrackingFields(),
+        // محصول معمولی (Product)
+        product: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Product",
+          default: null,
+        },
+        variant: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Variant",
+          default: null,
+        },
+
+        // محصول دست دوم (UsedProduct)
+        usedProduct: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "UsedProduct",
+          default: null,
+        },
+
+        // نوع آیتم
+        itemType: {
+          type: String,
+          enum: ["product", "used_product"],
+          default: "product",
+        },
+
+        quantity:  { type: Number, required: true, min: 1 },
+        unitPrice: { type: Number, required: true, min: 0 }, // قیمت واحد تأیید‌شده سمت سرور (تومان) — شامل افزوده‌ی فرایند
+
+        // ─── اسنپ‌شات قیمت‌گذاری برای بازمحاسبه‌ی دقیق هنگام ویرایش ادمین ───
+        // basePriceToman = قیمت واحدِ پیش از تخفیف محصول (شامل افزوده‌ی فرایند) =
+        // unitPrice + unitDiscount. برای آیتم‌های قدیمی null است؛ در این صورت
+        // بازمحاسبه آن آیتم را بدون تخفیف فرض می‌کند (unitPrice همان base).
+        // این فیلدها هرگز در محاسبه‌ی مانده/مبلغ کل دخیل مستقیم نیستند؛ فقط برای
+        // بازسازی دقیق subtotalPrice / discountAmount استفاده می‌شوند.
+        basePriceToman: { type: Number, default: null, min: 0 },
+        unitDiscount:   { type: Number, default: 0, min: 0 },
+
+        // وضعیت تأمین محصول اصلی این آیتم: موجود در انبار / باید خریداری شود / خریداری شد
+        procurementStatus: {
+          type: String,
+          enum: ["IN_STOCK", "TO_PURCHASE", "PURCHASED"],
+          default: null,
+        },
+
+        // انتخاب‌های فرایند سفارش (خدمات و محصولات مرتبط)
+        flowSelections: { type: [OrderFlowSelectionSchema], default: [] },
+
+        // اسنپ‌شاتِ نمایشیِ واریانت در لحظه‌ی ثبت — مستقل از زنده‌بودنِ واریانت/دسته.
+        // شاملِ { name, label, value, image?, units? } برای نمایشِ تصویر و چندواحدی.
+        // برای آیتم‌های قدیمی خالی است؛ نمایش به variant.attributes برمی‌گردد.
+        variantSnapshot: { type: [mongoose.Schema.Types.Mixed], default: [] },
+
+        // ─── قیمت یورویی این قلم (EUR) — مستقل از تومان ────────────────
+        // قیمتِ **واحدِ** یورویی که ادمین به‌صورت دستی از بخش سفارش‌ها برای همین
+        // قلمِ همین سفارش وارد می‌کند. عمداً هیچ ارتباطی با قیمت پایه/کاتالوگِ
+        // محصول ندارد و از آن مشتق نمی‌شود؛ یک اسنپ‌شاتِ دستیِ مخصوصِ سفارش است.
+        // سهمِ این قلم در مبلغ کلِ یورو = priceEUR × quantity (هم‌ارزِ unitPrice تومانی).
+        // null = تعیین‌نشده (پیش‌فرضِ همه‌ی سفارش‌های قدیمی) و در جمع لحاظ نمی‌شود.
+        priceEUR: { type: Number, default: null, min: 0 },
+      },
+    ],
+
+    subtotalPrice: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+
+    discountAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    couponDiscount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    // Net confirmed wallet payment; totalPrice remains the price after discounts.
+    walletPaid: { type: Number, default: 0, min: 0 },
+    walletPaidOriginal: { type: Number, default: 0, min: 0 },
+
+    totalPrice: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+
+    coupon: {
+      createdByCoach: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+      coachName: { type: String, default: null },
+      code: { type: String, default: null },
+      _id:  { type: mongoose.Schema.Types.ObjectId, ref: "Coupon", default: null },
+      // تخفیف مدیریت: مبلغ به‌صورت دستی توسط ادمین روی همین سفارش ثبت شده — کد
+      // کوپنِ سراسری نیست (بدون سند Coupon)، فقط برای برچسب‌زنیِ نمایش استفاده می‌شود.
+      isManual: { type: Boolean, default: false },
+    },
+
+    paymentMethod: {
+      type: String,
+      enum: ["ONLINE", "BANK_RECEIPT", "INSTALLMENT", "WALLET"],
+      required: true,
+    },
+    coachCreditEligible: { type: Boolean, default: false },
+    coachCreditProcessedAt: { type: Date, default: null },
+
+    paymentStatus: {
+      type: String,
+      enum: ["UNPAID", "PARTIALLY_PAID", "PAID"],
+      default: "UNPAID",
+    },
+
+    // ─── اسنپ‌شات تاریخی شرایط اقساط ───────────────────────────────────────
+    // در لحظه‌ی ثبت سفارشِ اقساطی پر می‌شود و نرخ سود و مبالغ محاسبه‌شده را «قفل»
+    // می‌کند. اگر ادمین نرخ سراسری را بعداً تغییر دهد، این سفارش بازمحاسبه نمی‌شود.
+    // برای سفارش‌های غیراقساطی/قدیمی همه مقادیر null است (بدون رگرسیون).
+    installmentTerms: {
+      interestRate:       { type: Number, default: null }, // درصد ماهانه‌ی اعمال‌شده
+      principal:          { type: Number, default: null }, // مانده پس از پیش‌پرداخت (تومان)
+      downPaymentAmount:  { type: Number, default: null },
+      numberOfChecks:     { type: Number, default: null },
+      totalInterest:      { type: Number, default: null }, // کل سود دریافتی
+      totalPayable:       { type: Number, default: null }, // جمع کل اقساط = اصل مانده + سود
+      monthlyInstallment: { type: Number, default: null },
+      snapshotAt:         { type: Date,   default: null },
+    },
+
+    fulfillmentStatus: {
+      type: String,
+      enum: ["WAITING", "NEEDS_PURCHASE", "PROCESSING", "SENT", "DELIVERED", "CANCELED"],
+      default: "WAITING",
+    },
+
+    // فقط توسط orderFulfillmentSync.js ست می‌شود (نه PATCH دستی ادمین) — پایه‌ی
+    // زمان‌بندیِ پیگیریِ «آیا سفارش به‌دستتان رسید؟» سه روز بعد.
+    deliveredAt: { type: Date, default: null },
+
+    // این سفارش موجودیِ انبار را رزرو کرده است (commerce.inventory.mode = "stock")
+    // — services/inventory.service.js. با لغو/حذف آزاد می‌شود.
+    inventoryReserved: { type: Boolean, default: false },
+    reviewFollowUpSentAt: { type: Date, default: null },
+
+    address: {
+      ref: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Address",
+        default: null,
+      },
+      snapshot: {
+        fullName:    String,
+        phone:       String,
+        province:    String,
+        city:        String,
+        postalCode:  String,
+        addressLine: String,
+      },
+    },
+
+    payments: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Payment",
+      },
+    ],
+
+    // ─── سیستم یورو (EUR) — مستقل از تومان ───────────────────────────────
+    // قیمت سفارش به یورو — به‌صورت دستی توسط ادمین وارد می‌شود (بدون تبدیل خودکار).
+    // برای سفارش‌های قدیمی که یورو ندارند مقدار پیش‌فرض null است تا چیزی نشکند.
+    //
+    // این فیلد همچنان مستقیماً قابل ویرایش دستی است، ولی هر بار که ادمین قیمت
+    // یورویی یکی از اقلام (items[].priceEUR) را ثبت/تغییر/حذف کند، از روی مجموعِ
+    // Σ(items[].priceEUR × quantity) بازمحاسبه و بازنویسی می‌شود.
+    // ⚠️ اگر هیچ قلمی قیمت یورویی نداشته باشد این فیلد هرگز لمس نمی‌شود؛ به این
+    // ترتیب مبلغ یورویی سفارش‌های قدیمی هیچ‌وقت خودبه‌خود خراب/صفر نمی‌شود.
+    // منطق مشترکِ این بازمحاسبه در services/orderEurRecalc.js است.
+    priceEUR: {
+      type: Number,
+      default: null,
+      min: 0,
+    },
+
+    // تاریخچه‌ی پرداخت‌های یورویی — جدا از آرایه‌ی payments تومانی.
+    // مانده‌ی یورو از priceEUR منهای مجموع این آرایه محاسبه می‌شود.
+    paymentsEUR: {
+      type: [EurPaymentSchema],
+      default: [],
+    },
+
+    orderDate: {
+      type: Date,
+      default: Date.now,
+    },
+
+    description: {
+      type: String,
+      maxlength: 500,
+      default: "",
+    },
+
+    reviewedAt: Date,
+    reviewedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
+  },
+  { timestamps: true }
+);
+
+/* ───────────────────────────  ایندکس‌ها  ───────────────────────────
+   لیستِ سفارشاتِ پنل ادمین همیشه با { createdAt: -1, _id: -1 } مرتب می‌شود و
+   روی paymentStatus / fulfillmentStatus فیلتر می‌خورد. بدون این ایندکس‌ها هر
+   بار پیمایشِ کاملِ کالکشن + مرتب‌سازی در حافظه انجام می‌شد (که با رشد سفارش‌ها
+   به سقفِ ۳۲ مگابایتیِ مرتب‌سازیِ مونگو می‌خورد و صفحه خطا می‌دهد).
+   ـــ _id به‌عنوان tiebreaker تا صفحه‌بندی پایدار بماند.                      */
+OrderSchema.index({ createdAt: -1, _id: -1 });
+OrderSchema.index({ paymentStatus: 1, createdAt: -1 });
+OrderSchema.index({ fulfillmentStatus: 1, createdAt: -1 });
+// شمارشِ سفارش‌های دیده‌نشده در بَجِ سایدبار
+OrderSchema.index({ reviewedAt: 1 });
+
+OrderSchema.virtual("itemsCount").get(function () {
+  return this.items.reduce((sum, i) => sum + i.quantity, 0);
+});
+
+OrderSchema.set("toJSON", { virtuals: true });
+OrderSchema.set("toObject", { virtuals: true });
+
+function generateTrackingCode(date = new Date()) {
+  const yyyy = date.getFullYear();
+  const mm   = String(date.getMonth() + 1).padStart(2, "0");
+  const dd   = String(date.getDate()).padStart(2, "0");
+  const datePart = `${yyyy}${mm}${dd}`;
+
+  const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const letterPart =
+    letters[Math.floor(Math.random() * 26)] +
+    letters[Math.floor(Math.random() * 26)];
+
+  const numberPart = String(Math.floor(Math.random() * 10000)).padStart(4, "0");
+
+  return `${datePart}${letterPart}${numberPart}`;
+}
+
+OrderSchema.pre("save", function () {
+  if (!this.trackingCode) {
+    this.trackingCode = generateTrackingCode(this.orderDate);
+  }
+});
+
+export default mongoose.models.Order || mongoose.model("Order", OrderSchema);

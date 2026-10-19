@@ -1,0 +1,1404 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Commands
+
+```bash
+npm run dev          # Start Next.js dev server
+npm run build        # Production build
+npm run lint         # ESLint (next/core-web-vitals)
+npm test             # Jest test suite (node env; tests/setup.js spins up mongodb-memory-server)
+npm run test:product-creation                # Product create + edit end to end (needs a replica set)
+npm test -- tests/paymentWorkflow.test.js   # Run a single test file
+npm test -- -t "name of test"                # Run tests matching a name
+npm run test:sender-address                  # Sender-address validation (print flow)
+npm run test:comment-photos-replies          # Comment photos + replies (real mongo, real Comment schema)
+npm run test:db      # Test MongoDB connection
+npm run check:mongodb # Inspect MongoDB collections/state
+
+# Database migrations (run when needed)
+npm run migrate:used-products
+npm run migrate:coach-codes
+npm run migrate:category-sport   # Drops global slug unique indexes, adds per-sport compound indexes (required in prod)
+npm run check:tracking-variant-refs        # Dry-run: warehouse barcodes whose variantRef points at a deleted variant
+npm run repair:tracking-variant-refs       # Repoint them at the current variant (matched via the warehouse's variantKey snapshot)
+npm run check:order-variant-snapshots      # Dry-run: order lines showing a blank variant (deleted variant, no snapshot)
+npm run backfill:order-variant-snapshots   # Fill variantSnapshot where another order line proves the attributes
+npm run check:article-image-dimensions    # Dry-run: report article/brand image blocks missing width+height
+npm run migrate:article-image-dimensions  # Backfill those dimensions (idempotent); revalidate the `articles` tag afterwards
+npm run check:remove-seller-role          # Dry-run: data still referencing the removed `seller` role
+npm run migrate:remove-seller-role        # Move those references to `store` (users, discount rules, broadcasts, review-credit config)
+
+# Background workers (must run separately from the web process)
+npm run worker:prices
+npm run worker:discounts
+npm run worker:installment-reminders   # Sends installment due-date reminders
+npm run worker:review-followup         # Sends "did your order arrive?" follow-up 3 days after delivery
+```
+
+`installment-reminders` and `review-followup` are periodic scans (not BullMQ), designed to be triggered by an external scheduler rather than run continuously. In production they run via **Vercel Cron** (`vercel.json`), which calls `GET /api/cron/installment-reminders` and `GET /api/cron/review-followup` — both check an `Authorization: Bearer $CRON_SECRET` header (Vercel sets this automatically when `CRON_SECRET` is configured as a project env var) and 401 otherwise. The `npm run worker:*` scripts remain for local/manual runs.
+
+## Architecture
+
+### Route Groups
+
+Three route groups under `src/app/`:
+
+- `(Site)/` — Public storefront (sports, products, articles, athletes, auth, second-hand)
+- `(Admin-Panel)/p-admin/` — Admin dashboard, protected by role check in each route
+- `(User-Dashboard)/p-user/` — User account pages, protected by `middleware.js`
+
+`middleware.js` only guards `/p-user/*` — it redirects to `/login-register` if the `accessToken` cookie is absent. Admin routes validate the admin session inside their own API handlers.
+
+### Authentication
+
+Custom JWT, **not next-auth**. Flow:
+
+1. Login/register via `/api/auth/*` routes (phone+password or Google OAuth)
+2. Server sets `accessToken` + `refreshToken` as httpOnly cookies (15-day expiry)
+3. Client reads current user via `GET /api/auth/profile`
+4. `UserProvider` (client component in `src/components/auth/`) wraps the app; provides `useUser()` hook
+5. Optimistic hydration from localStorage prevents flash of logged-out state
+
+Token utilities live in `utils/auth.js` (bcryptjs for passwords, jsonwebtoken for tokens).
+
+**Admin authorization:** API handlers gate admin access by calling `requireAdmin()` from `src/lib/requireAdmin.js`. It re-checks `user.role === "admin"` via a fresh DB lookup — the JWT alone is **not** trusted for role. `src/lib/permissions.js` is the single source of truth for the fine-grained permission registry (keys like `products.edit`), stored on `AdminRole` as an array of string keys; adding a module/permission means editing only that file (no schema change). Note enforcement of these per-permission keys is staged and may not be applied on every route yet — confirm before relying on it.
+
+### Database
+
+Mongoose v9 connecting to MongoDB. Connection is cached in `global._mongooseCache` (module-level) to survive hot-reload in dev and prevent connection exhaustion in serverless. Config is in `configs/db.js` with pool size tuned for Vercel (`maxPoolSize: 5`).
+
+All models are in `models/`. **Always import `models/registerModels.js` before using any model** — it registers all schemas as side-effects to prevent tree-shaking from dropping model definitions at build time.
+
+Three separate MongoDB URIs: `MONGODB_URI_TENADOR` (primary), `MONGODB_URI_LOCAL` (dev), `MONGODB_URI_WAREHOUSE` (separate warehouse DB).
+
+### Caching Strategy
+
+Server data is cached with Next.js `unstable_cache` in `services/` and `src/lib/*Service.js` files:
+
+| Layer | TTL | Tags |
+|---|---|---|
+| Navbar | 600s | `navbar` |
+| Banners | 3600s | `banners` |
+| Product by slug | 300s | `products` |
+| Page data by slug | 300s | `products,sports,categories,brands` |
+| Series | 300s | `products,series,sports` |
+
+After any admin mutation, call `revalidateContent(tags)` from `src/lib/revalidate.js` to purge relevant cache tags immediately.
+
+**Do not use `fetch()` inside server components to call your own API routes.** Call service functions or DB queries directly — this avoids a double round-trip (HTTP + DB) and was a deliberate performance fix.
+
+### Pricing
+
+`services/priceEngine.js` computes prices server-side (base price in Toman, discount rules, exchange rate conversion from USD). Results are precomputed and stored in `PriceCache` model. BullMQ workers (`workers/priceWorker.js`, `workers/discountWorker.js`) handle async recalculation when products or discount rules change.
+
+### Variant identity
+
+**A variant's `_id` is a stable, externally-referenced identity — never regenerate it.** It is referenced from
+`order.items[].variant`, from `itemtrackings.variantRef` in the separate warehouse DB, and from
+`flowSelections[].selectedVariant`.
+
+The product PUT route (`src/app/api/product/[productId]/route.js`) used to `deleteMany` every variant and recreate
+them on each save. Because the admin edit form always sends `variantOptions` ("so backend can sync"), *any* product
+edit — even changing only the description — minted fresh `_id`s for identical attribute combinations and silently
+broke every external reference: order lines rendered their variant as "unspecified", and scanning a barcode onto an
+order failed with «این بارکد متعلق به واریانت دیگری از این محصول است» even though barcode and order line were the
+same variant.
+
+`src/lib/variantReconcile.js` now reconciles instead. The **attribute combination is the identity**, keyed with the
+shared `makeComboKey` from `src/lib/variantKey.js` (order-independent, collision-free, used by the client too):
+
+| state | action |
+|---|---|
+| combination exists and is still wanted | update in place — `_id` **and** `sku` preserved |
+| wanted but missing | create |
+| exists but no longer wanted | delete (an explicit admin action) |
+
+Gotchas baked into the implementation:
+
+- **Writes happen before `product.save()`, deletes strictly after.** A mid-request failure can then never leave the
+  product without variants.
+- **Changed variants are written via `doc.save()`, not `updateOne`.** `updateOne` skips the `pre("validate")` hook on
+  `models/Variant.js` that checks attributes against the category's `variantAttributes`; the old create-everything
+  path always ran it, so bypassing it would silently persist invalid data.
+- **Existing variants are read with `Variant.find({ productId })`, not from `product.variants`.** This re-adopts any
+  variant orphaned by earlier bugs instead of leaking it forever.
+- **`variantOptions` absent ≠ `{}`.** Absent means "this request isn't about variants" and leaves them untouched;
+  `{}` means "no variants". Previously both blanked `product.variants` while leaving the documents orphaned.
+- A payload with no `category` never nulls a kept variant's required `categoryId`.
+
+Tests: `npm run test:variant-reconcile` (pure planner) and `npm run test:variant-identity` (real mongoose + schema
+constraints, asserts `_id`s survive an edit). Both must stay green — they are the regression guard for this bug.
+
+Note that a *deliberate* combination removal still deletes the variant and so still dangles old references; that is
+why `order.items[].variantSnapshot` exists (written at checkout since 2026-06-25, read by `VariantSummary` with a
+fallback to `variant.attributes`). Orders placed before that date have no snapshot and display blank if their variant
+was deleted — see the two `*variant*` scripts above.
+
+### Product create/edit: one validator, one transaction
+
+`POST /api/product/create` and `PUT /api/product/[productId]` must agree. They did not: **the edit route
+validated nothing**, so every guard on create could be walked past by saving an existing product instead —
+an edit could store a category id that does not exist, an attribute the category never defined, a negative
+price, a 5000-out-of-100 radar stat, and (the bad one) it would delete **every** variant of a product whose
+category requires them and answer `200`, dangling exactly the order and warehouse references
+`variantReconcile.js` exists to protect.
+
+Both routes now go through the same two functions in **`src/lib/productVariantValidation.js`**:
+
+| function | checks |
+|---|---|
+| `validateProductVariants` | variant keys exist on the category, values are non-empty strings/numbers, no leading/trailing spaces, required dimensions have a value, at least one combination is selected |
+| `validateProductFields` | `basePrice` ≥ 0 and numeric, `attributes` ⊆ `category.attributes` with required ones non-blank, `technicalStats` ⊆ `category.technicalStats` and inside each stat's `min`/`max` |
+
+Rules baked in, each of them a bug that actually shipped:
+
+- **`undefined` ≠ `{}` for every field, not just `variantOptions`.** PUT used to be an unconditional full
+  replace: any key missing from the payload (`tag`, `gallery`, `color`, `attributes`, `customTabItems`,
+  `variantMeta`) was silently blanked. `const sent = (key) => body[key] !== undefined` now gates each
+  assignment. `validateProductFields` follows the same contract — an `undefined` value is skipped, `{}` is
+  validated.
+- **The whole write is one transaction.** Variant writes intentionally happen *before* `product.save()` and
+  deletes *after*, so the product is never momentarily variant-less. But without a transaction a failing
+  `save()` left the newly created variants in the database — not in `product.variants`, not deleted, and
+  visible on the product's variants page. `applyVariantWrites`/`removePlannedVariants` take a `session`;
+  `keep.doc.$session(session)` is set **before** `save()` because the `pre("validate")` hook reads the
+  category through `this.$session()`.
+- **`allowEmpty` is the difference between "delete the last variant" and "never had one".** Enforcing the
+  required-variant rule on every save would lock the admin out of legacy products created before that
+  validation existed. PUT passes `allowEmpty: (await Variant.countDocuments({productId})) === 0` — counted
+  from the Variant documents, not `product.variants`, which can lag.
+- **Padded variant values are rejected, never trimmed.** Trimming would change the combination key, and the
+  key *is* the variant's identity — the existing variant would be deleted and rebuilt with a fresh `_id`.
+- The effective **category** and **basePrice** come from the product when the payload omits them; passing the
+  raw payload value used to zero every variant price on a request without `basePrice`.
+
+Both admin forms run the same `validateProductVariants` client-side and now render the server's `fieldErrors`
+on the fields themselves (the edit page opens every collapsed section when one arrives, otherwise the message
+points at a field nobody can see). Submitting is blocked while an `ImageUpload` is still uploading.
+
+`POST /api/product/[productId]/variants` (the standalone "add variant" screen) validated against
+`category.attributes` — the *fixed product* attributes — while `models/Variant.js` validates against
+`variantAttributes`, so every save was rejected by the model and returned as a generic `500`. Both the route
+and the page read `variantAttributes` now, duplicate combinations are refused with a `409`, and the route
+reports through `handleApiError` like everything else.
+
+```bash
+npm run test:product-creation   # create + edit, real replica set, real schemas and hooks
+```
+
+### Target audience: the category prompt, and audience-scoped fixed attributes
+
+`utils/targetAudience.js` is the single source of truth for the four values
+(`مردانه`/`زنانه`/`بچگانه`/`یونی سکس`) and for the one rule everything reuses:
+**«یونی سکس» means adults — it matches men and women, and never children.**
+
+Two things hang off it here.
+
+**1. `targetAudience` is a prompt-able field like any other.**
+`buildProductTemplate.js` always read `getPromptContext(category.prompts, "targetAudience")`;
+what was missing was the field in the `productFields` list of both category admin pages, so
+no admin could ever fill it. It is there now (with a default context in the add page), and
+`tests/categoryFormCopy.test.mjs` keeps the two lists in sync with the copy helper.
+
+**2. A fixed attribute can be scoped to target audiences.**
+`Category.attributes[].targetAudiences` (an array on the shared `AttributeSchema`) says which
+audiences an attribute means anything for — e.g. بالانس only on an adult racket.
+
+| value | meaning |
+|---|---|
+| `[]` / absent (default) | no restriction — every pre-existing attribute keeps its old behaviour with **no migration** |
+| `["یونی سکس"]` | applies to مردانه, زنانه and یونی سکس products; never بچگانه |
+| `["بچگانه"]` | applies only to بچگانه products |
+
+`attributeAppliesToAudience()` decides, built on the same `getTargetAudienceStorageMatches()`
+the filters use, so the unisex rule cannot drift between the two. It answers **"applies"** in
+exactly two cases, and both are about the *attribute's configuration*, never about the product:
+an empty list (no restriction), and a list with no valid value in it (an unreadable restriction
+is a broken category, and a broken category must not erase the attribute from every product).
+
+**A product whose `targetAudience` is blank or unrecognised satisfies no restriction, so a
+scoped attribute does not apply to it.** "Unspecified" means unspecified, not "everything" —
+and a stored value never overrides the rule, so a legacy kids racket that still has a «بالانس»
+value in the database does not show it. Only unscoped attributes survive an unset audience.
+
+Where it takes effect:
+
+| layer | behaviour |
+|---|---|
+| AI prompt (`buildProductTemplate.js`) | a scoped attribute carries `Applies ONLY when targetAudience is one of: [...]` — the **expanded** list, so the model never has to infer the unisex rule — plus one rule under `attributes:` telling it to omit the key outright |
+| both admin product forms | the field is not rendered when it doesn't apply; the target-audience dropdown shows/hides it live. With no audience picked yet, scoped fields stay hidden until one is — the select sits directly above them |
+| `validateProductFields` | only ever **relaxes** the required check, using the *effective* audience (payload value, else the stored one — same fallback as category/basePrice) |
+| `product.service.js` + second-hand page | filter **before** merging the stored value in, so a scoped-out attribute never reaches the browser at all — the filtering is server-side, not a render-time decision |
+
+**The radar chart is the one audience-dependent thing left in a component.**
+`ProductAttributesTable` (shared by the new and second-hand product pages) hides
+`ProductComparisonGraph` for a kids product and leaves its grid column empty — the column
+itself stays, so the spec list keeps exactly the width it has for every other audience. The
+decision goes through `isKidsAudience()` rather than a `"بچگانه"` literal in the component, and
+`tests/productPageAudience.test.mjs` fails if the `targetAudience` prop is dropped anywhere on
+the way from either template to the table. The same column is also left empty when the product
+has no non-zero value for any of the category's `technicalStats` (`hasChartableStats` in
+`src/lib/technicalStatsChart.mjs`, which reads the stats exactly the way the chart does), so an
+all-zero radar is never drawn.
+
+Note `ProductAttributesTable` still returns `null` when there are no attributes to show, which
+predates this feature: a product whose attributes are *all* scoped out has an empty specs tab,
+chart included, exactly as a category with no fixed attributes always has.
+
+Rules that are load-bearing:
+
+- **The payload loop stays over the full `categoryAttributes`, only rendering is filtered.**
+  A hidden attribute's stored value is re-sent untouched, so changing a product's audience —
+  or the category rule — never silently deletes data. PUT is a full replace of `attributes`;
+  filtering the loop instead would have made an unrelated edit destructive.
+- **`validateProductFields` never rejects a value for a scoped-out attribute**, only skips its
+  required check. It has to, precisely because the form keeps re-sending stored values —
+  rejecting them would turn every such save into a 400.
+- **Both category routes normalize before the model sees the value.** The schema `enum` rejects
+  the legacy `همه`, which the rest of the system reads as `یونی سکس`;
+  `src/lib/categoryAttributeAudience.js` canonicalizes first and turns a genuinely unknown value
+  into a Persian message instead of a raw mongoose `ValidationError`. `undefined` there means
+  "this request isn't about audiences" and leaves the attribute alone.
+- `variantAttributes` share `AttributeSchema` and therefore carry the field, but **no path reads
+  it for variants** — variant scoping is not a feature.
+
+```bash
+npm run test:target-audience       # the helper's truth table + route normalization
+npm run test:product-page-audience # product-page wiring: server-side filter, radar rule, props
+npm run test:ai-product-draft      # the category prompt and the per-attribute rule in the draft
+npm run test:product-creation      # required-check relaxation, through the real create/edit routes
+```
+
+### Order EUR pricing (independent of Toman)
+
+An order carries a **manual** EUR amount (`order.priceEUR`) plus an EUR payment history
+(`order.paymentsEUR`) — see `src/app/api/admin/orders/[orderId]/eur/route.js`. Nothing here converts
+from Toman; the two currencies never derive from each other.
+
+Each order line also carries `order.items[].priceEUR` — a **unit** EUR price the admin types by hand
+in the order screen. It is deliberately *not* the product's base/catalog price and is never derived
+from the product; it is an order-line snapshot, set only via
+`PATCH /api/admin/orders/[orderId]/eur/item` (gated by `orders.setCurrency`).
+
+`services/orderEurRecalc.js` holds the one rule that matters:
+
+| items with a EUR price | what happens to `order.priceEUR` |
+|---|---|
+| at least one | overwritten with `Σ(priceEUR × quantity)` |
+| none | **left untouched** — never zeroed, never nulled |
+
+That second row is the backward-compatibility guarantee: legacy orders (which have only a manual
+total and no item prices) can never be silently corrupted. The total therefore stays manually
+editable, but any later item-level EUR change recomputes it. The items route
+(`.../[orderId]/items`) calls `applyOrderEurTotal` too, since a quantity change or line deletion
+changes the sum — under the same "no item prices → touch nothing" rule.
+
+Store-role users (`role === "store"`) see each item's EUR price alongside the Toman price in
+`src/components/modules/orders/index.jsx`, but only for lines the admin actually priced.
+
+Tests: `npm run test:order-item-eur`.
+
+### Order address printing (sender addresses)
+
+"چاپ برگه آدرس" on the admin order screen → `SenderAddressModal` (pick/add/edit/delete a
+**sender address**, choose A4 or A5) → `OrderPrintOverlay` puts the **same page** into
+print mode and opens the browser dialog. No new tab, no new window, no separate route.
+
+**The bug this replaced.** The original was `window.open("", "_blank")` +
+`document.write`. That popup was same-origin *with an opener*, so it shared the admin
+page's browsing-context group: `print()` inside it blocked the whole group and closing
+the dialog left the panel half-dead — frozen animations, unresponsive handlers.
+
+**How print mode stays safe.** The dangerous same-page pattern is swapping
+`document.body.innerHTML` and restoring it afterwards; that pulls the DOM out from
+under React and leaves handlers bound to nodes that no longer exist. Never do that
+here. Instead:
+
+| piece | why it matters |
+|---|---|
+| `createPortal(…, document.body)` | the sheet is a body child, so it has no framer-motion ancestor — a transformed ancestor breaks `position: fixed`. |
+| hiding the app is **pure CSS inside `@media print`** | `body > *:not(.print-area) { display: none }`. Nothing is removed, moved or rebuilt, so React state, focus and scroll survive; and on screen the rule never applies. `display`, not `visibility` — with `visibility` the panel keeps its layout box and prints several blank pages after the sheet. |
+| the `<style>` lives inside the overlay | "return to normal" is just `setPrintJob(null)`. There is no manual cleanup that can be forgotten, and no global stylesheet left behind. |
+| three ways out | `afterprint` (fires on print *and* on cancel), Escape, and a visible close button — so a browser that never fires `afterprint` cannot trap the admin. |
+| `onClose` held in a ref | the parent passes an inline arrow; had it been an effect dependency, every render would re-run the effect and reopen the print dialog. |
+
+**A4 / A5 scale.** A5 is exactly 1/√2 of A4 in both dimensions, so the whole
+composition scales from **one knob**: `font-size` on `.sheet` (`base` in
+`src/lib/printPaper.mjs`). Every internal size is in `em` and every placement in `%`,
+so nothing is scaled independently — text, gaps, logo, border thickness and the
+sender/recipient positions move together. Deliberate exception: the frame's distance
+from the paper edge (`--edge: 6mm`) and the 8px corner radius are fixed, because a
+printer's non-printable margin is a *physical* constant — scaling it down would let the
+border be clipped on A5. `tests/senderAddressForm.test.mjs` locks the base/size ratio so
+changing one without the other fails loudly instead of at the printer.
+
+**Sheet layout** (`AddressSheet.jsx`): logo badge top-right, sender top-left, recipient
+bottom-right, order code very small and muted along the bottom, double-line frame
+around the page. **No date anywhere.** Sender and recipient both print all six fields
+(name, phone, province, city, postal code, address) with `—` for blanks, so nothing is
+silently dropped. Placement is `position: absolute` rather than a grid — a grid flips
+its columns in this RTL document and "top-left" lands on the right.
+
+**Sender addresses are not customer addresses.** `models/SenderAddress.js` is its own
+collection: no `user` ref, shop-wide, reusable. It is **never written onto an order** —
+the chosen address only lives in component state while printing, so printing changes no
+order data (Toman, EUR, items, status and `address.snapshot` are all untouched). The
+customer `Address` model is unrelated. Sender phones deliberately accept landlines, so
+validation lives in `src/lib/senderAddressForm.mjs`, not the customer `addressForm.mjs`
+(which demands an `09…` mobile).
+
+Permissions — note the deliberate asymmetry:
+
+| operation | key |
+|---|---|
+| `GET /api/admin/sender-addresses` | `orders.view` |
+| `POST` / `PATCH` / `DELETE` on sender addresses | `orders.manageSenders` (new) |
+
+Reading is on `orders.view` on purpose: gating it behind the new key would have taken
+the *existing* ability to print away from every current admin role the moment the key
+was added. The sheet itself renders from data the page already fetched under
+`orders.view`, so print mode exposes nothing new.
+
+Tests: `npm run test:sender-address`.
+
+### Racket match engine (tennis + padel)
+
+The guided "find my ideal racket" questionnaire at `/match/<sport>/racket`. **One
+architecture, two sport domains** — padel is not a second engine, it is a second domain
+plugged into the same pipeline.
+
+```
+                 scoringKernel.js          ← shared, knows no sport
+   weightedScore · filterByPrice · makeTradeoffDescriber · rankCatalog
+                        ▲                    ▲
+        racketMatch/engine.js        racketMatch/padel/engine.js
+        (tennis domain)              (padel domain)
+```
+
+`scoringKernel.js` owns the rules that must not diverge between sports: an absent factor is
+dropped and the remaining weights are **renormalized** (never penalised, never guessed);
+budget is a hard constraint that relaxes in two explicit steps (×0.7/×1.3, then dropped)
+and always tells the user; and the two alternatives must use **different** trade-off axes,
+otherwise you ship three near-identical cards.
+
+| layer | tennis | padel |
+|---|---|---|
+| questions | `racketMatch/questions.js` | `racketMatch/padel/questions.js` |
+| normalize | `racketMatch/normalize.js` | `racketMatch/padel/normalize.js` |
+| engine | `racketMatch/engine.js` | `racketMatch/padel/engine.js` |
+| catalog | `getRacketCatalog()` | `getPadelCatalog()` (same `loadCatalog`, own cache key) |
+| route | `POST /api/match/racket` | `POST /api/match/padel` (both thin, over `matchApi.js`) |
+
+Everything else is shared as-is: `quizNavigation.js`, `stepNavScroll.js`,
+`resultPayload.js`, `matchApi.js`, and the whole UI (`RacketQuiz`/`RacketResults` take a
+`quiz` prop and know nothing about sport).
+
+**Adding a sport is two registrations, not a fork:** a key in `GUIDED_QUIZ_TOOLS`
+(`matchTools.js`) and a matching entry in `MATCH_QUIZZES` (`quizRegistry.js`). A test
+asserts those two stay in sync — drift there renders an empty questionnaire.
+`matchTools.js` deliberately imports nothing, so the server page doesn't pull every
+sport's question set into its bundle.
+
+**Padel domain, and what the data does and does not support.** Padel rackets have no string
+bed, so head size / string pattern / swingweight are replaced by shape, balance, surface,
+core and sweet spot. Two data realities shape the implementation:
+
+- **There is no weight field.** The only trace of weight is `Suitable for`, which the
+  product-ingestion prompt *derives* from grams (<350g → خانم ها, 350–370 → both, >370 →
+  آقایان). `parseWeightClass` inverts exactly that mapping and flags the result
+  `weightFromProxy: true`. It is a coarse 3-bucket **class**, not a number — and if a real
+  numeric `Weight` attribute is ever added it wins automatically.
+- **`Power Foam` / `High Memory EVA` stay uninterpreted.** Core firmness is only read when
+  the composition states an actual qualifier (نرم/متوسط/سخت, Soft/Medium/Hard). A foam's
+  trade name is marketing, not a spec, so guessing its firmness would be exactly the
+  hallucination the engine forbids. That is why core coverage is ~84% and not 100%; the
+  renormalization above makes the gap harmless.
+
+Balance carries both a category word and a point in cm, and the two **contradict each other
+in the real data** ("بالا، ۲۷ سانتی‌متر" — the word says head-heavy, the number is dead
+centre). The number wins. Shape lives on a continuous گرد↔الماسی axis so the catalog's
+fourth shape, هیبرید, gets a real score instead of falling out of a three-way table; a
+level-dependent **ceiling** on that axis is what stops "beginner who wants power" from
+being handed a diamond.
+
+Scoring weights (level 20, style 15, weight 15, balance 15, shape 10, power/control 10,
+maneuver 5, core 5, surface 3, sweet spot 2) sum to exactly 1 — a test enforces it. Level
+scoring is deliberately **asymmetric**: a racket above the player's level is punished
+harder than one below it. There is no `stability` stat in the catalog, so a stability
+priority moves the *target* weight and balance instead of inventing a product number, and
+`sweetSpot` is an honest relabelling of the measured `forgiveness` stat.
+
+```bash
+npm run test:racket-match       # tennis engine (must stay green — it guards the refactor)
+npm run test:padel-match        # padel engine + normalizer + shared-kernel wiring
+npm run check:padel-match-data  # read-only coverage report against the live catalog
+npm run check:racket-match-data # same, for tennis
+```
+
+### Mini articles (brand, brand+category, serie)
+
+Block-based mini articles rendered under the page hero by the shared `BrandMiniArticleSection`
+(same `ArticleBlockSchema` / `sanitizeArticleBlocks` / `BlockEditor` as full articles):
+
+| field | page | admin |
+|---|---|---|
+| `Brand.articleBlocks` | root brand page `/[brand]` only | brand add/edit |
+| `Brand.categoryArticles[] {category, blocks}` | `/[sport]/[category]/[brand]` only — never `/[sport]/[brand]` | brand add/edit (`BrandCategoryArticlesEditor`) |
+| `Serie.articleBlocks` | that serie's own page only (parent and child series are independent) | `SerieFormLayout` (create + edit) |
+
+**A mini article has two sections: above the page content and below it.** The bottom one is
+a *sibling field*, never a reshape — `Serie.articleBlocksBottom` and
+`Brand.categoryArticles[].blocksBottom`. Content that only has `blocks` stays valid with an
+empty bottom, so there is no migration. (The brand brochure has no such pair: it replaces
+the page, so "above/below the content" means nothing there.)
+
+| | |
+|---|---|
+| public read | `miniArticle.service.js` always returns `{ top, bottom }` |
+| public render | `belowHero` (top) and the new `belowContent` (bottom) on `BrandGroupedView`, `SerieGroupedView` and `SportPageClient` — both go through the *same* `buildMiniArticleSection`, so neither is a second implementation |
+| API | both routes follow `undefined ≠ []` **per section**: a body without `blocksBottom` leaves the bottom alone, and vice versa. That is what lets the preview save one section at a time |
+| brand+category entry | dropped only when **both** sections are empty (the old rule, now for two) |
+
+**One editor, two sections — and one `DndContext`.** `BlockDocumentEditor` takes a
+`sections` list (default: the single `blocks` section, so the brochure is untouched) and
+renders one `BlockEditor` per section with `dnd={false}`, hosting the `DndContext` itself.
+That is the whole reason a block can be dragged from the top mini article to the bottom
+one: two `SortableContext`s under one context. Each section is also a `useDroppable`, so an
+**empty** section is still a valid drop target. `MINI_ARTICLE_SECTIONS` fixes the labels and
+the keys, and those keys are the API's keys, so nothing has to be mapped.
+
+The preview shows both with the page's own content between them —
+**top → «محتوای خودِ صفحه» → bottom** — through the same `PreviewCanvas`, i.e. the same
+public renderer. Each canvas carries `endpoint.key`, so saving one section posts only that
+key and the other survives.
+
+```bash
+npm run test:mini-articles
+```
+
+- `categoryArticles` and `Serie.articleBlocks` are **`select: false`** so navbar/product/series payloads never
+  carry them. Public reads go through `services/miniArticle.service.js`; the brand+category read projects only
+  the matching entry with `$elemMatch`. Admin GETs use `.select("+…")`.
+- The category is the entry's identity: `sanitizeBrandCategoryArticles` rejects duplicates and drops empty
+  entries; the routes 400 on an unknown category. Deleting a category `$pull`s its entries from every brand
+  (inside the `deleteCategoryWithProducts` transaction).
+- `undefined` ≠ `[]` in both PUT routes. The serie PUT copies body keys onto the doc, so `articleBlocks` is
+  excluded from that loop and sanitized explicitly.
+
+- **CDN purge.** Everything under `/[sport]/…` is cached at Vercel's CDN for an hour (`Vercel-CDN-Cache-Control`
+  in `next.config.mjs`). Those routes are `force-dynamic`, so they carry no Next path tags and
+  `revalidatePath`/`revalidateTag` cannot reach the CDN copy — a saved article kept showing the old content.
+  They now carry one constant tag (`src/lib/cdnCacheTags.js`) and every mini-article write awaits
+  `purgeSportPagesCdn()` (`@vercel/functions`; a no-op outside Vercel). The root brand page `/wilson` is not
+  CDN-cached. Other admin edits that show on sport pages (products, brand titles) still wait out the hour.
+
+**Brand brochure** (`Brand.brochure = { status, blocks, updatedAt }`, also `select: false`) is the block content that
+*replaces* the brand page. The root brand route reads it first (`getPublishedBrandBrochure`, one indexed query that
+matches `status: "published"` in the query itself, so a draft never leaves the database); with a live brochure it
+renders `BrandBrochure` instead of `BrandGroupedView`, and **without one the previous rendering path is untouched** —
+including the legacy `articleBlocks` mini article, whose data is kept and still rendered as the fallback. The URL,
+metadata, canonical and `TaxonomyStructuredData` stay the brand page's, so no second public URL exists.
+The editor is `/p-admin/admin-brands/[brandId]/brochure` — the article `BlockEditor` plus a publication-status panel,
+without the article-only sidebars (category, tags, cover, slug, SEO). The brand form links to it through
+`BrandBrochureCard` (the old "mini article" section).
+
+**Sport brochure** (`Sport.brochure`) is *the same system*, not a copy. Everything that differs
+between the two owners lives in one table, `BROCHURE_OWNERS` (`src/lib/brochureOwners.js`:
+noun, edit permission, API/editor/preview/back URLs); everything else is shared:
+
+| piece | shared implementation | brand | sport |
+|---|---|---|---|
+| schema | `BrochureSchema` (`models/articleSchemas.js`), `select: false`, `default: undefined` | `Brand.brochure` | `Sport.brochure` |
+| API | `brochureRouteHandlers` (`src/lib/brochureRoute.js`) — gate, `sanitizeBrandBrochure`, revalidate, `purgeSportPagesCdn()` | `/api/brands/[brandId]/brochure` (`brands.edit`) | `/api/sports/[sportId]/brochure` (`sports.edit`) |
+| public read | `getPublishedBrochure(Model, id)` in `miniArticle.service.js`, status filtered *in the query* | `getPublishedBrandBrochure` | `getPublishedSportBrochure` |
+| admin UI | `components/admin/brochure/` — `BrochureCard`, `BrochureEditor`, `BrochurePreview` (`owner` prop) | `Brand*` files are one-line wrappers | used directly |
+| render | `BrandBrochure` | root brand page | root sport page `/[sport]` |
+
+The root sport page checks for a published brochure **before** any listing work; with one it
+renders `TaxonomyStructuredData` + `BrandBrochure` (breadcrumbs included) instead of
+`SportPageClient` and the brands ticker, with the sport page's own URL, metadata and canonical;
+without one the listing path is byte-for-byte the old one. Only `/[sport]` is replaced —
+`/[sport]/[category]/…` never is. The sport save **must** purge the sport-pages CDN tag, since
+`/tennis` itself is CDN-cached for an hour. The edit form gets only `brochureStatus` from
+`GET /api/sports/[sportId]` (blocks stripped, same contract as the brand GET), and a form save
+loads the sport without the brochure, so it can never erase one. `BLOCK_DOCUMENT_TARGETS`
+includes `sports.brochure.blocks`, so block migrations walk sport brochures too.
+
+The editor refuses to show an empty editor when loading fails (missing owner, malformed id,
+no permission): saving that would have overwritten an existing brochure with nothing.
+
+Known, pre-existing: the global admin assistant's floating button sits on top of the
+editors' bottom-left floating «ذخیره»; the header «ذخیره» is unaffected.
+
+```bash
+npm run test:mini-articles
+npm run test:cdn-purge
+```
+
+### Block spacing: the default is zero
+
+Every block used to carry `my-9` (36px) through the shared `blockSection` class, and the spacing control's
+"md" was that same implicit default. Two blocks placed together therefore never sat flush, and setting
+"no spacing" on one of them changed nothing visible — the gap came from the *neighbour's* margin (margins
+collapse, the larger wins). The editor shows blocks as separate cards, so this only appeared in preview.
+
+`blockSection` now has **no margin**: blocks with no spacing configured render flush, and "md" is a real
+2.25rem value like any other. `sanitizeArticleBlockStyle` therefore strips `"none"` (the new default) and
+keeps `"md"`, which is the reverse of before — a stored `"md"` must survive a save.
+
+Existing content keeps its exact look because the migration writes the previously implicit spacing:
+
+```bash
+npm run check:block-spacing     # dry run
+npm run migrate:block-spacing   # writes style.spacing = "md" where it was implicit (idempotent)
+```
+
+It walks articles, article revisions, brand mini articles + category articles + brochures, and serie
+articles, including blocks nested in merged blocks. **paragraph (`my-5`) and divider (`my-10`) carry their
+own margins, not the shared one, so they are deliberately skipped** — pinning "md" would change 20/40px to 36px.
+Run it right after deploying; until then, untouched blocks render flush.
+
+```bash
+npm run test:block-spacing
+```
+
+### Merged-block gap: the default is zero
+
+The gap between a merged block's children used to be hardcoded in the renderer (1rem on
+mobile, 1.5rem from `md` up). It is now **part of the grid configuration, per breakpoint,
+in rem — and its default is 0**, so a merged block adds no spacing of its own unless an
+admin asks for it.
+
+`grid.desktop.gap` / `grid.mobile.gap` follow the same contract as every other grid key:
+absent means 0, values are clamped to 0–8rem on a 0.25 step, and `sanitizeMergedGrid`
+writes them explicitly. The renderer keeps the two values in their own variables
+(`--gm`/`--gd`) and the `md` switch stays in a static class, because an inline style
+cannot carry a media query — the same split the block layout box uses.
+
+A merged block **without** a grid is the pre-grid rendering path and has no gap setting,
+so it now renders at 0 too.
+
+Existing content keeps its exact look by making the old implicit gap explicit:
+
+```bash
+npm run check:merged-gap     # dry run
+npm run migrate:merged-gap   # writes desktop 1.5 / mobile 1 where gap was absent (idempotent)
+```
+
+**Run it before content gets re-saved.** Saving a merged block through the admin writes
+`gap: 0` explicitly (that is the new default), after which the migration can no longer
+tell "never configured" from "deliberately zero" — exactly like the block-spacing
+migration, and for the same reason. A block whose gap is already explicit is never
+touched, and a grid-less merged block is skipped rather than given a grid it never had.
+
+### Block layout box, and the editable Preview
+
+Two features, one rule: **a block with no layout keys renders exactly as before, with no
+extra wrapper at all.** Everything below is additive and needs no migration.
+
+**The layout box** (`block.layout`) now carries more than the original row span:
+
+| key | meaning |
+|---|---|
+| `width` | `1/2`·`1/3`·`2/3` — the block's *share of a row*, unchanged; still what `groupBlockRows` groups on |
+| `widthPct` | 5–100 — how much of that share the block fills |
+| `mt`/`mb`/`ml`/`mr` | per-side margin in **rem** (0–8, quarter steps) |
+| `alignX` / `alignY` | where the box sits horizontally / vertically |
+| `keepOnMobile` | keep the width and side margins on phones too |
+
+`width` and `widthPct` are deliberately separate knobs, not one: the first decides whether
+blocks sit side by side, the second decides the size *inside* that slot — so an existing
+two-column row keeps working while a full-width image can still be 60% and centred.
+
+Rules that are load-bearing:
+
+- **Values become CSS variables; the stylesheet decides when they apply.** `blockBoxStyle`
+  emits `--bw`/`--bt`/`--bl`/… and `.a-block-box` (globals.css) applies them from `md` up
+  only — an inline style cannot carry a media query, and that split is what keeps
+  "layout" and "responsive" from being the same decision. `keepOnMobile` switches to the
+  unconditional rule.
+- **Horizontal margins are subtracted from the width, never added on top**
+  (`max-width: calc(100% - var(--bmx))`). A 100% block with side margins therefore cannot
+  overflow — no negative margins anywhere.
+- **An explicit `mt`/`mb` replaces the `style.spacing` preset for that side** instead of
+  stacking with it, otherwise "1rem from the top" silently rendered as 3.25rem.
+- **A new layout key must be added in *three* places** — `sanitizeArticleBlockLayout`, the
+  modal, and `ArticleBlockLayoutSchema`. Mongoose strict mode drops undeclared keys
+  silently, which is exactly how `widthPct` once passed every layer and still saved
+  nothing. `tests/blockLayoutBox.test.mjs` fails if the sanitizer keeps a key the schema
+  does not declare.
+- `alignY` is applied to the **row cell**, the only place a block has a row to align in;
+  on a full-width block it is a no-op and the modal says so.
+- **A child of a merged block gets the same box, on its own grid/flex cell.** `blockBoxProps`
+  returns the class and variables for whichever element *is* the block's slot: the wrapper for
+  a top-level block, the cell itself for a merged child. Putting it on the cell (rather than
+  adding a wrapper inside it) is what keeps the cell's `*:my-0` reset — which targets the
+  cell's *children* — from fighting a configured margin. Both merged renderers (grid and the
+  legacy flex row) do this, so per-child width, spacing and alignment work in fit, non-fit and
+  legacy modes alike, and a child with no layout keys leaves its cell byte-identical.
+  Hierarchy: the merged block owns the container and the grid; each child owns its own slot.
+- **A block’s own internal grid is sized by its slot, not by the viewport.** Product cards,
+  entity cards, image blocks, the gallery and related articles all laid their contents out
+  with page breakpoints (`md:grid-cols-3 lg:grid-cols-4`), and a media query measures the
+  *window* — so inside a 300px merged cell the page was still "desktop" and a single product
+  card became one of four columns, about 116px wide in a 499px cell. `renderBlock` now passes
+  `inMerged` to children of a merged block, and in that mode those grids use
+  `repeat(auto-fill, minmax(min(<size>,100%), 1fr))` — how many fit in *this* slot — with a
+  single item filling the slot outright. Outside a merged block the page classes are
+  untouched, so a card on an article page is exactly the size it always was (still precisely
+  one quarter of its container at `lg`). `min(…,100%)` is what stops a slot narrower than the
+  minimum from overflowing; no width overrides, no `!important`.
+
+The controls live in **`BlockLayoutModal`** (Size / Spacing / Horizontal / Vertical /
+Responsive / Colours), opened both from the block card and from the Preview — one modal,
+so a setting cannot behave differently in the two places. It sanitizes with the *server's*
+function before handing values back, so what the modal shows is what the database stores.
+
+**The Preview is an editor.** `PreviewCanvas` (client) wraps the *same public*
+`ArticleBlockRenderer` — passing `interactive` makes the renderer wrap each **top-level**
+block in a `data-block-id` element, and every interaction hangs off that one hook:
+
+- double-click → that block's modal (content fields + layout), changes visible instantly;
+- drag the grip → reorder; only the array order changes, ids and data move untouched;
+- click → select. Hover/selection/drop feedback is pure CSS on data attributes, so it
+  cannot drift out of position the way a measured floating overlay does.
+- **Merged blocks are one unit for free**: only top-level blocks carry the hook, so
+  `closest("[data-block-id]")` from any child resolves to the merged block itself.
+- Drag needs 6px of movement before it starts, so a double-click never becomes a drag and
+  a drag never opens the modal.
+
+Saving posts the whole array to the page's existing endpoint (`PATCH /api/admin/articles/:id`
+or `PUT /api/brands/:id/brochure`) and then `router.refresh()`es, so server-resolved
+entities catch up without a page reload. Both preview routes stay server components for
+auth and data; `canEdit` is a separate permission, and a read-only admin still sees the old
+static preview.
+
+The Preview carries the **same fixed bottom bar as the card editor** (Add Block + Save) plus
+a sticky top strip (viewport toggle, revert, dirty state); the canvas keeps `pb-24` so the
+bar never covers the last block. Add Block opens the editor's own `BlockLibrary` and inserts
+through `insertBlockAt`, so a block added from the Preview is indistinguishable from one
+added in the editor. A merged block's own modal offers **«چیدمان دسکتاپ و موبایل»**, which
+opens the editor's `MergedLayoutModal` — columns, rows, minimum width and gap per
+breakpoint. It writes `data.grid` only, so child layout settings under it are untouched.
+
+Saving from the Preview posts the whole array and then refreshes. The refresh would
+normally reset the canvas from server state; a `justSaved` guard skips that reset when the
+server returns exactly what was sent, so edits made while the refresh is in flight survive.
+
+The mobile toggle narrows the canvas to 390px and switches the box rule to its phone
+behaviour; note it is **approximate** — the blocks' own `md:` classes are media queries and
+still read the real window width.
+
+```bash
+npm run test:block-layout
+```
+
+### Rich text: colour, and why it "did not work with bold"
+
+`<input type="color">` only fires an event when its value **changes**. Picking the same
+colour again for a new selection — or confirming the OS picker without moving it — fires
+nothing at all, so the command never ran and the text merely stayed bold. The colour was
+never being stripped: a trace showed no `foreColor` command at all in those cases, and the
+sanitiser keeps `color` on every styleable tag.
+
+The swatch therefore only *chooses* a colour (kept in state) and a toolbar button
+**applies** it, which works however many times it is pressed. `exec()` also restores the
+saved range when the selection is no longer inside the editor — the OS picker holds focus
+while it is open, and until now only `applyLink` handled that.
+
+**A coloured link kept losing its colour on save.** When the selection is *exactly* a link's
+text, Chrome writes the colour straight onto the `<a>` (`<a href style="color:…">`), not onto a
+span inside it — and `sanitizeRichText` allowed `style` only on the formatting tags, so the
+validator dropped it. `<a>` now accepts `style` too; the values are still limited to the same
+`allowedStyles` vocabulary (hex/rgb colour, px font size, unitless line height). One function
+sanitises both the save path and the render path for articles, brochures and mini articles,
+so that one line fixes all six.
+
+### Links inside the editor Preview
+
+In the Preview a single click on a link or card **does not navigate**, and a double-click
+opens the destination in a new tab. The interception is in the **capture** phase: a product
+card is a Next `<Link>` whose own `onClick` sits on the anchor and runs before any
+ancestor's, so a bubble-phase `preventDefault` arrives after routing has already started.
+Because a double-click on a link now belongs to the link, each block also carries a small
+edit button next to the drag grip — otherwise a block that is entirely a link (a product
+card) could not be opened for editing. None of this exists on the published page: the
+renderer only emits those hooks under `interactive`.
+
+### Mini articles have their own pages
+
+`Serie.articleBlocks` and `Brand.categoryArticles[]` are edited the way the brand brochure
+is: a card in the form, and the writing happens on a dedicated page.
+
+| content | box | page | endpoint |
+|---|---|---|---|
+| brand brochure | `BrandBrochureCard` | `…/[brandId]/brochure` | `/api/brands/:id/brochure` |
+| serie mini article | `SerieMiniArticleCard` | `…/[brandId]/[serieId]/mini-article` | `/api/series/:id/mini-article` |
+| brand + category | `BrandCategoryArticlesCard` | `…/[brandId]/category-article/[categoryId]` | `/api/brands/:id/category-article/:categoryId` |
+
+All three run the **same** `BlockDocumentEditor` (same `BlockEditor`, same floating bar,
+same editable Preview), so "the same capabilities" is one component rather than a promise.
+The stored data and the public rendering paths are untouched — the forms simply no longer
+edit these fields inline, which also means saving a brand or a serie can no longer
+overwrite an article written on its own page. The category route writes **only** the entry
+for that category and leaves the others alone; an empty block list removes the entry, the
+same rule the brand form always had.
+
+Note `/api/series` already uses `[id]`, so the new route is `[id]/mini-article` — Next
+refuses two different slug names at one path level.
+
+### Drag to scroll the horizontal sliders
+
+A block wider than the page already scrolls horizontally; on desktop it can now also be
+**dragged with the mouse**, like any carousel. `DragScroll` is an invisible client island
+(`<span hidden>`) that binds to its own `parentElement` — the existing scroll container.
+That indirection is the point: the block renderer is a server component and must stay one,
+because making it client would drag `sanitize-html` into the browser bundle. No markup
+changes, and the native scrollbar is untouched.
+
+It is rendered in the three places that actually scroll: the merged grid (only when
+`scrolls`), the legacy merged row, and a wide table.
+
+Each rule exists for a real trap:
+
+- **Mouse only.** Touch already scrolls natively; intercepting it only adds lag.
+- **A 5px threshold** separates a click from a drag. Below it the click goes through
+  untouched, so links, cards and buttons behave normally; above it the block scrolls and
+  the click that follows is swallowed **in the capture phase** — a Next `<Link>` handles
+  its own click on the anchor, so a bubble-phase `preventDefault` would arrive too late.
+- **Text selection is disabled only once a drag starts**, not on every mousedown, so
+  focusing a field or selecting text deliberately still works. Inputs, textareas,
+  contenteditable and the Preview's own grips are excluded outright.
+- **Snap is turned off for the duration of the drag.** With `scroll-snap-type: mandatory`
+  every `scrollLeft` write jumps to the nearest snap point and the drag feels like it is
+  stuttering; it snaps once, at the end, where it should.
+- **A press on the scrollbar is ignored** (`clientY` below `clientHeight`), so the native
+  bar keeps working exactly as before.
+- Scrolling is applied as a **delta** (`start - dx`), which is direction-agnostic: in this
+  RTL document `scrollLeft` runs from 0 down to −max, and the same formula holds.
+
+### Merged-block slider controls, and the «تیتر تنادور» block
+
+Both reuse the homepage's own implementation rather than a look-alike, because a
+copy is a thing that drifts the first time one side changes.
+
+**The slider nav.** `HomeSliderNav` is the pill of two arrow buttons that was inline in
+`BestSellers`; it now lives in `src/components/features/home/HomeSliderNav.jsx` and
+`BestSellers` renders it with the Swiper hook classes (`product-prev-btn`/`-next-btn`).
+`AmazingOffers` is deliberately **not** converted — its radii differ (16/12px vs 12/8px),
+so folding it in would have changed the homepage.
+
+A merged block that scrolls is wrapped in `SliderFrame`, whose only job is to be the
+containing block. `MergedSliderNav` is a client island in the `DragScroll` mould — it binds
+to the existing `[data-merged-block]` sibling, so the renderer stays a server component —
+and it is **absolutely positioned** (`absolute bottom-full end-0 mb-10 md:mb-16`).
+
+Out of flow is the point: on the homepage the buttons sit *level with the section heading*,
+not between the heading and the slider, and the 40/64px is the header's own bottom margin.
+A normal row would instead add its height to the gap between the preceding block and the
+slider, and that gap is something the admin sets per block. Measured: the frame's height
+equals the scroller's, so a «تیتر تنادور» above a slider keeps exactly the spacing it was
+given, and the buttons still land 64px above the slider.
+
+| rule | why |
+|---|---|
+| a grid whose `scrolls` is false gets no frame and no buttons | existing content renders exactly as before |
+| "wider than the page" is **measured** (`scrollWidth > clientWidth`), not read from the grid config | a no-fit grid can still fit in practice; a `ResizeObserver` watches the scroller *and* its row, since images change the content width late |
+| one press moves **one cell**, not one page | the cell's width plus the computed `column-gap` — the Swiper analogue |
+| `scrollBy` with a fixed sign | in this RTL document `scrollLeft` runs 0 → −max, and a delta is direction-agnostic |
+| `hidden md:flex` | exactly what the homepage does; touch still scrolls natively and the mouse drag is untouched |
+
+The buttons disable at the two ends (`disabled:opacity-40`). The homepage never passes
+those props — it does not load `swiper/css/navigation` — so its output is unchanged.
+
+**«تیتر تنادور»** renders `HomeSectionHeading`, the same component the four homepage
+sections use, so typography, sizes, colours and the subtitle's side rule are not
+re-specified anywhere. Only three texts are editable (orange, the rest of the title,
+subtitle) and `styleKeys` is spacing-only.
+
+**Motion.** `src/lib/homeSlider.js` holds the one set of numbers: `HOME_SLIDER_AUTOPLAY`
+(delay 5000, `disableOnInteraction`), `HOME_SLIDER_SPEED` (300ms) and the `ease` curve.
+Both homepage sliders now pass them explicitly — the values are the ones already running
+there, Swiper's own defaults for speed and easing — and the merged slider reads the same
+file, so "the same rhythm" is an import rather than a promise.
+
+The merged slider cannot use `behavior: "smooth"`: the browser picks that duration, so the
+speed could never match. It tweens `scrollLeft` over `HOME_SLIDER_SPEED` with
+`homeSliderEase` (the bezier solved by bisection, since `scrollLeft` takes no CSS
+transition), with snap switched off for the duration — the same trap `DragScroll` has.
+Autoplay advances one cell every 5s, rewinds to the start at the end exactly as Swiper does,
+stops for good on the first pointer/wheel/key interaction or nav press, and never starts
+under `prefers-reduced-motion`.
+
+**The preview renders site colours, not the panel's.** `.admin-scope` redefines
+`--color-primary` to the panel green, and the preview canvas lives inside it — so the
+heading's orange came out green. `globals.css` now declares its tokens on `:root, .site-colors`
+(one declaration, not a copy) and `PreviewCanvas` carries `site-colors`. Measured: the
+heading is `rgb(170, 71, 37)` in the preview and on the published page alike.
+
+`HomeSectionHeading` used to split the title into words and colour the one equal to
+`highlight`; it now slices the string at the highlight, so a **multi-word** orange part
+works. Every homepage call passes a single leading word, and the rendered output for
+those is identical.
+
+```bash
+npm run test:block-layout
+```
+
+### The image block is a background container
+
+«متن روی تصویر» is gone. It was a miniature block with its own size, colour and
+direction settings that nothing else shared, and it could only ever be text. The image
+block now holds **real blocks** instead: `data.blocks`, edited with the same
+`BlockEditor`, so a heading, a button or a product card on an image keeps every setting
+it has anywhere else.
+
+Layers, in DOM order inside one `relative` stack:
+
+| | |
+|---|---|
+| *(colour layer “below”)* | the `background` of the `relative` frame itself |
+| the image (or the grid of images) | unchanged |
+| colour layer “above” (default) | an independent layer, `aria-hidden`, `pointer-events-none` |
+| `data.blocks` | a `grid` layer whose `align-content` is `data.contentPosition` |
+
+**The colour layer** (`imageShadeLayer` / `imageShadeSettings` in `articleImageBlock.js`,
+read by both the renderer and the editor's live preview):
+
+| key | values | default (never stored) |
+|---|---|---|
+| `shade` | integer 0–100 — opacity, applied as the **alpha of the colours** | 0 = no layer at all |
+| `shadeMode` | `"gradient"` | solid |
+| `shadeColor` / `shadeColor2` | `#rrggbb` (`normalizeHexColor` accepts `#abc`, `abc`) | `#000000` / `#ffffff` |
+| `shadeDirection` | `to-bottom` · `to-top` · `to-right` · `to-left` | `to-bottom` |
+| `shadeLayer` | `"below"` | above |
+
+Content saved before this has only `shade` (multiples of 5, ≤ 90) and renders
+`rgba(0, 0, 0, shade/100)` above the image exactly as before — no migration. The second
+colour and the direction are kept even in solid mode, so switching back to gradient loses
+nothing.
+
+**“Below” is the frame's own background, not an absolute layer placed first.** A
+positioned element paints over non-positioned content regardless of DOM order, so an
+`absolute inset-0` layer before the image grid would still cover the image. The frame's
+background sits under every child and shows only through transparent pixels (or where the
+image doesn't fill the frame); overlay blocks and the “above” layer are untouched.
+
+The editor control (`ImageShadeField`) is compact: solid/gradient and above/below switches,
+a typed 0–100 % (invalid input is flagged and never stored), colour picker + hex box per
+colour (`.be-color-hex` forces `direction: ltr` — `globals.css` sets `* { direction: rtl }`
+in its base layer, which beats `dir="ltr"`), direction arrows only in gradient mode, and a
+preview tile drawn with the same `imageShadeLayer`.
+
+Rules that are load-bearing:
+
+- **The block layer is a *sibling* of the tiles, never inside one.** A linked image tile is
+  a `<Link>`; a button or card inside it is invalid HTML and steals the click.
+- **The block layer is `pointer-events-none` and each cell is `pointer-events-auto`**, so
+  the image's own link still works in the gaps between blocks.
+- **The colour layer is its own layer (or the frame background), never `opacity` on anything.** Opacity would fade the nested
+  blocks' colours too, which is exactly what the shade exists to prevent.
+- **Vertical placement is `content-*` on a grid, not `justify-*` on a flex column.** On a
+  flex column `align-self` means *horizontal*, and the layout box's `alignY` would silently
+  change meaning; on a grid it stays vertical, the same as a merged block's cell.
+- **Per-block placement is the ordinary layout box** — `blockBoxProps` for width, side
+  margins and `alignX`, `BLOCK_ALIGN_SELF` for `alignY`. Nothing image-specific.
+- Children render with `inMerged`, so their internal grids size to the image area rather
+  than to the page breakpoints.
+- `isPlainImageBlock` now also requires no shade and no children, so an existing simple
+  image still takes the old markup path byte for byte.
+
+**Nesting is now a general property, not a merged-block one.** `blockHoldsBlocks` /
+`blockChildren` in `articleBlockTypes.js` answer for both, and every walker uses them:
+`sanitizeBlock` recurses into image children with the same validation and the same
+`MAX_MERGE_DEPTH` / `MAX_MERGED_CHILDREN` caps and the same tree-wide unique ids;
+`reId` gives a copy fresh ids at any depth; the renderer's entity `walk` descends both.
+`flattenArticleBlocks` treats them differently on purpose — a merged block is *replaced*
+by its children (it has no content of its own), an image block yields **itself and** its
+children, so the image-dimension script still sees every image.
+
+```bash
+npm run check:image-overlay-text     # dry run
+npm run migrate:image-overlay-text   # each overlayText becomes a nested paragraph
+```
+
+The migration loses nothing: every `overlayText` becomes a nested paragraph in order,
+`overlay.align`/`overlay.color` become that paragraph's `style`, the old implicit
+`bg-black/35` becomes `shade: 35` (or nothing, if the admin had turned the shade off), and
+`overlay.position` becomes `contentPosition`. Size and direction are not carried over —
+a paragraph has its own. **Run it before an admin re-saves those blocks:** a save drops
+`overlayText` (it is no longer in the validator) and the text does not come back.
+
+```bash
+npm run test:article-image-block
+```
+
+### Line height follows the font size
+
+Text blocks had a fixed line height — `leading-9` (36px) on the paragraph and quote,
+`leading-8` (32px) in the editor — so changing a span's font size moved nothing: 32px
+text collided with itself and 12px text floated apart.
+
+A unitless ratio would not have been the fix either. It keeps *one* ratio for every size,
+while larger text typographically wants a **smaller** one. The rule is one declaration in
+`globals.css`:
+
+```css
+.rt-flow,
+.rt-flow * { line-height: calc(8px + 1em); }
+```
+
+| size | line height | ratio |
+|---|---|---|
+| 12px | 20px | 1.67 |
+| 16px | 24px | 1.50 |
+| 24px | 32px | 1.33 |
+| 32px | 40px | 1.25 |
+| 48px | 56px | 1.17 |
+
+The base was 12px at first; 1.75 read too airy for this template's Persian text. Only the
+base moved — the slope stays `1em`, so "larger text, tighter ratio" is unchanged, and a
+manual value never touches this rule at all.
+
+**`.rt-flow *` is load-bearing.** A line height *with a unit* inherits as the computed
+length, not as the formula — without the descendant rule a `font-size: 32px` span inside a
+16px paragraph would still inherit 28px, which is the original bug. With it, every element
+resolves `1em` against its own size.
+
+**A manual value is part of the text, not editor state.** The toolbar's «فاصله خطوط»
+control writes `line-height` onto the same kind of `<span>` the font size uses, and
+`sanitizeRichText` allows it — so it survives saving, reopening, the preview and the
+published article, mini article and brochure alike. It is stored as a **unitless
+multiplier** (0.8–3): a ratio resolves against each element's own font size, so changing
+the size afterwards keeps the spacing proportional instead of invalidating it.
+
+Two things make that work:
+
+- **One implementation for both properties.** `richTextFontSize.js` was hardcoded to
+  `font-size` in every function; a second copy for line height would have had each
+  operation stripping the other's property. It is now `richTextInlineStyle.js`,
+  parameterised by CSS property — `applyInlineStyle(root, range, prop, value)`,
+  `readSelectionStyle`, and a `tidy` that de-duplicates each property independently.
+  Applying a size touches only `font-size`; "default" line height lifts out of
+  line-height ancestors only.
+- **`.rt-flow [style*="line-height"] * { line-height: inherit }`.** The span itself wins on
+  inline specificity, but its *descendants* would take the default rule above and cancel
+  the admin's value. `inherit` passes the ratio down, so a differently-sized nested span
+  keeps the same spacing.
+
+It is applied to the blocks that accept an inline font size — heading, paragraph, quote,
+custom HTML — and to the editor's `contentEditable`, so what the admin types matches the
+article (the preview already renders through the public renderer). Table cells and
+captions keep their fixed leading on purpose: they have no font-size control, so nothing
+there can fall out of step. Callouts, FAQ answers and the newsletter description *do* take
+rich text now — see «Rich text beyond paragraphs» below for how they keep their leading.
+Font sizes themselves are untouched.
+
+```bash
+npm run test:block-layout   # includes tests/richTextLineHeight.test.mjs
+```
+
+### The «هدر» block is the site's own hero
+
+`SportHero` (`src/components/templates/sports/SportHero.jsx`) is already the single
+source of truth for the full-bleed header — the sport page, `/products`, `/second-hand`,
+the athlete page and the CMS section renderer all render it. The block renders **the same
+component**, so height, gradient, image crop, h1 typography and the accent bar are not
+re-specified anywhere and a change to the site header reaches the block for free.
+
+**It is the top of the page, not a block in the column.** The page splits it out of the
+block flow (`splitHeaderBlock`) and renders it *before* its own `<header>`, which is where
+the breadcrumb lives:
+
+```
+Navbar → Header (full width) → Breadcrumb → content
+```
+
+Rendered outside every container, so `SportHero`'s `w-full` is the viewport — the same as
+the sport page. **The navbar gap is not re-implemented:** `Navbar` already renders a global
+`h-[64px] lg:h-[75px]` spacer on every non-home page, so the header simply starts below it.
+Measured at 1400px the article's hero is `{x: 0, y: 75, w: 1388, h: 220}` and `/products`'
+hero is the same to the pixel; at 390px both are `{x: 0, y: 64, w: 390, h: 100}`.
+
+**The "only at the top" rule lives in the data, not the UI.** `sanitizeArticleBlocks` runs
+`normalizeHeaderPosition` first: one header, at index 0. A header stored in the middle of
+the array is hoisted on the next save, and a second one is dropped — so dragging, the
+preview's reorder, or a hand-written API call cannot break the invariant. The editor is
+only feedback: the registry marks the block `once: true`, which hides it from the library
+once one exists, and inserting it always lands at position 1.
+
+The brand brochure does the same split above its breadcrumbs. Where nothing splits it (the
+mini-article section, the editor preview) it still renders in place, so no page is headless.
+
+Only two things are editable, `data.title` and `data.url`; `styleKeys` is spacing-only.
+The image key is `url` because the shared `image` field kind is in `PATCH_KINDS` and emits
+`{url, width, height}` at the top level of `data` — the validator keeps only `title` and
+`url` (`SportHero` renders a plain `<img>`, so the dimensions would be dead data).
+
+Measured against `/products` at 1400px and 390px, every property matches: height 220/100,
+`overflow: hidden`, `object-fit: cover` with the image at 105% of the box, the same
+gradient, h1 36px/20px at weight 700 centred white with `margin-bottom: 16px`, and the
+80×4 primary bar. The only difference is width, which is the article column rather than
+the viewport — inherent to being a block.
+
+Note the block emits an `<h1>`, exactly as the site header does, so an article that uses it
+has two `<h1>`s (its own title and the block's). That is the price of being identical;
+`articleHeadings` deliberately ignores it, like `tenadorTitle`.
+
+```bash
+npm run test:block-layout
+```
+
+### The «اسلایدر تصویر» block
+
+A carousel whose only children are **the existing Image block** — every capability it has
+outside (several images, links, the dark shade, blocks on top) it has inside, because the
+slides go through the same `renderBlock`.
+
+```
+data: { blocks: [image…], height: px (120–900), delay: ms (1000–20000) }
+```
+
+**Only images get in, and the server is what enforces it.** `sanitizeBlock` filters the
+children by `IMAGE_SLIDER_CHILD_TYPES` before recursing, so no other type survives whatever
+the editor does. The editor is only feedback: `BlockEditor` takes an `allow` list, which
+filters the block library and switches "merge" off — a merged block inside a slider would
+be dropped by the server and confuse the admin.
+
+**The mechanics are shared, not copied.** `src/lib/sliderScroller.js` holds what the merged
+slider already had — RTL-aware bounds, one-cell step, and the rAF tween at the homepage's
+speed and easing — and both sliders call it. Dragging is the existing `DragScroll` island
+(5px threshold, click swallowed in the capture phase, selection off, mouse only), and
+`scroll-snap` is what turns a drag into "go to the right slide".
+
+Rules that were real bugs:
+
+- **Snap is restored with `removeProperty`, never by putting back a saved value.** Two
+  overlapping movements — a rapid second arrow click, or a click during an autoplay tween —
+  made the second one save `"none"` and put `"none"` back, leaving snap off for good.
+  Measured before the fix: a drag settled at `-169` instead of a slide edge.
+- **One timer.** The interval lives in a single effect keyed on `[scrolls, delay, restart]`;
+  every manual arrow press and every `pointerdown` bumps `restart`, so the effect's own
+  cleanup replaces the timer instead of stacking a second one.
+- **A fixed frame, not a fixed image.** `--slide-h` sits on the scroller, `.a-slide` takes it,
+  and every layer of the image block inside (figure, the tile grid, the layered stack) is
+  `height: 100%` with `object-fit: cover` on the `<img>`. Descendant selectors, no
+  `!important`: the image block's own classes are single-class, so `.a-slide img` already
+  wins — and the image block outside a slider is untouched.
+- Width comes from the block's ordinary layout box («ظاهر و چیدمان»), not a second control.
+
+Measured at 1400px and 390px: slides and images all 740×320 (318×320 on mobile) from three
+completely different source aspect ratios, the container height unchanged through autoplay,
+five rapid arrow clicks and a drag. A 220px drag settles exactly one slide over; an 80px
+drag springs back; a plain click on a linked slide still navigates.
+
+```bash
+npm run test:block-layout
+```
+
+### Authoring: a block clipboard, and what scales with what
+
+**Copying a block between documents** goes through `src/lib/articleBlockClipboard.js` —
+`localStorage`, because each document (article, brochure, mini article) has its own editor
+on its own page and React state cannot span them. A block is just JSON, so nothing needs a
+server round trip. Every block card carries a «کپی برای سندِ دیگر» button next to the
+existing duplicate (duplicate stays *within* the document; this one travels), and a paste
+button appears beside «افزودن بلوک» only when the clipboard holds something the current
+editor accepts.
+
+| rule | why |
+|---|---|
+| paste always runs `cloneWithFreshIds` | ids are unique across a document's whole tree; without it, pasting into the same document made the save 400 |
+| a type that is no longer in `ARTICLE_BLOCK_TYPE_SET` is refused | the clipboard can outlive a deploy |
+| `allow` is honoured | the image slider only takes images, so the paste button hides there |
+| paste runs `normalizeHeaderPosition` | the header block stays at index 0 |
+| reads and writes never throw | a private window or blocked storage just leaves the buttons inert |
+
+**Blocks on an image scale with the image, not the viewport.** They carry their own fixed
+sizes (`text-2xl`, `px-6 py-5`, `border-r-4`), which read the *page* breakpoints — on a
+phone the frame shrank and the block did not, so it covered or overflowed the picture.
+
+The first attempt rewrote sizes element by element in `em`, and was incomplete by
+construction: every block not in that list (quote, callout, table, anything added later)
+stayed full size. Instead of enumerating elements, the **whole layer is laid out in a
+reference space and then scaled once**:
+
+```css
+.a-image-overlay { container-type: inline-size; }
+.a-overlay-scale { --a-overlay-ref: 40rem; width: 100%; height: 100%; }
+@supports (zoom: 1) {
+  .a-overlay-scale { zoom: min(1, tan(atan2(100cqw, var(--a-overlay-ref)))); }
+}
+```
+
+- **`zoom`, not `transform`** — zoom affects *layout*, so percentages resolve in the scaled
+  space and `100%` still fills the frame exactly; a transform would leave the layout box at
+  full size.
+- **`tan(atan2(a, b))`** is the standard way to get a unitless ratio from two lengths; `zoom`
+  needs a number, and CSS cannot divide one length by another directly.
+- **`min(1, …)`** means a frame wider than the reference is untouched, so desktop renders
+  exactly as before.
+- Because it is one factor on the whole subtree, *every* block scales — width, height, font,
+  padding, margins, borders, radius — including ones that do not exist yet.
+
+Measured on one article with a heading, quote, paragraph, callout and button stacked on a
+420px image: at a 740px frame `zoom: 1` and the painted sizes are unchanged; at a 318px
+frame `zoom: 0.497` and every block halves (quote 100→63px tall, callout 102→52, button
+52→26 and 83→41 wide) with nothing outside the frame. Outside an image nothing changes —
+the rules exist only under `.a-image-overlay`.
+
+**Default spacing is per type.** "Zero unless configured" stays the general rule;
+`BLOCK_DEFAULT_SPACING` lists the three deliberate exceptions — heading and paragraph get
+1rem top and bottom, the Tenador title gets 5rem at the **bottom only**. An admin's
+`style.spacing` replaces the default outright, and `layout.mt`/`mb` still override one side
+at a time; the paragraph's old `my-5` class is gone so there is only ever one source.
+
+The brand form now links straight to a preview for the brochure and for each category's mini
+article, in a new tab so an unsaved brand form is not lost.
+
+```bash
+npm run test:block-layout   # includes tests/blockAuthoring.test.mjs
+```
+
+### Rich text beyond paragraphs, and the block form layout
+
+The callout («نکته برجسته») text, each FAQ **answer** and the newsletter description use the
+same `RichTextField` as the paragraph — no second editor. The formatted copy always sits
+**beside** the plain text, never instead of it, and is only stored when there is real
+formatting (`richTextValue`), so existing content needs no migration:
+
+| block | plain (unchanged) | formatted |
+|---|---|---|
+| callout | `data.text` | `data.html` (same keys as a paragraph) |
+| faq | `items[].answer` | `items[].answerHtml` |
+| newsletterCta | `data.description` | `data.descriptionHtml` |
+
+- The plain copy is what everything else reads: FAQ JSON-LD (`articleSeo.js`), block
+  summaries, and word count — `countArticleWords` skips any `<key>Html` that has a plain
+  `<key>` next to it, exactly like `html`/`text`.
+- A rich field declares `htmlKey` in the registry when its plain key isn't `text`;
+  `BlockFields` maps `{text, html}` onto the two keys. `align: false` hides the alignment
+  buttons for fields that are not the block itself (alignment is block-level `style.align`).
+  The callout keeps alignment and the renderer applies it.
+- Each FAQ answer stores its **own** alignment in `items[].answerAlign`
+  (`FAQ_ANSWER_ALIGNS`: right/center/left/justify, only stored when set). `RichTextField`
+  takes `aligns` to opt into «تراز»; block-level `style.align` still accepts only the three
+  values, so no other block gained a justify button.
+- **Only single-control fields sit in a `<label>`** (`SINGLE_CONTROL_KINDS` in
+  `BlockEditor.jsx`; everything else is a `div`). A `<label>` without `for` forwards any click
+  that isn't on a control to its *first* control — a click in the FAQ answer's
+  contentEditable focused the question, a click on an entity chip hit the first chip's
+  remove button, a click on an image preview opened the file picker.
+- FAQ **questions**, titles, labels and the Tenador title stay plain: a question sits in a
+  `<summary>`, where a link fights the toggle.
+- `RichParagraph` in the renderer emits the old `<p>` byte for byte when there is no html. With
+  html it adds `rt-inline`, which gives only the **descendants** the size-following line
+  height — the paragraph keeps its own `leading-7`/`leading-8`, so bolding a word moves
+  nothing, while a 28px span still gets room.
+
+**Form layout is presentation only.** Registry fields may carry `row` (consecutive fields with
+the same `row` share a flex-wrap row) and `section` (a small heading above that row); width
+comes from the field kind (`fieldWidth`: short controls — select, number, font size,
+checkbox, image height — `basis-32 max-w-64`, text `basis-44`, a rich field beside a short
+control `basis-[30rem] grow-[6]` so its toolbar stays on one line, editors full width).
+
+**The editor's look is one design system in `admin-theme.css`**, not classes scattered per
+form: `--be-*` tokens on `.admin-scope` plus `.a-block-card`, `.be-head`, `.be-icon`,
+`.be-act`, `.be-menu`, `.be-body`, `.be-label`, `.be-input`, `.be-rich`, `.be-well`,
+`.be-more`, `.be-add`, `.be-upload`. They live in `@layer components`, so a Tailwind
+utility next to them still wins — but **a fixed-width box is `be-input w-28`, never
+`inputClass` + `w-28`**: two width utilities fight and `w-full` wins (that is what had
+collapsed the slider's range track to a dot). The card is *not* `.a-card` any more: that
+rule is unlayered and would beat every layered card state.
+
+| element | rule |
+|---|---|
+| card | white, 1px border; only the innermost focused card gets the ring (`:focus-within:not(:has(.a-block-card:focus-within))`) |
+| type | the group colour, as before the redesign: card border + 4px leading stripe in `--admin-block-accent`, header on `--admin-block-tint` with an accent divider, accent icon on a white tile. Selection is a ring only, so the type colour stays visible while editing |
+| header | grip · position · icon + name (summary when collapsed) · up/down/duplicate (`be-quiet`: hover/focus on mouse devices, inside «⋯» on phones) · appearance · «⋯» (move to position, copy to another document) · delete (separated, red on hover) · collapse |
+| nested editors | `mergedBlocks` / `imageSliderBlocks` render in a grey `.be-well`, not a second frame; slider children are titled «اسلاید n» |
+| `advanced: true` (registry) | grouped in one closed «تنظیمات بیشتر» at the position of the last advanced field, with a dot when any of them is set — image height/darkness, button icon/size/placement |
+
+Inputs are `py-1.5`-ish (`.be-input`, 32px; `.be-check` matches); selects use
+`appearance: none` with a drawn chevron so they match inputs; long hints live in `title`
+rather than under the control; a block's *only* field hides its label (it repeats the
+header) except the merged block's, which is guidance; sub-settings and a single image
+are not boxed; FAQ items and several images are one divided list, not a box each.
+`ImageUpload` takes `compact` (a labelled «انتخاب تصویر» button over the same hidden
+input, always-visible remove) for these forms; every other form keeps its default. Rows are flex-wrap rather than breakpoint grids because
+cards nest at very different widths (merged, on an image, in the preview modal) and wrap
+follows the card's real width. **Do not use container queries here** — `container-type`
+adds layout containment, which would trap absolutely-positioned dropdowns (entity search,
+font-size list) in a new stacking context under the next card.
+
+The nested add buttons take their label from the field: «بلوک روی تصویر» (image, in the
+media group's colour via `data-block-group="media"` — the group colour selectors no longer
+require `.a-block-card`) and «افزودن بلوک به ترکیب» (merged, text only). The article-level
+button, the image slider's button and the floating bar are unchanged.
+
+```bash
+npm run test:block-layout   # includes tests/richTextBlocks.test.mjs
+```
+
+### Slug System
+
+`SlugRegistery` model maps dynamic URL segments (sport/category/brand slugs) to their entity types. `actions/registerSlug.js` is a server action that creates entries on entity creation. This powers ISR revalidation — when a slug is revalidated, the correct entity page is rebuilt.
+
+**Categories are scoped under a sport.** A `Category` has a required `sport` ref, and the slug is unique only within that sport (compound index `{ sport, slug }`) — two sports can each have a `racket` category. The public URL structure is nested: `/[sportSlug]/[categorySlug]` (e.g. `/tennis/racket`). Correspondingly `SlugRegistery` is no longer globally unique on `slug`; uniqueness is `{ type, slug, filterValue }`. Existing prod data must be migrated with `npm run migrate:category-sport`, which drops the old global `slug_1` indexes and reports any categories still missing a sport (these stay hidden from storefront/sitemap until assigned one).
+
+### Feature Subsystems
+
+Beyond the storefront, several self-contained subsystems each span a model + service + API + admin/site UI. Start from the service file (the entry point) when working on one:
+
+| Subsystem | Entry point(s) | Notes |
+|---|---|---|
+| Events / campaigns | `services/event.service.js`, `services/eventProductResolver.js`, `models/Event.js` | Campaign platform with theme/effect system and resolver-driven product selection; public pages live at `/collection/[slug]` (old `/events` paths 301-redirect in `next.config.mjs`) |
+| Articles / blog | `services/article.service.js` (admin CRUD), `services/publicArticle.service.js` (public), `models/Article*.js` | Block-based articles (same block idea as CMS pages) with categories, tags, revision snapshots, and slug-change redirects; article-category slugs live at the URL root, so they are collision-checked against sport/brand slugs and the reserved-route list in `utils/articleRoutes.js`; supports scheduled publishing (`publicArticleFilter`) |
+| Admin notifications | `services/notificationService.js`, `models/Notification.js` | Bell/sidebar UI; beware the payment dual-path/webhook early-return gotcha |
+| Admin audit log | `models/auditPlugin.js`, `src/lib/adminAuditScope.js`, `src/lib/auditEntities.js`, `models/AdminActivity.js` | Append-only ledger of what each admin actually changed — see **Admin audit log** below |
+| User broadcasts | `services/userNotificationService.js`, `models/UserNotification*.js` | Admin→user broadcasts with watermark read-tracking |
+| Reviews / comments | `services/comment.service.js`, `models/Comment.js` | Moderated, one-per-product, "verified purchase" badge, buyer photos and one level of replies — see **Comment photos and replies** below |
+| Support tickets | `models/Ticket.js`, `models/TicketMessage.js`, `api/tickets`, `api/admin/tickets` | Department/priority ticket system with per-ticket chat (user dashboard + admin panel), attachments via `/api/upload`, email notice on admin reply |
+| CMS info pages | `services/pageContent.service.js`, `src/lib/pageDefaults.js`, `models/PageContent.js` | Block-based editor; `SectionRenderer` renders blocks; `ContactMessage` inbox |
+| Coach system | `models/CoachCredit.js`, `models/CoachWalletTransaction.js`, `api/admin/coach-*` | Coach applications, codes, credits/wallet |
+| Second-hand / used | `models/UsedProduct.js`, `api/admin/used-products` | Used-product listings with health scale |
+| Installments | `models/Installment.js`, `api/installments`, `workers/installmentReminderWorker.js` | Check-based installment payments + due-date reminder worker |
+| Order flows | `src/lib/flowTraversal.js`, `p-admin/admin-order-flows`, `models/OrderFlow*` | Admin-defined DAG of order stages; traversal turns the graph into a customer-facing step sequence |
+| Financial analytics | `services/analyticsService.js`, `p-admin/financial` | Revenue/collected/outstanding/collect-rate via aggregation pipelines (no N+1); overdue from installment-check due dates |
+| Web push | `src/lib/push.js`, `models/PushSubscription.js` | Server-side Web Push via VAPID; Node-only (needs native crypto); auto-prunes expired subscriptions (404/410) |
+
+### Comment photos and replies
+
+One `Comment` model carries everything: `product` **xor** `usedProduct`, an optional
+`parent` (one level, never deeper), and `images` (≤ 4). Photos and replies are not a
+second system — they are the same document with two more fields populated.
+
+**Who may attach a photo.** The rule is the *purchase*, not the product type. It used to
+be `!usedProduct || !verified → 403`, which is why buyers of new products could not post
+photos; it is now just `!verified → 403`. `verified` is set server-side only after
+`POST /api/comments` confirms the order belongs to the caller, contains the item, and is
+`SENT`/`DELIVERED` — the client cannot assert it. Every URL must live on the configured
+ImageKit host (`isTrustedImageUrl`), so an approved comment can never render a
+third-party image.
+
+**Upload happens before the comment is created**, in `ReviewModal`. A failed upload throws
+before `POST /api/comments` is ever called, so there is no half-saved comment to clean up —
+and the user still has their text and their files to retry with. Image validation runs
+*before* the reply/top-level branch too, so no path can quietly drop the array.
+
+**Replies are deliberately one level deep.** `POST /api/comments` refuses a parent that is
+missing (404), not approved (409), belongs to another product (400), or is itself a reply
+(400); replies carry no images and no rating. A reply never counts as its author's
+one-per-product top-level comment — the duplicate check and the unique indexes are all
+scoped to `parent: null`.
+
+**Nothing is ever orphaned, from either end:**
+
+| where | what stops the orphan |
+|---|---|
+| `DELETE /api/admin/comments/:id` | deletes the parent's replies with it, and their notifications |
+| `getApprovedReviews` | one query, nested in memory; a reply whose parent is not in the approved set is dropped entirely — it never resurfaces as a standalone review |
+| admin list route | reads the parent's text with a **second query, not `populate`**. Populate returns `null` for a deleted ref and the `parent` id goes with it, so the panel would lose the fact that the comment is a reply at all. The raw id stays and `parentComment: null` renders «والد حذف شده است» |
+
+**The duplicate race.** `findOne` then `create` has a window two concurrent submissions can
+both pass. The partial unique indexes on `{user, product}` / `{user, usedProduct}`
+(`parent: null` only) close it, and the route translates `E11000` into the same 409 as the
+pre-check. `autoIndex` is off, so they are built by `npm run ensure:indexes`; if legacy
+duplicates block the build that script reports it and nothing breaks — the pre-check still
+stands.
+
+**Backward compatibility.** `images` defaults to `[]` and `parent` to `null`, so every
+pre-existing comment is already valid without migration. `getApprovedReviews` still honours
+the legacy `status`-less `approved: true` shape and hands those comments an empty `replies`.
+
+`src/components/ui/CommentImageLightbox.jsx` is the single lightbox — the admin panel, the
+product page and the second-hand section had (or would have had) three byte-identical
+copies. `object-contain` inside `max-h`/`max-w` is what makes any aspect ratio safe; the
+thumbnails are `aspect-square` + `object-cover` so a panorama cannot stretch a grid.
+
+```bash
+npm run test:comment-photos-replies   # real mongo, real schema, real unique index
+```
+
+### Admin audit log
+
+Records are built from the **Mongoose layer**, not from route handlers. The
+permission gate runs before a handler and only knows the permission key, so its
+record can only ever say "an authorized write happened"; instrumenting all 121
+admin routes by hand would go stale the first time someone adds a route. The
+only layer every mutation passes through — and the only one that sees before and
+after values — is Mongoose.
+
+Flow of one admin write request:
+
+1. `requireAdminPermission()` calls `openAuditScope()` **synchronously, before
+   its first `await`**. This ordering is load-bearing: `AsyncLocalStorage.enterWith`
+   attaches to the current async frame, and until the first `await` that frame
+   still belongs to the *handler*. Move it after an `await` and the scope is
+   invisible to everything downstream. A test in `tests/adminRbac.test.mjs` locks
+   the order in.
+2. The gate activates the scope only for a **write** key. Public traffic, workers
+   and read-only admin requests never open one, so they cost nothing.
+3. `models/auditPlugin.js` (a global Mongoose plugin) snapshots documents on
+   `init` and emits an event from each `post` hook — so an event exists only when
+   the write really happened. Events written inside a transaction that later
+   aborted are dropped by checking `session.transaction.state`.
+4. `after()` fires `flushAuditScope()` once the response is sent. It collapses all
+   the request's mutations into **one** record: the highest-`priority` entity is
+   the subject, the rest go in `related`. With no mutations it writes the old
+   `authz.granted` / `attempted` record, so pre-existing records keep their meaning.
+
+Gotchas:
+
+- **`mongoose.plugin()` only affects schemas compiled after it runs.** Adding hooks
+  to an already-compiled model silently does nothing. Hence `src/instrumentation.js`
+  (runs before everything) plus `models/auditPlugin.js` being the first import in
+  `models/registerModels.js`.
+- **The ALS store lives on `globalThis`.** Next bundles the module into more than one
+  layer; a per-module `new AsyncLocalStorage()` gave instrumentation and the routes
+  separate stores, and the plugin silently collected nothing.
+- Routes that write their own record via `auditor()` call `markAuditHandled()`
+  automatically, which suppresses the generic one.
+- Add an entity to `AUDIT_ENTITIES` for a better label/diff; coverage does **not**
+  depend on it — unknown models fall back to a generic descriptor. Add noisy or
+  side-effect models to `AUDIT_IGNORED_MODELS` instead.
+
+```bash
+npm run test:admin-audit     # plugin + flush against a real replica set
+npm run verify:audit-trail   # real HTTP against a built app on a throwaway DB
+```
+
+### State Management
+
+- **Server state:** `unstable_cache` + on-demand revalidation (described above)
+- **Auth state:** React Context via `UserProvider` / `useUser()`
+- **UI state:** Zustand v5 store in `src/lib/store.js` (`useDashboardStore`)
+
+### Key Conventions
+
+- **RTL/Persian first:** The app is fully right-to-left. UI components use Vazirmatn font (loaded in `src/app/globals.css`). Always consider RTL layout when building new UI. Farsi inline comments are common throughout the codebase.
+- **Images via ImageKit (migrated from Cloudinary):** Uploads go through `POST /api/upload` using the ImageKit SDK; coach-document PDFs are uploaded as private files and served through the signed-URL proxy at `src/app/api/files/pdf/route.js`. `next/image` uses a custom loader (`src/lib/imagekitLoader.js`) so Vercel image optimization is bypassed entirely; the loader still passes through legacy `res.cloudinary.com` URLs until the DB migration (`scripts/migrate-cloudinary-to-imagekit*.mjs`) is fully done, and skips transforms for SVGs (adds `tr=orig-true` to stop ImageKit rasterizing them). Never use local `/public` for user-uploaded content.
+- **React Compiler is enabled** (`reactCompiler: true` in `next.config.mjs`) — don't add manual `useMemo`/`useCallback` for plain render memoization.
+- **Tailwind v4:** No `tailwind.config.js` — configuration is done via CSS variables in `globals.css`. Primary color: `#aa4725`, secondary: `#ffbf00`.
+- **Mixed JS/JSX:** Most files are `.js` or `.jsx`, not TypeScript. `tsconfig.json` exists but `strict` is off.
+- **Path aliases:** `@/*` maps to `src/*`; `base/*` maps to the repo root.
+
+### Environment Variables
+
+Required in `.env` (no `.env.example` exists):
+
+```
+MONGODB_URI_TENADOR / MONGODB_URI_LOCAL / MONGODB_URI_WAREHOUSE
+IMAGEKIT_PUBLIC_KEY / IMAGEKIT_PRIVATE_KEY / IMAGEKIT_URL_ENDPOINT / NEXT_PUBLIC_IMAGEKIT_URL_ENDPOINT
+CLOUDINARY_CLOUD_NAME / CLOUDINARY_API_KEY / CLOUDINARY_API_SECRET   # legacy — only the one-off Cloudinary→ImageKit migration scripts need these
+AccessTokenPrivateKey / RefreshTokenPrivateKey
+GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET
+NEXT_PUBLIC_BASE_URL / NEXT_PUBLIC_SITE_URL / NEXT_PUBLIC_LOGO_URL
+EMAIL_HOST / EMAIL_PORT / EMAIL_USER / EMAIL_PASS / EMAIL_FROM / ADMIN_EMAIL
+BULLMQ_QUEUE / BATCH_SIZE / PRECOMPUTE_CONCURRENCY / PRICE_CACHE_TTL
+REDIS_URL                                                    # BullMQ connection (workers)
+NEXT_PUBLIC_VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY / VAPID_SUBJECT   # Web push
+CRON_SECRET                                                  # Authenticates Vercel Cron requests to /api/cron/*
+```

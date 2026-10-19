@@ -1,0 +1,61 @@
+/**
+ * <head> content shared by the three root layouts (storefront, customer
+ * dashboard, admin): the theme from store.config.js as CSS variables, the font
+ * stylesheet and the browser theme colour.
+ *
+ * globals.css declares the same variables as fallbacks; this inline block wins
+ * because it comes later with the same selector.
+ */
+import storeConfig from "base/store.config";
+
+/** "#aa4725" → "15 64% 41%" (the shadcn-style triplet some components read as hsl(var(--primary))). */
+function hslTriplet(hex) {
+  let h = String(hex).replace("#", "");
+  if (h.length === 3) h = h.split("").map((x) => x + x).join("");
+  const n = parseInt(h, 16);
+  const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => v / 255);
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2;
+  let hue = 0, sat = 0;
+  if (max !== min) {
+    const d = max - min;
+    sat = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    hue = max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    hue *= 60;
+  }
+  return `${Math.round(hue)} ${Math.round(sat * 100)}% ${Math.round(l * 100)}%`;
+}
+
+export function themeCss(theme = storeConfig.theme) {
+  const c = theme.colors;
+  const vars = {
+    "--color-primary": c.primary,
+    "--color-primary-dark": c.primaryDark,
+    "--color-secondary": c.secondary,
+    "--color-dark": c.dark,
+    "--color-text": c.text,
+    "--color-background": c.background,
+    "--color-border": c.border,
+    "--color-surface": c.surface,
+    "--color-surface-soft": c.surfaceSoft,
+    "--color-muted": c.muted,
+    "--primary": hslTriplet(c.primary),
+    "--radius": theme.radius,
+    "--font-sans": theme.fontFamily,
+  };
+  const body = Object.entries(vars)
+    .filter(([, v]) => v)
+    .map(([k, v]) => `${k}:${v}`)
+    .join(";");
+  return `:root,.site-colors{${body}}`;
+}
+
+export default function StoreHead() {
+  const { theme } = storeConfig;
+  return (
+    <>
+      {theme.fontStylesheet ? <link rel="stylesheet" href={theme.fontStylesheet} /> : null}
+      <meta name="theme-color" content={theme.browserThemeColor || theme.colors.background} />
+      <style dangerouslySetInnerHTML={{ __html: themeCss(theme) }} />
+    </>
+  );
+}

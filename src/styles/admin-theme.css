@@ -1,0 +1,687 @@
+/* ─────────────────────────────────────────────────────────────
+   Admin Panel Theme — British Racing Green
+   فقط داخل .admin-scope اعمال می‌شود؛ رنگ‌های سایت دست‌نخورده می‌مانند.
+   ───────────────────────────────────────────────────────────── */
+
+.admin-scope {
+  /* Brand */
+  --color-primary: #004225;          /* British Racing Green */
+  --color-primary-hover: #0a5c37;
+  --color-primary-soft: #e6efe9;
+  --color-primary-dark: #00311a;
+  --color-secondary: #c9a84c;        /* هایلایت طلایی هارمونیک با سبز */
+  --color-secondary-soft: #f5efd8;
+
+  /* Surfaces */
+  --admin-bg: #f4f5f2;
+  --admin-sidebar-bg: #0f1a15;
+  --admin-card: #ffffff;
+  --admin-border: #e3e6df;
+  --admin-border-strong: #cfd4c8;
+  --admin-text: #14201a;
+  --admin-text-muted: #6b7a70;
+
+  /* Feedback */
+  --admin-success: #0a5c37;
+  --admin-warning: #c48a1a;
+  --admin-danger: #b0333a;
+  --admin-info: #205a7a;
+
+  /* Shape & motion */
+  --admin-radius: 6px;
+  --admin-radius-lg: 8px;
+  --admin-radius-sm: 4px;
+  --admin-shadow-sm: 0 1px 2px rgba(15, 26, 21, 0.05);
+  --admin-shadow: 0 4px 14px rgba(15, 26, 21, 0.08);
+  --admin-shadow-lg: 0 12px 32px rgba(15, 26, 21, 0.12);
+
+  color: var(--admin-text);
+  background: var(--admin-bg);
+}
+
+/* ─── الگوهای مشترک — کارت، دکمه، فرم، جدول ─── */
+
+.admin-scope .a-card {
+  background: var(--admin-card);
+  border: 1px solid var(--admin-border);
+  border-radius: var(--admin-radius);
+  box-shadow: var(--admin-shadow-sm);
+}
+.admin-scope .a-card-hover:hover {
+  border-color: var(--admin-border-strong);
+  box-shadow: var(--admin-shadow);
+  transform: translateY(-1px);
+  transition: all .2s ease;
+}
+
+/* PageHeader — عنوان + توضیح + اکشن‌ها بالا-چپ */
+.admin-scope .a-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  background: var(--admin-card);
+  border: 1px solid var(--admin-border);
+  border-radius: var(--admin-radius);
+  margin-bottom: 20px;
+}
+.admin-scope .a-page-title {
+  font-weight: 800;
+  font-size: 18px;
+  line-height: 1.2;
+  color: var(--admin-text);
+}
+.admin-scope .a-page-subtitle {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--admin-text-muted);
+  margin-top: 4px;
+}
+.admin-scope .a-page-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+@media (max-width: 640px) {
+  .admin-scope .a-page-header {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 14px;
+  }
+  .admin-scope .a-page-actions { justify-content: stretch; }
+  .admin-scope .a-page-actions > * { flex: 1; }
+}
+
+/* Segmented control (جایگزین تب‌های افقی صفحه‌ی مالی) */
+.admin-scope .a-segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 4px;
+  background: var(--admin-primary-soft, var(--color-primary-soft));
+  border: 1px solid var(--admin-border);
+  border-radius: var(--admin-radius);
+}
+.admin-scope .a-segmented > button {
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--admin-text-muted);
+  border-radius: calc(var(--admin-radius) - 2px);
+  transition: all .18s ease;
+  white-space: nowrap;
+}
+.admin-scope .a-segmented > button[data-active="true"] {
+  background: var(--color-primary);
+  color: #fff;
+  box-shadow: var(--admin-shadow-sm);
+}
+.admin-scope .a-segmented > button:not([data-active="true"]):hover {
+  background: rgba(0, 66, 37, 0.06);
+  color: var(--color-primary);
+}
+@media (max-width: 640px) {
+  .admin-scope .a-segmented { display: flex; width: 100%; overflow-x: auto; }
+  .admin-scope .a-segmented > button { flex: 1; }
+}
+
+/* Nav active state — سبز */
+.admin-scope .nav-item-active {
+  background: rgba(10, 92, 55, 0.14);
+  color: #fff;
+}
+.admin-scope .nav-item-active::before {
+  content: '';
+  position: absolute;
+  right: 0; top: 50%; transform: translateY(-50%);
+  width: 3px; height: 60%;
+  background: var(--color-secondary);
+  border-radius: 4px 0 0 4px;
+}
+
+/* Scrollbar */
+.admin-scope .admin-scrollbar::-webkit-scrollbar { width: 3px; }
+.admin-scope .admin-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.admin-scope .admin-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 10px; }
+
+/* یکسان‌سازی رادیوس در همه‌ی المان‌های ادمین: مقادیر پیشین rounded-xl / 2xl را با ۶ پیکسل هماهنگ کن */
+.admin-scope .rounded-xl,
+.admin-scope .rounded-2xl,
+.admin-scope .rounded-3xl { border-radius: var(--admin-radius) !important; }
+.admin-scope .rounded-lg { border-radius: var(--admin-radius) !important; }
+
+/* موبایل: عرض ثابت سایدبار و حذف حاشیه‌ی محتوا */
+@media (max-width: 1023px) {
+  .admin-scope .admin-aside-mobile { width: 280px !important; }
+  .admin-scope .admin-main-mobile { margin-right: 0 !important; }
+}
+
+/* ─── پیش‌نمایشِ قابلِ ویرایش ───
+   بازخوردِ دیداری کاملاً CSS است و روی data-attributeهایی می‌نشیند که خودِ
+   رندرکننده‌ی عمومی (با پرچمِ interactive) گذاشته — پس نه لایه‌ی شناوری هست که
+   با تغییرِ چیدمان جا بماند، نه اندازه‌گیری‌ای که با اسکرول خراب شود. */
+.admin-scope .preview-canvas [data-block-id] {
+  position: relative;
+}
+/* خطِ دور، خودِ بلوک را می‌گیرد نه ظرفش: بلوکِ ۵۰٪ باید ۵۰٪ هم هایلایت شود. */
+.admin-scope .preview-canvas [data-block-id]:hover > :not(.preview-handle) {
+  outline: 1px dashed var(--color-primary);
+  outline-offset: 3px;
+}
+.admin-scope .preview-canvas [data-block-id][data-selected="true"] > :not(.preview-handle) {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 3px;
+}
+/* خطِ درج: بالا یا پایینِ بلوکی که زیرِ نشانگر است. */
+.admin-scope .preview-canvas [data-block-id][data-drop]::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--color-primary);
+  z-index: 6;
+}
+.admin-scope .preview-canvas [data-block-id][data-drop="before"]::after {
+  top: -2px;
+}
+.admin-scope .preview-canvas [data-block-id][data-drop="after"]::after {
+  bottom: -2px;
+}
+/* دستگیره فقط روی هاور/انتخاب دیده می‌شود تا پیش‌نمایش شلوغ نشود.
+   touch-action: none لازم است، وگرنه مرورگر لمسِ روی دستگیره را برای اسکرول
+   برمی‌دارد و کشیدن در موبایل نیمه‌کاره رها می‌شود. */
+.admin-scope .preview-canvas .preview-handle {
+  position: absolute;
+  top: 2px;
+  inset-inline-end: 2px;
+  z-index: 7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--admin-radius);
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 13px;
+  line-height: 1;
+  cursor: grab;
+  opacity: 0;
+  touch-action: none;
+  transition: opacity .15s ease;
+}
+.admin-scope .preview-canvas [data-block-id]:hover > .preview-handle,
+.admin-scope .preview-canvas [data-block-id][data-selected="true"] > .preview-handle {
+  opacity: 1;
+}
+.admin-scope .preview-canvas .preview-handle:active {
+  cursor: grabbing;
+}
+/* روی دستگاهِ لمسی هاوری وجود ندارد، پس دستگیره همیشه دیده می‌شود. */
+@media (hover: none) {
+  .admin-scope .preview-canvas .preview-handle {
+    opacity: 1;
+  }
+}
+
+/* حالتِ «موبایل» در پیش‌نمایش عرضِ *ظرف* را کم می‌کند، ولی media queryها با عرضِ
+   *پنجره* سنجیده می‌شوند و همچنان دسکتاپ می‌مانند. برای همین قاعده‌ی جعبه‌ی
+   چیدمان اینجا صریحاً به حالتِ موبایل برگردانده می‌شود تا نتیجه‌ی واقعیِ گوشی
+   دیده شود. این قاعده فقط داخلِ پیش‌نمایشِ ادمین وجود دارد و به رندرِ سایت
+   دست نمی‌زند. */
+.admin-scope .preview-canvas[data-viewport="mobile"] .a-block-box:not(.a-block-box--keep) > * {
+  width: 100%;
+  max-width: 100%;
+  margin-left: 0;
+  margin-right: 0;
+}
+
+/* دکمه‌ی ویرایشِ بلوک، کنارِ دستگیره‌ی کشیدن. در پیش‌نمایش دابل‌کلیک روی پیوند
+   مقصد را باز می‌کند، پس بلوکی که تمامش یک پیوند است (کارتِ محصول) به یک راهِ
+   صریح برای ویرایش نیاز دارد. */
+.admin-scope .preview-canvas .preview-edit {
+  position: absolute;
+  top: 2px;
+  inset-inline-end: 32px;
+  z-index: 7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--admin-radius);
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity .15s ease;
+}
+.admin-scope .preview-canvas [data-block-id]:hover > .preview-edit,
+.admin-scope .preview-canvas [data-block-id][data-selected="true"] > .preview-edit {
+  opacity: 1;
+}
+@media (hover: none) {
+  .admin-scope .preview-canvas .preview-edit {
+    opacity: 1;
+  }
+}
+
+/* ─── ویرایشگرِ بلوک: سیستمِ طراحی ───
+   همه‌ی ظاهرِ کارت‌ها، سربرگ‌ها، دکمه‌ها و فیلدهای بلوک از همین چند توکن و کلاس
+   می‌آید، نه از کلاس‌های پراکنده در هر فرم. اصل‌ها:
+
+   - یک سطح، یک مرز. کارت سفید با مرزِ ۱px؛ بلوک‌های تودرتو (ادغام، روی تصویر،
+     اسلایدها) در یک «چاهک»ِ خاکستریِ روشن می‌نشینند، نه در قابِ دوم و سوم.
+   - نوعِ بلوک را رنگِ گروهش می‌گوید (کم‌اشباع): مرز و نوارِ ۴px لبه، زمینه‌ی سربرگ، آیکن.
+   - کارهای کم‌کاربرد آرام‌اند: روی دستگاهِ ماوس‌دار فقط با هاور/فوکوسِ کارت دیده
+     می‌شوند و جایشان خالی نمی‌شود (opacity، نه display)، پس چیزی جابه‌جا نمی‌پرد.
+     روی لمس همیشه دیده می‌شوند. حذف جداست و فقط در هاور قرمز می‌شود.
+   - همه در لایه‌ی components: هر utilityِ Tailwind (مثلاً w-28 روی یک کادر)
+     بی‌زور از این‌ها می‌برد. */
+.admin-scope {
+  --be-radius: 8px;
+  --be-radius-sm: 6px;
+  --be-border: #e3e7e1;
+  --be-border-strong: #c9d0c6;
+  --be-surface: #fff;
+  --be-well: #f5f6f3;
+  --be-hover: #eef1ed;
+  --be-muted: #66746b;
+  --be-faint: #98a39c;
+  --be-ring: color-mix(in srgb, var(--color-primary) 18%, transparent);
+  --be-control-h: 32px;
+}
+
+@layer components {
+  /* ── کارت ── */
+  /* رنگِ نوعِ بلوک — همان سه قاعده‌ی پیش از بازطراحی (9e0b120) با همان پالت:
+     مرزِ کارت و نوارِ ۴px لبه‌ی شروع به رنگِ گروه، سربرگ روی رنگِ روشنِ گروه، و
+     خطِ زیرِ سربرگ به رنگِ گروه. بازطراحی این‌ها را خاکستری کرده بود و نوعِ
+     بلوک‌ها از هم تشخیص داده نمی‌شد؛ بقیه‌ی طراحیِ فشرده دست‌نخورده است. */
+  .admin-scope .a-block-card {
+    --admin-block-accent: #c8927b;
+    --admin-block-tint: #fdf5f1;
+    position: relative;
+    background: var(--be-surface);
+    border: 1px solid var(--admin-block-accent);
+    border-inline-start-width: 4px;
+    border-radius: var(--be-radius);
+    box-shadow: none;
+    transition: border-color .15s ease, box-shadow .15s ease;
+  }
+  .admin-scope .a-block-card:hover { box-shadow: var(--admin-shadow-sm); }
+  /* فقط درونی‌ترین کارتِ فعال حلقه می‌گیرد؛ وگرنه ویرایشِ یک بلوکِ روی تصویر،
+     تصویر و ادغامِ بیرونش را هم هم‌زمان «انتخاب‌شده» نشان می‌داد. مرز رنگِ گروه
+     را نگه می‌دارد — انتخاب فقط حلقه است، تا نوعِ بلوک در حالِ ویرایش هم پیدا بماند. */
+  .admin-scope .a-block-card:focus-within:not(:has(.a-block-card:focus-within)),
+  .admin-scope .a-block-card[data-selected="true"] {
+    box-shadow: 0 0 0 3px var(--be-ring);
+  }
+
+  /* ── سربرگ ── */
+  .admin-scope .be-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px 4px;
+    min-height: 40px;
+    padding: 4px 6px;
+    background: var(--admin-block-tint);
+    /* گوشه‌ی داخلی = گوشه‌ی بیرونی منهای پهنای مرزِ همان سمت (۴px شروع، ۱px پایان)،
+       تا زمینه‌ی رنگیِ سربرگ دقیقاً در قوسِ کارت بنشیند. */
+    border-start-start-radius: calc(var(--be-radius) - 4px);
+    border-start-end-radius: calc(var(--be-radius) - 1px);
+  }
+  .admin-scope .be-head[data-open="false"] {
+    border-end-start-radius: calc(var(--be-radius) - 4px);
+    border-end-end-radius: calc(var(--be-radius) - 1px);
+  }
+  .admin-scope .be-head[data-open="true"] { border-bottom: 1px solid var(--admin-block-accent); }
+  /* روی زمینه‌ی رنگیِ سربرگ، کاشیِ آیکن سفید است تا آیکنِ رنگِ گروه دیده شود
+     (کاشیِ کتابخانه‌ی بلوک همان زمینه‌ی روشنِ گروه را نگه می‌دارد). */
+  .admin-scope .be-head .be-icon {
+    background: var(--be-surface);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--admin-block-accent) 35%, transparent);
+  }
+  /* هاورِ دکمه‌های سربرگ از رنگِ گروه، نه خاکستری که روی زمینه‌ی رنگی گم می‌شد. */
+  .admin-scope .be-head .be-act:hover,
+  .admin-scope .be-head .be-grip:hover,
+  .admin-scope .be-head .be-index:hover,
+  .admin-scope .be-head .be-act[aria-haspopup="menu"][aria-expanded="true"] { background: color-mix(in srgb, var(--admin-block-accent) 16%, transparent); }
+  .admin-scope .be-head .be-act--danger:hover { background: #fbeceb; }
+  .admin-scope .be-head .be-sep { background: color-mix(in srgb, var(--admin-block-accent) 35%, transparent); }
+  .admin-scope .be-icon {
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    border-radius: var(--be-radius-sm);
+    background: var(--admin-block-tint);
+    color: var(--admin-block-accent);
+    font-size: 13px;
+  }
+  .admin-scope .be-title { font-size: 13px; font-weight: 700; color: var(--admin-text); }
+  .admin-scope .be-summary { font-size: 12px; color: var(--be-faint); }
+  .admin-scope .be-index {
+    min-width: 22px;
+    height: 22px;
+    padding: 0 5px;
+    border-radius: var(--be-radius-sm);
+    font-size: 11px;
+    font-weight: 800;
+    color: var(--be-faint);
+    font-variant-numeric: tabular-nums;
+  }
+  .admin-scope .be-index:hover { background: var(--be-hover); color: var(--color-primary); }
+
+  /* ── دکمه‌ی عملیات ── */
+  .admin-scope .be-act {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-width: 28px;
+    height: 28px;
+    padding: 0 6px;
+    border-radius: var(--be-radius-sm);
+    color: var(--be-muted);
+    font-size: 11px;
+    font-weight: 700;
+    transition: background-color .12s ease, color .12s ease, opacity .12s ease;
+  }
+  .admin-scope .be-act:hover { background: var(--be-hover); color: var(--admin-text); }
+  .admin-scope .be-act:focus-visible,
+  .admin-scope .be-index:focus-visible,
+  .admin-scope .be-grip:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; }
+  .admin-scope .be-act:disabled { opacity: .3; pointer-events: none; }
+  .admin-scope .be-act--danger:hover { background: #fbeceb; color: var(--admin-danger); }
+  .admin-scope .be-act[aria-haspopup="menu"][aria-expanded="true"] { background: var(--be-hover); color: var(--admin-text); }
+  .admin-scope .be-sep { width: 1px; height: 16px; margin: 0 2px; background: var(--be-border); }
+  .admin-scope .be-grip {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 28px;
+    border-radius: var(--be-radius-sm);
+    color: var(--be-faint);
+    cursor: grab;
+    touch-action: none;
+  }
+  .admin-scope .be-grip:hover { background: var(--be-hover); color: var(--admin-text); }
+  .admin-scope .be-select { width: 15px; height: 15px; accent-color: var(--color-primary); cursor: pointer; }
+
+  @media (hover: hover) {
+    .admin-scope .a-block-card .be-quiet { opacity: 0; }
+    .admin-scope .a-block-card:hover > .be-head .be-quiet,
+    .admin-scope .a-block-card > .be-head:focus-within .be-quiet,
+    .admin-scope .be-select:checked { opacity: 1; }
+    /* وقتی یکی انتخاب شده، تیکِ بقیه هم دیده می‌شود تا انتخابِ چندتایی معلوم باشد. */
+    .admin-scope [data-selecting="true"] .be-select { opacity: 1; }
+  }
+
+  /* ── منوی «بیشتر» ── */
+  .admin-scope .be-menu {
+    position: absolute;
+    inset-inline-end: 0;
+    top: calc(100% + 4px);
+    z-index: 30;
+    min-width: 200px;
+    padding: 4px;
+    background: var(--be-surface);
+    border: 1px solid var(--be-border);
+    border-radius: var(--be-radius);
+    box-shadow: var(--admin-shadow-lg);
+  }
+  .admin-scope .be-menu-item {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 8px;
+    border-radius: var(--be-radius-sm);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--admin-text);
+    text-align: start;
+  }
+  .admin-scope .be-menu-item:hover,
+  .admin-scope .be-menu-item:focus-visible { background: var(--be-hover); outline: none; }
+  .admin-scope .be-menu-item:disabled { opacity: .35; pointer-events: none; }
+  .admin-scope .be-menu-item svg { color: var(--be-muted); }
+
+  /* ── بدنه و فیلدها ── */
+  .admin-scope .be-body { padding: 12px; }
+  @media (max-width: 639px) { .admin-scope .be-body { padding: 10px; } }
+  .admin-scope .be-label {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 11.5px;
+    font-weight: 600;
+    line-height: 16px;
+    color: var(--be-muted);
+  }
+  .admin-scope .be-section {
+    margin-bottom: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--be-faint);
+  }
+  .admin-scope .be-input {
+    min-height: var(--be-control-h);
+    padding: 5px 10px;
+    font-size: 13px;
+    line-height: 20px;
+    color: var(--admin-text);
+    background: var(--be-surface);
+    border: 1px solid var(--be-border-strong);
+    border-radius: var(--be-radius-sm);
+    outline: none;
+    transition: border-color .12s ease, box-shadow .12s ease;
+  }
+  .admin-scope .be-input:hover { border-color: #b3bcb0; }
+  .admin-scope .be-input:focus { border-color: var(--color-primary); box-shadow: 0 0 0 3px var(--be-ring); }
+  .admin-scope .be-input::placeholder { color: var(--be-faint); }
+  .admin-scope .be-input:disabled { opacity: .45; }
+  /* انتخابگرِ بومی مرز و ارتفاعِ خودش را می‌کشد (تیره‌تر و ۲px بلندتر از کادرها)؛
+     با appearance: none همان کادر است و فلش را خودمان در سمتِ پایانِ خط می‌کشیم. */
+  .admin-scope select.be-input {
+    appearance: none;
+    padding-inline-end: 28px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2366746b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-size: 14px;
+    background-position: left 9px center;
+  }
+  .admin-scope [dir="ltr"] select.be-input, .admin-scope select.be-input[dir="ltr"] { background-position: right 9px center; }
+  /* ویرایشگرِ متنِ غنی: همان مرز و حلقه‌ی فوکوسِ کادرها، نوارِ ابزار روی زمینه‌ی چاهک. */
+  .admin-scope .be-rich {
+    background: var(--be-surface);
+    border: 1px solid var(--be-border-strong);
+    border-radius: var(--be-radius-sm);
+    transition: border-color .12s ease, box-shadow .12s ease;
+  }
+  .admin-scope .be-rich:focus-within { border-color: var(--color-primary); box-shadow: 0 0 0 3px var(--be-ring); }
+  .admin-scope .be-rich-bar {
+    padding: 3px;
+    background: var(--be-well);
+    border-bottom: 1px solid var(--be-border);
+    border-radius: var(--be-radius-sm) var(--be-radius-sm) 0 0;
+  }
+  /* دکمه‌ی انتخابِ فایل (ImageUploadِ فشرده): input پنهان داخلِ همین label است. */
+  .admin-scope .be-upload {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: var(--be-control-h);
+    padding: 0 12px;
+    border: 1px dashed var(--be-border-strong);
+    border-radius: var(--be-radius-sm);
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--be-muted);
+    background: var(--be-surface);
+    cursor: pointer;
+    transition: background-color .12s ease, color .12s ease, border-color .12s ease;
+  }
+  .admin-scope .be-upload:hover { border-color: var(--color-primary); color: var(--color-primary); background: var(--color-primary-soft); }
+  .admin-scope .be-upload:focus-within { outline: 2px solid var(--color-primary); outline-offset: 1px; }
+  /* ── لایه‌ی رنگِ تصویر: سوییچ، رنگ، درصد، پیش‌نمایش ── */
+  .admin-scope .be-seg {
+    display: inline-flex;
+    gap: 2px;
+    height: var(--be-control-h);
+    padding: 2px;
+    background: var(--be-well);
+    border: 1px solid var(--be-border);
+    border-radius: var(--be-radius-sm);
+  }
+  .admin-scope .be-seg > button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    padding: 0 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--be-muted);
+    white-space: nowrap;
+    transition: background-color .12s ease, color .12s ease;
+  }
+  .admin-scope .be-seg > button:hover { color: var(--admin-text); }
+  .admin-scope .be-seg > button[aria-checked="true"] { background: var(--be-surface); color: var(--admin-text); box-shadow: 0 1px 2px rgba(15, 26, 21, .12); }
+  .admin-scope .be-seg > button:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; }
+  .admin-scope .be-color,
+  .admin-scope .be-percent {
+    display: inline-flex;
+    align-items: center;
+    height: var(--be-control-h);
+    background: var(--be-surface);
+    border: 1px solid var(--be-border-strong);
+    border-radius: var(--be-radius-sm);
+    transition: border-color .12s ease, box-shadow .12s ease;
+  }
+  .admin-scope .be-color:focus-within,
+  .admin-scope .be-percent:focus-within { border-color: var(--color-primary); box-shadow: 0 0 0 3px var(--be-ring); }
+  .admin-scope .be-color[data-invalid],
+  .admin-scope .be-percent[data-invalid] { border-color: var(--admin-danger); box-shadow: 0 0 0 3px color-mix(in srgb, var(--admin-danger) 15%, transparent); }
+  .admin-scope .be-color-swatch {
+    width: 26px;
+    height: 22px;
+    margin-inline-start: 4px;
+    padding: 0;
+    border: 0;
+    border-radius: 4px;
+    background: none;
+    cursor: pointer;
+  }
+  .admin-scope .be-color-swatch::-webkit-color-swatch-wrapper { padding: 0; }
+  .admin-scope .be-color-swatch::-webkit-color-swatch { border: 1px solid rgba(0, 0, 0, .15); border-radius: 4px; }
+  .admin-scope .be-color-hex,
+  .admin-scope .be-percent > input {
+    width: 76px;
+    height: 100%;
+    padding: 0 8px;
+    background: transparent;
+    font-size: 12.5px;
+    font-variant-numeric: tabular-nums;
+    color: var(--admin-text);
+    outline: none;
+  }
+  /* direction صریح: globals.css در لایه‌ی base روی * می‌گذارد direction: rtl که از
+     ویژگیِ dir="ltr" می‌برد، و «#» ابتدای کد به انتهایش می‌پرید («e91e63#»). */
+  .admin-scope .be-color-hex { direction: ltr; text-align: left; text-transform: lowercase; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .admin-scope .be-percent > input { width: 52px; text-align: center; appearance: textfield; }
+  /* دکمه‌های ریزِ بالا/پایین در کادرِ ۵۲px جا نمی‌شوند؛ کلیدهای ↑/↓ همچنان کار می‌کنند. */
+  .admin-scope .be-percent > input::-webkit-inner-spin-button,
+  .admin-scope .be-percent > input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  .admin-scope .be-percent > span { padding-inline-end: 8px; font-size: 12px; color: var(--be-faint); }
+  /* پیش‌نمایش: شطرنجیِ ریز فقط برای «شفافیت»، زیرِ همه‌ی لایه‌ها. */
+  .admin-scope .be-shade-preview {
+    position: relative;
+    width: 84px;
+    height: 52px;
+    overflow: hidden;
+    border: 1px solid var(--be-border);
+    border-radius: var(--be-radius-sm);
+    background: repeating-conic-gradient(#eef0ec 0% 25%, #fff 0% 50%) 50% / 12px 12px;
+  }
+  .admin-scope .be-check { display: flex; align-items: center; gap: 8px; height: var(--be-control-h); font-size: 12px; font-weight: 600; color: var(--be-muted); }
+  .admin-scope .be-unit { flex-shrink: 0; font-size: 11px; color: var(--be-faint); }
+
+  /* ── چاهکِ بلوک‌های تودرتو ── */
+  .admin-scope .be-well {
+    padding: 8px;
+    background: var(--be-well);
+    border-radius: var(--be-radius);
+  }
+  /* کارتِ داخلِ چاهک کمی فشرده‌تر است، تا سطحِ دوم کم‌وزن‌تر از سطحِ اول دیده شود. */
+  .admin-scope .be-well .be-head { min-height: 36px; padding: 2px 4px; }
+  .admin-scope .be-well .be-body { padding: 10px; }
+
+  /* ── «تنظیمات بیشتر» ── */
+  .admin-scope .be-more > summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 4px;
+    margin-inline-start: -4px;
+    border-radius: var(--be-radius-sm);
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--be-muted);
+    cursor: pointer;
+    list-style: none;
+  }
+  .admin-scope .be-more > summary::-webkit-details-marker { display: none; }
+  .admin-scope .be-more > summary:hover { color: var(--admin-text); background: var(--be-hover); }
+  .admin-scope .be-more > summary:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; }
+  .admin-scope .be-more > summary .be-chevron { transition: transform .15s ease; }
+  .admin-scope .be-more[open] > summary .be-chevron { transform: rotate(180deg); }
+  .admin-scope .be-dot { width: 6px; height: 6px; border-radius: 999px; background: var(--color-primary); }
+
+  /* ── دکمه‌ی افزودن ── */
+  .admin-scope .be-add {
+    display: flex;
+    flex: 1 1 12rem;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 36px;
+    border: 1px dashed var(--be-border-strong);
+    border-radius: var(--be-radius);
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--be-muted);
+    transition: background-color .12s ease, color .12s ease, border-color .12s ease;
+  }
+  .admin-scope .be-add:hover { border-color: var(--color-primary); color: var(--color-primary); background: var(--color-primary-soft); }
+  .admin-scope .be-add:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; }
+  /* دکمه‌ای که رنگِ گروهِ یک بلوک را دارد («بلوک روی تصویر»). */
+  .admin-scope .be-add[data-block-group] {
+    border-color: var(--admin-block-accent);
+    background: var(--admin-block-tint);
+    color: color-mix(in srgb, var(--admin-block-accent) 70%, black);
+  }
+  .admin-scope .be-add[data-block-group]:hover { filter: brightness(.96); }
+}
+
+/* رنگِ گروه: --admin-block-accent (آیکن) و --admin-block-tint (زمینه‌ی کاشیِ آیکن).
+   بدونِ .a-block-card: هر عنصری که data-block-group دارد همان دو رنگ را می‌گیرد —
+   مثلاً دکمه‌ی «بلوک روی تصویر» که رنگِ بلوکِ تصویر را دارد، حتی در مودالِ
+   پیش‌نمایش که کارتی دورش نیست. هم‌وزن با قاعده‌ی کارت و پس از آن، پس روی کارت
+   همان نتیجه‌ی قبلی را می‌دهد. */
+.admin-scope [data-block-group="content"]   { --admin-block-accent: #c07a56; --admin-block-tint: #fbf1ea; }
+.admin-scope [data-block-group="media"]     { --admin-block-accent: #8f7bbe; --admin-block-tint: #f4f1fb; }
+.admin-scope [data-block-group="layout"]    { --admin-block-accent: #8d9c95; --admin-block-tint: #f1f5f3; }
+.admin-scope [data-block-group="data"]      { --admin-block-accent: #5f94bd; --admin-block-tint: #edf4fa; }
+.admin-scope [data-block-group="shop"]      { --admin-block-accent: #5c9c72; --admin-block-tint: #edf6f0; }
+.admin-scope [data-block-group="dynamic"]   { --admin-block-accent: #c49a35; --admin-block-tint: #fbf5e6; }
+.admin-scope [data-block-group="marketing"] { --admin-block-accent: #c1738f; --admin-block-tint: #fbeff3; }
+.admin-scope [data-block-group="advanced"]  { --admin-block-accent: #7c8794; --admin-block-tint: #f1f3f6; }

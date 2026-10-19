@@ -1,0 +1,220 @@
+'use client';
+
+import { useMemo, useState } from 'react';
+import { FiChevronDown, FiChevronUp, FiShield } from 'react-icons/fi';
+import MobileFilterDrawer from '@/components/features/filters/MobileFilterDrawer';
+import AttributeFilters from '@/components/features/filters/AttributeFilters';
+import PriceRangeFilter from '@/components/features/filters/PriceRangeFilter';
+import { countActiveAttrFilters } from '@/lib/attributeFilters';
+
+function Section({ title, children, defaultOpen = true }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="border-b border-gray-100 py-4">
+      <button
+        type="button"
+        onClick={() => setOpen(p => !p)}
+        className="flex items-center justify-between w-full text-sm font-bold text-gray-700 mb-1"
+      >
+        {title}
+        {open ? <FiChevronUp size={14} /> : <FiChevronDown size={14} />}
+      </button>
+      {open && <div className="mt-3">{children}</div>}
+    </div>
+  );
+}
+
+const SCORE_RANGES = [
+  { label: 'عالی (۸ تا ۱۰)', min: 8, max: 10 },
+  { label: 'خوب (۵ تا ۷)',   min: 5, max: 7  },
+  { label: 'متوسط (۱ تا ۴)', min: 1, max: 4  },
+];
+
+const getFilterItemIcon = (item, type) => {
+  if (!item || typeof item !== 'object') return '';
+
+  if (type === 'brands') {
+    return item.icon || item.logo || item.monochromeLogo || item.image || '';
+  }
+
+  return item.icon || item.image || '';
+};
+
+export default function UsedFilterSidebar({
+  products,
+  filters,
+  setFilters,
+  attrMeta = [],
+  attrFilters = {},
+  setAttrFilters = () => {},
+}) {
+  const brands     = useMemo(() => [...new Map(products.map(p => p.baseProduct?.brand).filter(Boolean).map(b => [b._id, b])).values()], [products]);
+  const categories = useMemo(() => [...new Map(products.map(p => p.baseProduct?.category).filter(Boolean).map(c => [c._id, c])).values()], [products]);
+  // دامنه‌ی اسلایدرِ قیمت از روی قیمتِ (تومانِ) محصولاتِ دست دومِ همین صفحه
+  const priceBounds = useMemo(
+    () => ({ min: 0, max: Math.max(...products.map(p => p.price || 0), 0) }),
+    [products],
+  );
+  const brandsHaveIcons = brands.some(b => getFilterItemIcon(b, 'brands'));
+  const categoriesHaveIcons = categories.some(c => getFilterItemIcon(c, 'categories'));
+
+  const toggleArr = (key, id) => {
+    setFilters(prev => ({
+      ...prev,
+      [key]: prev[key].includes(id) ? prev[key].filter(x => x !== id) : [...prev[key], id],
+    }));
+  };
+
+  const activeCount = [
+    filters.brands.length,
+    filters.categories.length,
+    filters.scoreRange ? 1 : 0,
+    filters.minPrice > 0 ? 1 : 0,
+    filters.maxPrice > 0 ? 1 : 0,
+    filters.onlyInStock ? 1 : 0,
+    countActiveAttrFilters(attrFilters),
+  ].reduce((a, b) => a + b, 0);
+
+  const reset = () => {
+    setFilters({ brands: [], categories: [], minPrice: 0, maxPrice: 0, scoreRange: null, onlyInStock: false });
+    setAttrFilters({});
+  };
+
+  return (
+    <MobileFilterDrawer activeCount={activeCount} onReset={reset}>
+    <div className="bg-white rounded-[var(--radius)] border border-gray-100 shadow-sm p-5">
+      {/* عنوان */}
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="font-black text-gray-800">فیلترها</h2>
+        {activeCount > 0 && (
+          <button onClick={reset} className="text-xs text-[var(--color-primary)] font-bold hover:underline">
+            پاک کردن ({activeCount})
+          </button>
+        )}
+      </div>
+
+      {/* برند */}
+      {brands.length > 0 && (
+        <Section title="برند">
+          <div className="space-y-2 max-h-48 overflow-y-auto pl-1">
+            {brands.map((b) => {
+              const iconSrc = getFilterItemIcon(b, 'brands');
+              return (
+                <label key={b._id} className="flex min-w-0 items-center gap-2 cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    checked={filters.brands.includes(b._id)}
+                    onChange={() => toggleArr('brands', b._id)}
+                    className="accent-[var(--color-primary)] w-4 h-4 rounded shrink-0"
+                  />
+                  {brandsHaveIcons && (
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[6px] border border-gray-100 bg-gray-50">
+                      {iconSrc && (
+                        <img
+                          src={iconSrc}
+                          alt={b.title || b.name || ''}
+                          className="h-5 w-5 object-contain"
+                          loading="lazy"
+                          onError={(event) => {
+                            event.currentTarget.style.display = 'none';
+                          }}
+                        />
+                      )}
+                    </span>
+                  )}
+                  <span className="min-w-0 truncate text-sm text-gray-600 group-hover:text-[var(--color-primary)] transition-colors">
+                    {b.title}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        </Section>
+      )}
+
+      {/* دسته‌بندی */}
+      {categories.length > 0 && (
+        <Section title="دسته‌بندی">
+          <div className="space-y-2 max-h-48 overflow-y-auto pl-1">
+            {categories.map((c) => {
+              const iconSrc = getFilterItemIcon(c, 'categories');
+              return (
+                <label key={c._id} className="flex min-w-0 items-center gap-2 cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    checked={filters.categories.includes(c._id)}
+                    onChange={() => toggleArr('categories', c._id)}
+                    className="accent-[var(--color-primary)] w-4 h-4 rounded shrink-0"
+                  />
+                  {categoriesHaveIcons && (
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[6px] border border-gray-100 bg-gray-50">
+                      {iconSrc && (
+                        <img
+                          src={iconSrc}
+                          alt={c.title || c.name || ''}
+                          className="h-5 w-5 object-contain"
+                          loading="lazy"
+                          onError={(event) => {
+                            event.currentTarget.style.display = 'none';
+                          }}
+                        />
+                      )}
+                    </span>
+                  )}
+                  <span className="min-w-0 truncate text-sm text-gray-600 group-hover:text-[var(--color-primary)] transition-colors">
+                    {c.title}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        </Section>
+      )}
+
+      {/* امتیاز سلامت */}
+      <Section title={<span className="flex items-center gap-1.5"><FiShield size={13} /> امتیاز سلامت</span>}>
+        <div className="space-y-2">
+          {SCORE_RANGES.map(r => {
+            const active = filters.scoreRange?.min === r.min;
+            return (
+              <button
+                key={r.min}
+                type="button"
+                onClick={() => setFilters(prev => ({ ...prev, scoreRange: active ? null : r }))}
+                className={`w-full text-right text-sm px-3 py-2 rounded-lg border transition-all ${
+                  active
+                    ? 'bg-[var(--color-primary)]/10 border-[var(--color-primary)]/30 text-[var(--color-primary)] font-bold'
+                    : 'bg-gray-50 border-gray-100 text-gray-600 hover:border-[var(--color-primary)]/20'
+                }`}
+              >
+                {r.label}
+              </button>
+            );
+          })}
+        </div>
+      </Section>
+
+      {/* فیلتر قیمت — کامپوننتِ مشترکِ اسلایدرِ دوسَره + اینپوت‌های هزارگان‌دار */}
+      <PriceRangeFilter
+        className="border-b border-gray-100 py-4"
+        bounds={priceBounds}
+        value={{ min: filters.minPrice || 0, max: filters.maxPrice || 0 }}
+        onChange={({ min, max }) =>
+          setFilters(prev => ({ ...prev, minPrice: min, maxPrice: max }))
+        }
+      />
+
+      {/* ویژگی‌ها (رنگ، وزن و ...) — کامپوننتِ مشترکِ دکمه‌ای، با همان منطقِ فروشگاه */}
+      {attrMeta.length > 0 && (
+        <div className="-mx-5 mt-1 border-t border-gray-100">
+          <AttributeFilters
+            attrMeta={attrMeta}
+            attrFilters={attrFilters}
+            setAttrFilters={setAttrFilters}
+          />
+        </div>
+      )}
+    </div>
+    </MobileFilterDrawer>
+  );
+}

@@ -1,0 +1,122 @@
+/**
+ * src/lib/orderFulfillmentSync.js
+ *
+ * همگام‌سازی خودکار وضعیت سفارش (fulfillmentStatus) با وضعیت بارکدهای
+ * (tracking) اختصاص‌یافته به آیتم‌های آن در دیتابیس انبار.
+ *
+ * قانون: سفارش فقط وقتی «تحویل شده» است که همه‌ی بارکدهای همه‌ی آیتم‌هایش
+ * DELIVERED باشند؛ اگر حتی یک بارکد تحویل نشده باشد، سفارشِ DELIVERED به
+ * PROCESSING برمی‌گردد.
+ *
+ * تعامل با وضعیت دستی: فقط دو گذارِ خودکار انجام می‌شود —
+ *   ۱) همه‌ی بارکدها DELIVERED → DELIVERED (سفارش لغوشده هرگز تغییر نمی‌کند)
+ *   ۲) وضعیت فعلی DELIVERED ولی بارکدی هنوز تحویل نشده → PROCESSING
+ * وضعیت‌های میانی گردش‌کار (WAITING / NEEDS_PURCHASE / SENT) که ادمین یا
+ * منطق موجود ست کرده دست‌نخورده می‌مانند و سفارشِ بدون بارکد هیچ‌وقت
+ * خودکار تغییر نمی‌کند — وگرنه هر همگام‌سازی، وضعیت دستی را می‌شکست.
+ * استثنا: در سفارش‌های دارای manualTrackingEnabled، تعداد وضعیت‌های دستی هم
+ * محاسبه می‌شود و همه‌ی واحدهای خطوط اصلی و انتخاب‌های فرایند باید تحویل شوند.
+ * حتی پس از پاک‌کردن آخرین وضعیت دستی، تعدادهای نامشخص مانع تحویل کل می‌شوند.
+ *
+ * آپدیت به‌صورت compare-and-swap شرطی است (فقط از همان وضعیتی که تصمیم بر
+ * اساس آن گرفته شد) تا race با آپدیت دستی/همزمان وضعیت ناسازگار نسازد؛ و
+ * چون این تابع فقط Order را می‌نویسد (نه tracking را)، حلقه‌ی آپدیت ممکن
+ * نیست. هرگز مسیر فراخوان را نمی‌شکند؛ همه‌ی خطاها بلعیده می‌شوند
+ * (همان الگوی usedTrackingAuto).
+ */
+
+import connectToDB from "base/configs/db";
+import "base/models/registerModels";
+import Order from "base/models/Order";
+import { manualOrderDeliveryStatuses } from "@/lib/manualTracking";
+import {
+  connectWarehouseDB,
+  getItemTrackingModel,
+  getUsedItemTrackingModel,
+} from "@/lib/warehouseDb";
+import { notifyOrderDelivered } from "@/lib/reviewRequestNotice";
+
+/**
+ * تصمیم خالص: وضعیت بعدی سفارش یا null (بدون تغییر)
+ * @param {string} currentStatus  وضعیت فعلی fulfillmentStatus
+ * @param {string[]} trackingStatuses  وضعیت همه‌ی بارکدهای اختصاص‌یافته
+ */
+export function decideAutoFulfillment(currentStatus, trackingStatuses) {
+  if (currentStatus === "CANCELED") return null;
+  if (!trackingStatuses || trackingStatuses.length === 0) return null;
+
+  const allDelivered = trackingStatuses.every((s) => s === "DELIVERED");
+  if (allDelivered) {
+    return currentStatus === "DELIVERED" ? null : "DELIVERED";
+  }
+  return currentStatus === "DELIVERED" ? "PROCESSING" : null;
+}
+
+/**
+ * بازمحاسبه و اعمال وضعیت سفارش از روی بارکدهای انبار.
+ * @returns {Promise<string|null>} وضعیت جدید اگر تغییری اعمال شد، وگرنه null
+ */
+export async function syncOrderFulfillmentFromTracking(orderId) {
+  try {
+    const id = orderId?.toString();
+    if (!id) return null;
+
+    await connectToDB();
+    const order = await Order.findById(id)
+      .select("fulfillmentStatus manualTrackingEnabled updatedAt items.itemType items.usedProduct items.product items.variant items.quantity items.manualTracking items.flowSelections.nodeType items.flowSelections.selectedProduct items.flowSelections.nodeId items.flowSelections.manualTracking")
+      .lean();
+    if (!order || order.fulfillmentStatus === "CANCELED") return null;
+
+    const conn = await connectWarehouseDB();
+    const ItemTracking = getItemTrackingModel(conn);
+    const UsedItemTracking = getUsedItemTrackingModel(conn);
+
+    // همان منطق تطبیقِ صفحه‌ی tracking سفارش: بارکدهای معمولی با storeOrderId؛
+    // دست دوم‌ها با storeOrderId یا usedProductRef (سازگار با داده‌های قدیمی)
+    const usedProductIds = (order.items || [])
+      .filter((it) => it.itemType === "used_product" && it.usedProduct)
+      .map((it) => (it.usedProduct._id || it.usedProduct).toString());
+
+    const usedFilter =
+      usedProductIds.length > 0
+        ? { $or: [{ storeOrderId: id }, { usedProductRef: { $in: usedProductIds } }] }
+        : { storeOrderId: id };
+
+    const [items, usedItems] = await Promise.all([
+      ItemTracking.find({ storeOrderId: id }).select("status productRef variantRef orderItemIndex flowNodeId barcode trackingId").lean(),
+      UsedItemTracking.find(usedFilter).select("status usedProductRef").lean(),
+    ]);
+
+    if (order.manualTrackingEnabled && usedProductIds.length) {
+      await Order.populate(order, { path: "items.usedProduct", select: "warehouseTrackingId assignedBarcode assignedTrackingCode" });
+    }
+
+    const statuses = order.manualTrackingEnabled
+      ? manualOrderDeliveryStatuses(order, items, usedItems)
+      : [...items, ...usedItems].map((t) => t.status);
+    const next = decideAutoFulfillment(order.fulfillmentStatus, statuses);
+    if (!next) return null;
+
+    const set = { fulfillmentStatus: next };
+    // گذارِ واقعی به DELIVERED → پایه‌ی زمانِ پیگیریِ سه‌روزه؛ چرخه‌ی
+    // پیگیری هم برای این تحویلِ تازه ریست می‌شود (اگر قبلاً PROCESSING شده
+    // و دوباره DELIVERED شده باشد).
+    if (next === "DELIVERED") {
+      set.deliveredAt = new Date();
+      set.reviewFollowUpSentAt = null;
+    }
+
+    const res = await Order.updateOne(
+      { _id: id, fulfillmentStatus: order.fulfillmentStatus, ...(order.manualTrackingEnabled ? { updatedAt: order.updatedAt } : {}) },
+      { $set: set }
+    );
+    if (res.modifiedCount > 0) {
+      if (next === "DELIVERED") notifyOrderDelivered(id);
+      return next;
+    }
+    return null;
+  } catch (err) {
+    console.warn("[orderFulfillmentSync]", err?.message);
+    return null;
+  }
+}

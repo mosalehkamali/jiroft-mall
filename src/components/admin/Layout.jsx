@@ -1,0 +1,370 @@
+"use client";
+
+import storeConfig from "base/store.config";
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  FaChartPie,
+  FaRunning,
+  FaBold,
+  FaBoxOpen,
+  FaUsersCog,
+  FaDollarSign,
+  FaEuroSign,
+  FaClock,
+  FaMoneyBillWave,
+  FaCalendarAlt,
+  FaHeadset,
+  FaFileAlt,
+  FaBars,
+  FaTimes,
+  FaLayerGroup,
+} from "react-icons/fa";
+import { HiOutlineLogout } from "react-icons/hi";
+import { AiFillProduct } from "react-icons/ai";
+import { RiMenuFoldLine, RiMenuUnfoldLine } from "react-icons/ri";
+import { FiGitBranch, FiArrowRight } from "react-icons/fi";
+import { ShoppingCart } from "lucide-react";
+import AssistantWidget from "./assistant/AssistantWidget";
+import NotificationBell from "./NotificationBell";
+import { useNotifications } from "./NotificationProvider";
+import { useAdminPermissions } from "./AdminPermissionProvider";
+import ForbiddenNotice from "./ForbiddenNotice";
+
+/* ─── منوی ساید‌بار (بازساخته‌شده — فاز ۱)
+   حذف: صفحه اصلی، ورزشکاران، دسته‌بندی‌ها، نظرات، پیام‌های تماس، پشتیبانی اینستاگرام
+   اضافه: پشتیبانی یکپارچه (نظرات + پیام تماس + اینستاگرام)
+   ادغام‌های مرتبط: صفحه‌ی اصلی → داخل «صفحات سایت»؛ ورزشکاران/دسته‌بندی → داخل هر «ورزش»
+   ─────────────────────────────────────────────────────────────── */
+const menuItems = [
+  { title: "داشبورد", href: "/p-admin", icon: FaChartPie },
+  { title: storeConfig.catalog.departmentLabelPlural, href: "/p-admin/admin-sports", icon: FaRunning },
+  { title: "دسته‌بندی‌ها", href: "/p-admin/admin-categories", icon: FaLayerGroup },
+  { title: "برندها", href: "/p-admin/admin-brands", icon: FaBold },
+  { title: "فرایند سفارش", href: "/p-admin/admin-order-flows", icon: FiGitBranch },
+  { title: "محصولات", href: "/p-admin/admin-products", icon: AiFillProduct },
+  { title: "کالکشن‌ها", href: "/p-admin/admin-events", icon: FaCalendarAlt },
+  { title: "بازار دست دوم", href: "/p-admin/admin-secondHands", icon: FaBoxOpen },
+  { title: "سفارشات", href: "/p-admin/admin-orders", icon: ShoppingCart },
+  { title: "صفحات سایت", href: "/p-admin/admin-pages", icon: FaFileAlt },
+  { title: "مدیریت مالی", href: "/p-admin/financial", icon: FaMoneyBillWave },
+  { title: "کاربران", href: "/p-admin/users", icon: FaUsersCog },
+  { title: "پشتیبانی", href: "/p-admin/support", icon: FaHeadset },
+  { title: "\u0645\u0642\u0627\u0644\u0627\u062a", href: "/p-admin/admin-articles", icon: FaFileAlt },
+];
+
+export default function AdminLayout({ children }) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [prices, setPrices] = useState({ usd: null, eur: null });
+  const [pricesError, setPricesError] = useState(false);
+  const [time, setTime] = useState("");
+  const [mounted, setMounted] = useState(false);
+
+  // حالت اعلان‌ها از لایه‌ی متمرکز (تنها منبعِ حقیقت — بدون polling محلی)
+  const { badgeFor } = useNotifications();
+
+  // دسترسیِ مؤثر — از سرور آمده، پس همان رندرِ اول هم درست است.
+  const { canRoute, admin } = useAdminPermissions();
+
+  // آرایه *قبل از* رندر کوتاه می‌شود: بخشِ غیرمجاز نه placeholder غیرفعال
+  // می‌گذارد نه جای خالی؛ grid/flex در RTL خودش جمع می‌شود.
+  const visibleMenu = menuItems.filter((item) => canRoute(item.href));
+
+  // نگهبانِ کلاینت — فقط برای ناوبریِ نرم و سازگاریِ UI. اجرای واقعی در
+  // middleware است (که rewrite می‌کند)؛ اینجا فقط تضمین می‌کنیم اگر به هر
+  // دلیلی صفحه‌ی غیرمجاز رندر شد، محتوایش دیده نشود. صفحه‌ی ۴۰۳ خودش
+  // استثناست (عمداً در manifest نیست).
+  const routeAllowed = pathname === "/p-admin/403" || canRoute(pathname);
+
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    setMounted(true);
+    const timer = setInterval(() => {
+      const now = new Date();
+      setTime(
+        new Intl.DateTimeFormat("fa-IR", {
+          hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: "Asia/Tehran",
+        }).format(now)
+      );
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const fetchPrices = async () => {
+      try {
+        const res = await fetch("/api/admin/market-rates", {
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]),
+          cache: "no-store",
+        });
+        if (!res.ok) throw new Error(`Currency request failed: ${res.status}`);
+        const data = await res.json();
+        const { usd, eur } = data;
+        if (data.unit !== "toman" || !Number.isFinite(Date.parse(data.updatedAt)) ||
+          ![usd, eur].every((price) => Number.isFinite(price) && price > 0)) {
+          throw new Error("Invalid currency prices");
+        }
+        if (!controller.signal.aborted) {
+          setPrices({ usd, eur });
+          setPricesError(false);
+        }
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setPricesError(true);
+        console.error("Error fetching prices:", error);
+      }
+    };
+    fetchPrices();
+    const priceInterval = setInterval(fetchPrices, 300000);
+    return () => {
+      clearInterval(priceInterval);
+      controller.abort();
+    };
+  }, []);
+
+  const farsiNumber = new Intl.NumberFormat("fa-IR");
+  const formatRate = (value) => Number.isFinite(value) && value > 0
+    ? farsiNumber.format(value)
+    : pricesError ? "ناموجود" : "---";
+  const sidebarWidth = sidebarOpen ? 260 : 76;
+
+  // صفحه‌های داخلی = عمقِ بیشتر از /p-admin/<section>. صفحه‌های سطح‌بالا
+  // (داشبورد و ریشه‌ی هر بخش) دکمه‌ی بازگشت ندارند.
+  const isNested = pathname.split("/").filter(Boolean).length > 2;
+  // صفحه‌ی پیش‌نمایش همیشه در تبِ تازه باز می‌شود (window.open)، پس تاریخچه‌ای
+  // ندارد و بازگشت به fallback یعنی داشبورد می‌افتاد. مقصدِ درست، ویرایشگرِ
+  // *همین* محتواست — و آن دقیقاً همین مسیر بدونِ «/preview» است، برای مقاله،
+  // بروشور، مینی‌مقاله‌ی سری و مینی‌مقاله‌ی دسته یکسان. پس یک قاعده، بدونِ
+  // هیچ شناسه‌ی سفت‌وسختی.
+  const previewEditor = pathname.endsWith("/preview") ? pathname.slice(0, -"/preview".length) : null;
+  const goBack = () => {
+    if (previewEditor) router.push(previewEditor);
+    else if (window.history.length > 1) router.back();
+    else router.push("/p-admin");
+  };
+
+  return (
+    <div className="min-h-screen flex" dir="rtl" style={{ background: "var(--admin-bg)", fontFamily: 'var(--font-sans)' }}>
+      {/* ─── Sidebar ─── */}
+      <motion.aside
+        initial={false}
+        animate={{ width: sidebarWidth }}
+        transition={{ duration: 0.35, ease: [0.4, 0, 0.2, 1] }}
+        className={`admin-aside-mobile fixed right-0 top-[75px] h-[calc(100vh-75px)] z-50 flex flex-col overflow-hidden
+          transition-transform duration-300 ease-in-out
+          ${mobileOpen ? "max-lg:translate-x-0" : "max-lg:translate-x-full"}`}
+        style={{ background: "var(--admin-sidebar-bg)" }}
+      >
+        <div className="absolute inset-0 pointer-events-none opacity-[0.03]"
+          style={{ backgroundImage: `radial-gradient(circle at 1px 1px, white 1px, transparent 0)`, backgroundSize: "20px 20px" }} />
+
+        <div className="absolute top-0 left-0 right-0 h-[2px]"
+          style={{ background: "linear-gradient(90deg, var(--color-primary), var(--color-secondary))" }} />
+
+        {/* Logo */}
+        <div className="relative z-10 flex items-center justify-between px-4 py-5 border-b border-white/[0.06]">
+          <AnimatePresence>
+            {sidebarOpen && (
+              <motion.div initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 10 }}
+                transition={{ duration: 0.2 }} className="flex items-center gap-2.5">
+                <div className="w-8 h-8 flex items-center justify-center text-white text-xs font-bold"
+                  style={{ background: "var(--color-primary)", borderRadius: "var(--admin-radius)" }}>T</div>
+                <div>
+                  <p className="text-white font-bold text-sm tracking-wider leading-none">{storeConfig.brand.nameEn.toUpperCase()}</p>
+                  <p className="text-[10px] font-bold tracking-[0.2em] mt-0.5" style={{ color: "var(--color-secondary)" }}>ADMIN</p>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+          {!sidebarOpen && (
+            <div className="w-8 h-8 flex items-center justify-center text-white text-xs font-bold mx-auto"
+              style={{ background: "var(--color-primary)", borderRadius: "var(--admin-radius)" }}>T</div>
+          )}
+          {sidebarOpen && (
+            <button onClick={() => setSidebarOpen(false)}
+              className="w-8 h-8 flex items-center justify-center text-white/40 hover:text-white hover:bg-white/10 transition-all max-lg:hidden"
+              style={{ borderRadius: "var(--admin-radius)" }}>
+              <RiMenuFoldLine size={18} />
+            </button>
+          )}
+          {/* بستن — فقط موبایل */}
+          <button onClick={() => setMobileOpen(false)} aria-label="بستن منو"
+            className="lg:hidden w-8 h-8 flex items-center justify-center text-white/70 hover:text-white hover:bg-white/10 transition-all"
+            style={{ borderRadius: "var(--admin-radius)" }}>
+            <FaTimes size={18} />
+          </button>
+        </div>
+
+        {!sidebarOpen && (
+          <div className="relative z-10 flex justify-center py-3 border-b border-white/[0.06] max-lg:hidden">
+            <button onClick={() => setSidebarOpen(true)}
+              className="w-8 h-8 flex items-center justify-center text-white/40 hover:text-white hover:bg-white/10 transition-all"
+              style={{ borderRadius: "var(--admin-radius)" }}>
+              <RiMenuUnfoldLine size={18} />
+            </button>
+          </div>
+        )}
+
+        {/* Nav */}
+        <nav className="relative z-10 flex-1 overflow-y-auto admin-scrollbar py-4 px-2 space-y-0.5">
+          {visibleMenu.map((item) => {
+            const Icon = item.icon;
+            const isDashboard = item.href === "/p-admin";
+            const isActive = isDashboard ? pathname === "/p-admin" : pathname.startsWith(item.href);
+            const badge = badgeFor(item.href);
+            return (
+              <Link key={item.href} href={item.href} onClick={() => setMobileOpen(false)}
+                title={!sidebarOpen ? item.title : ""}
+                className={`relative flex items-center gap-3 px-3 py-2.5 transition-all duration-200 group
+                  ${isActive ? "nav-item-active" : "text-white/45 hover:text-white/85 hover:bg-white/[0.05]"}`}
+                style={{ borderRadius: "var(--admin-radius)" }}>
+                <span className={`relative flex-shrink-0 transition-all duration-200 ${isActive ? "text-[var(--color-secondary)]" : "group-hover:scale-110"}`}>
+                  <Icon size={16} />
+                  {!sidebarOpen && badge > 0 && (
+                    <span className="absolute -top-1.5 -left-1.5 w-2 h-2 rounded-full ring-2 ring-[#0f1a15]"
+                      style={{ background: "var(--color-secondary)" }} />
+                  )}
+                </span>
+                <AnimatePresence>
+                  {sidebarOpen && (
+                    <motion.span initial={{ opacity: 0, width: 0 }} animate={{ opacity: 1, width: "auto" }}
+                      exit={{ opacity: 0, width: 0 }} transition={{ duration: 0.2 }}
+                      className="text-sm font-bold whitespace-nowrap overflow-hidden">
+                      {item.title}
+                    </motion.span>
+                  )}
+                </AnimatePresence>
+                {sidebarOpen && badge > 0 && (
+                  <motion.span key={`badge-${badge}`} initial={{ scale: 0.6, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+                    transition={{ type: "spring", stiffness: 500, damping: 22 }}
+                    className="mr-auto min-w-[20px] h-5 px-1.5 flex items-center justify-center rounded-full text-[10px] font-bold tabular-nums"
+                    style={{ background: "var(--color-secondary)", color: "var(--color-dark)" }}>
+                    {badge > 99 ? "۹۹+" : Number(badge).toLocaleString("fa-IR")}
+                  </motion.span>
+                )}
+              </Link>
+            );
+          })}
+        </nav>
+
+        <div className="relative z-10 p-2 border-t border-white/[0.06]">
+          <button className={`w-full flex items-center gap-3 px-3 py-2.5 text-red-400/70 hover:text-red-400 hover:bg-red-500/10 transition-all duration-200 ${!sidebarOpen ? "justify-center" : ""}`}
+            style={{ borderRadius: "var(--admin-radius)" }}>
+            <HiOutlineLogout size={18} />
+            <AnimatePresence>
+              {sidebarOpen && (
+                <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-sm font-bold whitespace-nowrap">
+                  خروج از پنل
+                </motion.span>
+              )}
+            </AnimatePresence>
+          </button>
+        </div>
+      </motion.aside>
+
+      {/* ─── Main ─── */}
+      <motion.div animate={{ marginRight: sidebarWidth }} transition={{ duration: 0.35, ease: [0.4, 0, 0.2, 1] }}
+        className="admin-main-mobile flex-1 flex flex-col min-h-screen min-w-0">
+        {/* Header */}
+        <header className="sticky top-[75px] z-40 flex flex-nowrap items-center justify-between gap-2 px-2 sm:px-6 py-3 border-b"
+          style={{ background: "rgba(244,245,242,0.9)", backdropFilter: "blur(16px)", borderColor: "var(--admin-border)" }}>
+          <div className="flex flex-1 items-center gap-1 sm:gap-2 min-w-0">
+            {/* همبرگر — فقط موبایل: باز کردن ساید‌بار */}
+            <button type="button" aria-label="باز کردن منو" onClick={() => setMobileOpen(true)}
+              className="lg:hidden flex-shrink-0 w-9 h-9 flex items-center justify-center transition-all hover:shadow-sm"
+              style={{ background: "var(--admin-card)", border: "1px solid var(--admin-border)", color: "var(--color-primary)", borderRadius: "var(--admin-radius)" }}>
+              <FaBars size={16} />
+            </button>
+            {/* دکمه‌ی بازگشتِ یکپارچه — فقط صفحه‌های داخلی؛ به صفحه‌ی قبلی برمی‌گردد */}
+            {isNested && (
+              <button type="button" onClick={goBack} aria-label="بازگشت"
+                className="flex-shrink-0 flex items-center justify-center gap-1.5 w-9 sm:w-auto sm:px-3 h-9 text-xs font-bold transition-all hover:shadow-sm"
+                style={{ background: "var(--admin-card)", border: "1px solid var(--admin-border)", color: "var(--color-primary)", borderRadius: "var(--admin-radius)" }}>
+                <FiArrowRight size={14} /><span className="hidden sm:inline">بازگشت</span>
+              </button>
+            )}
+            <span className="hidden sm:inline text-xs font-bold" style={{ color: "var(--admin-text-muted)" }}>پنل مدیریت</span>
+            <span className="hidden sm:inline" style={{ color: "var(--admin-border)" }}>/</span>
+            <span className="hidden sm:block text-xs font-bold truncate" style={{ color: "var(--color-primary)" }}>
+              {visibleMenu.find(m => m.href === "/p-admin" ? pathname === "/p-admin" : pathname.startsWith(m.href))?.title || ""}
+            </span>
+          </div>
+
+          <div className="flex flex-nowrap items-center gap-1 sm:gap-3 flex-shrink-0">
+            <NotificationBell />
+
+            <div className="flex items-center gap-1 sm:gap-2 px-1 sm:px-3 py-1.5 text-xs font-bold tabular-nums whitespace-nowrap"
+              style={{ background: "var(--color-primary-soft)", color: "var(--color-primary)", borderRadius: "var(--admin-radius)" }}>
+              <FaClock size={11} className="animate-pulse" />
+              {mounted ? time : "--:--:--"}
+            </div>
+
+            <div className="flex items-center gap-2 sm:gap-4 px-2 sm:px-4 py-1.5 border text-xs tabular-nums whitespace-nowrap"
+              title={pricesError ? "دریافت نرخ ارز ناموفق بود؛ نرخ‌های موجود مربوط به آخرین دریافت موفق هستند." : undefined}
+              style={{ background: "var(--admin-card)", borderColor: "var(--admin-border)", borderRadius: "var(--admin-radius)" }}>
+              <div className="flex items-center gap-1.5">
+                <div className="w-5 h-5 rounded-full hidden sm:flex items-center justify-center"
+                  style={{ background: "var(--color-primary-soft)", color: "var(--color-primary)" }}>
+                  <FaDollarSign size={9} />
+                </div>
+                <div>
+                  <p style={{ color: "var(--admin-text-muted)" }} className="text-[10px] font-bold">دلار ({storeConfig.commerce.currency.label})</p>
+                  <p className="font-bold" style={{ color: "var(--admin-text)" }}>{formatRate(prices.usd)}</p>
+                </div>
+              </div>
+              <div className="w-px h-6" style={{ background: "var(--admin-border)" }} />
+              <div className="flex items-center gap-1.5">
+                <div className="w-5 h-5 rounded-full hidden sm:flex items-center justify-center"
+                  style={{ background: "var(--color-secondary-soft)", color: "var(--admin-warning)" }}>
+                  <FaEuroSign size={9} />
+                </div>
+                <div>
+                  <p style={{ color: "var(--admin-text-muted)" }} className="text-[10px] font-bold">یورو ({storeConfig.commerce.currency.label})</p>
+                  <p className="font-bold" style={{ color: "var(--admin-text)" }}>{formatRate(prices.eur)}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="hidden md:flex items-center gap-2 px-3 py-1.5 border cursor-pointer hover:shadow-sm transition-all"
+              style={{ background: "var(--admin-card)", borderColor: "var(--admin-border)", borderRadius: "var(--admin-radius)" }}>
+              <div className="w-7 h-7 overflow-hidden flex items-center justify-center text-white text-xs font-bold"
+                style={{ background: "var(--color-primary)", borderRadius: "var(--admin-radius)" }}>
+                <img
+                  src={`https://ui-avatars.com/api/?name=${encodeURIComponent(admin?.name || "Admin")}&background=004225&color=fff&size=56`}
+                  alt="" className="w-full h-full object-cover" />
+              </div>
+              <div className="hidden md:block">
+                <p className="text-xs font-bold leading-none" style={{ color: "var(--admin-text)" }}>{admin?.name || "مدیریت"}</p>
+                <p className="text-[10px] font-bold mt-0.5" style={{ color: "var(--admin-text-muted)" }}>{admin?.title || "خوش آمدید"}</p>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <main className="flex-1 p-4 sm:p-6 min-w-0">
+          <motion.div key={pathname} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: "easeOut" }}>
+            {routeAllowed ? children : <ForbiddenNotice reason="forbidden" />}
+          </motion.div>
+        </main>
+      </motion.div>
+
+      <AssistantWidget />
+      <AnimatePresence>
+        {mobileOpen && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}
+            onClick={() => setMobileOpen(false)} className="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-[2px] lg:hidden" />
+        )}
+      </AnimatePresence>
+
+    </div>
+  );
+}

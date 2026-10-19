@@ -1,0 +1,600 @@
+@import "tailwindcss";
+
+/* Theme tokens. These are fallbacks: the live values come from store.config.js
+   (theme.colors), emitted by src/components/common/StoreHead.jsx in every root
+   layout. .site-colors: wherever site content renders inside the admin theme
+   (block previews) it must keep the site colours, not the panel green. */
+:root,
+.site-colors {
+  --primary: 221 83% 53%;
+  --secondary: 0 0% 6%;
+  --background: 0 0% 100%;
+  --foreground: 0 0% 10%;
+  --border: 0 0% 85%;
+  --color-primary: #2563eb;
+  --color-primary-dark: #1d4ed8;
+  --color-secondary: #f59e0b;
+  --color-dark: #111827;
+  --color-text: #0f172a;
+  --color-background: #ffffff;
+  --color-border: #e5e7eb;
+  --color-surface: #f1f5f9;
+  --color-surface-soft: #f8fafc;
+  --color-muted: #6b7280;
+  --radius: 8px;
+  --font-sans: "Vazirmatn", system-ui, -apple-system, sans-serif;
+}
+
+/* Display font for event/banner templates (SIL Open Font License). Add your
+   own licensed fonts the same way and list them in src/lib/eventFonts.js. */
+@font-face {
+  font-family: "Lalezar";
+  src: url("/fonts/Lalezar-Regular.ttf") format("truetype");
+  font-weight: normal;
+  font-style: normal;
+}
+
+@layer base {
+  * {
+    direction: rtl;
+  }
+
+  body {
+    font-family: var(--font-sans);
+  }
+
+  a,
+  button {
+    cursor: pointer;
+  }
+}
+
+@layer utilities {
+  .glass-effect {
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .diagonal-separator {
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 0 85%);
+  }
+
+  .diagonal-separator-reverse {
+    clip-path: polygon(0 15%, 100% 0, 100% 100%, 0 100%);
+  }
+}
+
+.hero-pagination {
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center;
+  width: 100% !important;
+  text-align: center !important;
+}
+
+/* ================================
+   Continuous Marquee Animation
+   ================================ */
+
+@keyframes marquee {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  100% {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+/* کلاس انیمیشن */
+.animate-marquee {
+  animation: marquee 25s linear infinite;
+  will-change: transform;
+}
+
+/* توقف حرکت روی hover */
+.animate-marquee:hover {
+  animation-play-state: paused;
+}
+
+/* ===== Container ===== */
+.rmdp-wrapper {
+  background-color: #ffffff !important;
+  border-radius: 1rem !important;
+  border: 1px solid #e5e7eb !important; /* gray-200 */
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08) !important;
+  font-family: inherit !important;
+}
+
+/* ===== Header (Month / Year) ===== */
+.rmdp-header-values {
+  color: var(--color-primary) !important;
+  font-weight: 800 !important;
+  font-size: 14px !important;
+}
+
+/* ===== Arrows ===== */
+.rmdp-arrow-container {
+  transition: all 0.2s ease;
+  border-radius: 9999px;
+}
+
+.rmdp-arrow-container:hover {
+  background-color: var(--color-secondary) !important;
+}
+
+.rmdp-arrow {
+  border-color: var(--color-primary) !important;
+}
+
+/* ===== Week Days ===== */
+.rmdp-week-day {
+  color: #9ca3af !important; /* gray-400 */
+  font-size: 11px !important;
+  font-weight: 600 !important;
+}
+
+/* ===== Normal Days ===== */
+.rmdp-day span {
+  border-radius: 0.75rem;
+  transition: all 0.2s ease;
+  font-size: 12px;
+}
+
+.rmdp-day span:hover {
+  opacity: 0.5;
+  background-color: var(--color-primary) !important;
+}
+
+/* ===== Selected Day ===== */
+.rmdp-day.rmdp-selected span {
+  background-color: var(--color-primary) !important;
+  color: #ffffff !important;
+  font-weight: bold;
+}
+
+/* ===== Today ===== */
+.rmdp-day.rmdp-today span {
+  border: 1px solid var(--color-secondary) !important;
+}
+
+/* ===== Range (if you use it later) ===== */
+.rmdp-range {
+  background-color: var(--color-secondary) !important;
+}
+
+/* ===== Disabled ===== */
+.rmdp-day.rmdp-disabled span {
+  color: #d1d5db !important; /* gray-300 */
+}
+
+/* ===== Input Style ===== */
+.rmdp-input {
+  border-radius: var(--radius) !important;
+  border: 1px solid #e5e7eb !important;
+  padding: 0.5rem !important;
+  font-size: 12px !important;
+  transition: all 0.2s ease !important;
+}
+
+.rmdp-input:focus {
+  border-color: var(--color-secondary) !important;
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.05);
+}
+
+/* ۱. تنظیم عرض اسکرول‌بار */
+::-webkit-scrollbar {
+  width: 12px;
+}
+
+/* ۲. استایل پس‌زمینه (Track) */
+::-webkit-scrollbar-track {
+  background: #3b3f49;
+  border-radius: 10px;
+}
+
+/* ۳. استایل خودِ دستگیره اسکرول (Thumb) */
+::-webkit-scrollbar-thumb {
+  background-color: var(--color-primary);
+  border-radius: 10px;
+  border: 3px solid #ffffff0d; /* ایجاد فاصله بین دستگیره و بدنه */
+}
+
+/* ۴. تغییر رنگ وقتی موس روی آن می‌رود */
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-primary);
+  opacity: 0.8;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.6s ease-out forwards;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* تنظیمات بولت‌ها برای قرارگیری در وسط */
+.hero-custom-pagination {
+  display: flex !important;
+  justify-content: center !important;
+  width: 100% !important;
+}
+
+.hero-custom-pagination .swiper-pagination-bullet {
+  width: 10px !important;
+  height: 10px !important;
+  background: rgba(255, 255, 255, 0.6) !important;
+  opacity: 1 !important;
+  cursor: pointer !important;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  border-radius: 50% !important;
+  margin: 0 6px !important;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+}
+
+.hero-custom-pagination .swiper-pagination-bullet-active {
+  width: 35px !important;
+  background: var(--color-primary) !important;
+  border-radius: 5px !important;
+}
+
+.slider-pagination-2 .swiper-pagination-bullet {
+  width: 8px;
+  height: 8px;
+  background: #e2e8f0;
+  opacity: 1;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.slider-pagination-2 .swiper-pagination-bullet-active {
+  width: 28px;
+  border-radius: 4px;
+  background: var(--color-primary);
+}
+@media (max-width: 640px) {
+  .slider-pagination-2 .swiper-pagination-bullet {
+    width: 6px;
+    height: 6px;
+  }
+  .slider-pagination-2 .swiper-pagination-bullet-active {
+    width: 20px;
+  }
+}
+
+/* Product Slider Pagination */
+
+.slider-pagination {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+}
+
+.slider-pagination .swiper-pagination-bullet {
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: #e2e8f0;
+  opacity: 1;
+  cursor: pointer;
+
+  transform-origin: center;
+
+  transition:
+    width 0.35s ease,
+    background-color 0.35s ease,
+    transform 0.35s ease;
+}
+
+.slider-pagination .swiper-pagination-bullet-active {
+  width: 28px;
+  border-radius: 9999px;
+  background: var(--color-primary);
+  transform: scale(1.05);
+}
+
+@media (max-width: 640px) {
+  .slider-pagination .swiper-pagination-bullet {
+    width: 6px;
+    height: 6px;
+  }
+
+  .slider-pagination .swiper-pagination-bullet-active {
+    width: 20px;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideInLeft {
+  from {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.2s ease-out;
+}
+
+/* شناور شدن ملایم المان‌های بنر تطبیق محصول */
+@keyframes match-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+.animate-slideInLeft {
+  animation: slideInLeft 0.3s ease-out;
+}
+
+/* شخصی‌سازی استایل‌های Toastify */
+.Toastify__toast--success {
+  background-color: #f0fdf4 !important; /* سبز خیلی ملایم برای پس‌زمینه */
+  color: #166534 !important;
+  border-right: 4px solid #22c55e; /* نوار کنار */
+}
+
+.Toastify__toast--error {
+  background-color: #fef2f2 !important;
+  color: #991b1b !important;
+  border-right: 4px solid #ef4444;
+}
+
+/* اگر از توست‌های پیش‌فرض یا اینفو استفاده می‌کنید که تم اصلی سایت را داشته باشند */
+.Toastify__toast--info,
+.Toastify__toast--default {
+  background-color: var(--color-background) !important;
+  color: var(--color-primary) !important;
+  border-right: 4px solid var(--color-primary);
+}
+
+.Toastify__progress-bar--info,
+.Toastify__progress-bar--default {
+  background: var(--color-primary) !important;
+}
+
+/* فونت توست‌ها را هم با سایت هماهنگ کنید */
+.Toastify__toast {
+  font-family: var(--font-sans) !important;
+  direction: rtl;
+}
+
+/* حذفِ کادرِ فوکوسِ پیش‌فرضِ مرورگر روی نمودارِ راداریِ صفحه‌ی مقایسه — فقط همین یک نمودار */
+.compare-radar-chart-wrapper svg,
+.compare-radar-chart-wrapper svg *,
+.compare-radar-chart-wrapper .recharts-wrapper,
+.compare-radar-chart-wrapper .recharts-wrapper * {
+  outline: none !important;
+}
+.compare-radar-chart-wrapper svg:focus,
+.compare-radar-chart-wrapper svg:focus-visible,
+.compare-radar-chart-wrapper .recharts-wrapper:focus,
+.compare-radar-chart-wrapper .recharts-wrapper:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* ─── جعبه‌ی چیدمانِ بلوک (عرضِ درصدی، فاصله‌ی هر طرف، جای‌گیری) ───
+   مقادیر از inline style می‌آیند (متغیرهای --b*)، ولی *کِی* اعمال شوند اینجا
+   تصمیم گرفته می‌شود — چون media query در inline style ممکن نیست. همین مرز،
+   «چیدمان» را از «واکنش‌گرایی» جدا نگه می‌دارد.
+
+   پیش‌فرضِ موبایل تمام‌عرض است: درصد فقط از md به بالا اعمال می‌شود، مگر اینکه
+   ادمین صریحاً «در موبایل هم حفظ شود» را بزند. نبودِ این قاعده یعنی یک بلوکِ ۳۰٪
+   روی گوشی به ستونی باریک و ناخوانا تبدیل شود. */
+/* ─── بلوک‌های روی تصویر: یک مقیاسِ یکنواخت، نه فهرستی از عنصرها ───
+   بلوک‌های رویی اندازه‌های ثابتِ خودشان را دارند (text-2xl، px-6 py-5،
+   border-r-4) که نقطه‌شکن‌های *صفحه* را می‌خوانند نه عرضِ تصویر؛ روی موبایل
+   تصویر کوچک می‌شد و بلوک همان‌قدر بزرگ می‌ماند.
+
+   تلاشِ قبلی اندازه‌ها را عنصر‌به‌عنصر در em بازنویسی می‌کرد و همیشه ناقص بود:
+   هر بلوکی که در آن فهرست نبود (نقل‌قول، نکته‌ی برجسته، جدول، …) دست‌نخورده
+   می‌ماند. اینجا به‌جای شمردنِ عنصرها، *کلِ* لایه در یک فضای مرجع چیده می‌شود و
+   بعد یکجا کوچک می‌شود — پس هر بلوکی، حتی آن‌هایی که هنوز ساخته نشده‌اند، با
+   همان یک نسبت کم می‌شود: عرض، ارتفاع، قلم، تورفتگی، حاشیه، مرز و شعاعِ گوشه.
+
+   zoom (نه transform) چون zoom روی *چیدمان* اثر می‌گذارد: درصدها در فضای
+   کوچک‌شده حل می‌شوند، پس «۱۰۰٪» دقیقاً قاب را پر می‌کند و چیزی برای بریدن
+   نمی‌ماند. نسبت با tan(atan2(a, b)) به‌دست می‌آید، که راهِ استانداردِ گرفتنِ یک
+   عددِ بی‌واحد از تقسیمِ دو طول است.
+
+   min(1, …) یعنی قابِ پهن‌تر از عرضِ مرجع هیچ تغییری نمی‌کند — دسکتاپ دقیقاً
+   همان چیزی است که بود. */
+.a-image-overlay {
+  container-type: inline-size;
+}
+.a-overlay-scale {
+  /* عرضِ مرجع: جایی که ادمین ترکیب را می‌چیند. قاب‌های پهن‌تر مقیاس نمی‌گیرند. */
+  --a-overlay-ref: 40rem;
+  width: 100%;
+  height: 100%;
+  gap: 0.75rem;
+  padding: 1.5rem;
+}
+@supports (zoom: 1) {
+  .a-overlay-scale {
+    zoom: min(1, tan(atan2(100cqw, var(--a-overlay-ref))));
+  }
+}
+
+/* ─── اسلایدرِ تصویر ───
+   «اندازه‌ی ثابت» ویژگیِ تعریفیِ این بلوک است: تصویرِ کوتاه نباید اسلایدر را
+   کوتاه کند و تصویرِ بلند بلندش. ارتفاع یک متغیّر روی خودِ ظرف است و هر لایه‌ی
+   داخلِ بلوکِ تصویر (figure، شبکه‌ی کاشی‌ها، قابِ لایه‌دار) همان را پر می‌کند؛
+   خودِ <img> با object-fit: cover در قاب برش می‌خورد.
+
+   چرا انتخابگرِ نزولی و نه !important: کلاس‌های خودِ بلوکِ تصویر تک‌کلاسه‌اند
+   (h-auto، w-full)، و «.a-slide img» از آن‌ها خاص‌تر است — پس بدونِ زور، و
+   بدونِ دست‌زدن به خودِ بلوکِ تصویر که بیرونِ اسلایدر باید دست‌نخورده بماند.
+
+   نوارِ اسکرول پنهان است چون ناوبری با فلش و کشیدن انجام می‌شود؛ خودِ اسکرول
+   (و در نتیجه لمس در موبایل) دست‌نخورده می‌ماند. */
+.a-slider {
+  scrollbar-width: none;
+}
+.a-slider::-webkit-scrollbar {
+  display: none;
+}
+.a-slide {
+  height: var(--slide-h);
+  overflow: hidden;
+}
+.a-slide > *,
+.a-slide figure,
+.a-slide figure > div,
+.a-slide figure > div > div,
+.a-slide .relative {
+  height: 100%;
+  margin: 0;
+}
+.a-slide img {
+  height: 100%;
+  width: 100%;
+  object-fit: cover;
+}
+/* زیرنویسِ تصویر داخلِ قاب می‌ماند و ارتفاع را هل نمی‌دهد. */
+.a-slide figcaption {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  margin: 0;
+  background: rgba(0, 0, 0, 0.45);
+  padding: 0.5rem;
+  color: #fff;
+}
+
+/* ─── ارتفاعِ خطِ متنِ بلوک‌ها ───
+   ارتفاعِ خط ثابت بود (leading-9 و leading-8، یعنی ۳۶ و ۳۲ پیکسل)، پس با عوض‌شدنِ
+   اندازه‌ی قلم تکان نمی‌خورد: متنِ ۳۲ پیکسلی خطوطش روی هم می‌افتاد و متنِ ریز
+   بی‌دلیل باز می‌شد. عددِ بی‌واحد (مثلِ ۱.۷۵) هم کافی نیست — نسبت را برای همه‌ی
+   اندازه‌ها یکی نگه می‌دارد، در حالی که متنِ درشت‌تر نسبتِ *کمتری* می‌خواهد.
+
+   calc(8px + 1em) همان رابطه‌ی خطیِ آشناست و در هر اندازه، عددِ طبیعی می‌دهد.
+   عددِ پایه از ۱۲ به ۸ آمد، چون ۱٫۷۵ برای متنِ فارسیِ این قالب بازتر از لازم بود:
+
+   | اندازه | ارتفاع | نسبت |
+   |---|---|---|
+   | ۱۲px | ۲۰px | ۱٫۶۷ |
+   | ۱۶px (پیش‌فرضِ متن) | ۲۴px | ۱٫۵۰ |
+   | ۲۴px | ۳۲px | ۱٫۳۳ |
+   | ۳۲px | ۴۰px | ۱٫۲۵ |
+   | ۴۸px | ۵۶px | ۱٫۱۷ |
+
+   شیب همان ۱em می‌ماند، پس رفتارِ «متنِ درشت‌تر، نسبتِ کمتر» دست‌نخورده است و
+   تنها چیزی که عوض شد، *پیش‌فرض* است — مقدارِ دستیِ ادمین از استایلِ درون‌خطی
+   می‌آید و این قاعده هرگز به آن نمی‌رسد.
+
+   چرا قاعده روی فرزندان هم تکرار می‌شود: line-height با واحد، *مقدارِ محاسبه‌شده*
+   را به ارث می‌دهد نه فرمول را. بدونِ «.rt-flow *»، یک span با font-size: 32px
+   همان ۲۸ پیکسلِ پاراگرافِ ۱۶ پیکسلی را می‌گرفت — یعنی دقیقاً همان باگ.
+   اندازه‌ی قلم اینجا دست نمی‌خورد؛ فقط ارتفاعِ خط. */
+.rt-flow,
+.rt-flow * {
+  line-height: calc(8px + 1em);
+}
+/* ارتفاعِ خطِ دستی (style درون‌خطی روی span) باید هم روی خودش بنشیند هم روی
+   فرزندانش. خودِ span با استایلِ درون‌خطی برنده است؛ فرزندان اما قاعده‌ی بالا را
+   می‌گرفتند و مقدارِ ادمین را خنثی می‌کردند. inherit یعنی *ضریبِ* والد (عدد
+   بی‌واحد به‌صورتِ عدد به ارث می‌رسد)، پس فرزندِ با اندازه‌ی دیگر هم همان نسبت را
+   می‌گیرد. ویژگیِ صفت است، پس نه به نامِ کلاس وابسته است نه به ترتیبِ رندر. */
+.rt-flow [style*="line-height"] * {
+  line-height: inherit;
+}
+/* rt-inline: همان دو قاعده، ولی فقط برای *فرزندان*. نکته‌ی برجسته، پاسخِ پرسش و
+   توضیحِ خبرنامه leading ثابتِ خودشان را نگه می‌دارند (متنی که فقط پررنگ شده جابه‌جا
+   نمی‌شود)، و spanِ اندازه‌دارِ داخلشان ارتفاعِ خطِ متناسب با اندازه‌ی خودش را می‌گیرد. */
+.rt-inline * {
+  line-height: calc(8px + 1em);
+}
+.rt-inline [style*="line-height"] * {
+  line-height: inherit;
+}
+
+.a-block-box {
+  display: flex;
+  justify-content: var(--bj, flex-start);
+  margin-top: var(--bt, 0);
+  margin-bottom: var(--bb, 0);
+}
+.a-block-box > * {
+  width: 100%;
+}
+/* عرضِ افقی از عرضِ موجود کم می‌شود (--bmx) تا بلوکِ ۱۰۰٪ با حاشیه‌ی کناری هم
+   هرگز سرریز نکند؛ بدونِ حاشیه‌ی منفی و بدونِ اسکرولِ افقی. */
+@media (min-width: 768px) {
+  .a-block-box > * {
+    width: var(--bw, 100%);
+    max-width: calc(100% - var(--bmx, 0rem));
+    margin-left: var(--bl, 0);
+    margin-right: var(--br, 0);
+  }
+}
+/* «در موبایل هم حفظ شود»: همان قاعده، بدونِ شرطِ breakpoint. */
+.a-block-box--keep > * {
+  width: var(--bw, 100%);
+  max-width: calc(100% - var(--bmx, 0rem));
+  margin-left: var(--bl, 0);
+  margin-right: var(--br, 0);
+}
+
+/* ─── کشیدن با ماوس برای اسکرولِ افقی ───
+   کلاس‌ها را جزیره‌ی DragScroll می‌گذارد و برمی‌دارد: «drag-scroll» یعنی این ظرف
+   واقعاً اسکرولِ افقی دارد (وگرنه نشانگر نباید عوض شود)، و «--active» یعنی همین
+   حالا در حالِ کشیدن است.
+
+   snap فقط حینِ کشیدن خاموش می‌شود: با scroll-snap: mandatory هر نوشتنِ
+   scrollLeft بی‌درنگ به نزدیک‌ترین نقطه می‌پرد و حرکت تکه‌تکه می‌شود. پس از رها
+   کردن دوباره روشن است و ظرف خودش سرِ جای درست می‌نشیند. */
+.drag-scroll {
+  cursor: grab;
+}
+.drag-scroll--active {
+  cursor: grabbing;
+  scroll-snap-type: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+/* روی لمس دست نمی‌زنیم: اسکرولِ بومی از قبل درست کار می‌کند. */
+@media (hover: none) {
+  .drag-scroll {
+    cursor: auto;
+  }
+}

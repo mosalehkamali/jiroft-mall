@@ -1,0 +1,46 @@
+const WORD_PATTERN = /[\p{L}\p{N}]+/gu;
+
+function collectText(value, output, seen) {
+  if (typeof value === "string") {
+    output.push(value.replace(/<[^>]*>/g, " "));
+    return;
+  }
+  if (Array.isArray(value)) {
+    if (seen.has(value)) return;
+    seen.add(value);
+    for (const item of value) collectText(item, output, seen);
+    return;
+  }
+  if (value && typeof value === "object") {
+    // اسناد Mongoose (ساب‌داکیومنت‌های blocks) ارجاع چرخه‌ای به والد دارند؛
+    // seen جلوی پیمایش بی‌نهایت را می‌گیرد و toJSON دادهٔ خالص را می‌دهد.
+    if (seen.has(value)) return;
+    seen.add(value);
+    const plain = typeof value.toObject === "function" ? value.toObject() : value;
+    if (plain !== value && plain && typeof plain === "object") {
+      collectText(plain, output, seen);
+      return;
+    }
+    for (const [key, item] of Object.entries(plain)) {
+      // بلوک‌های متنی کنارِ متنِ ساده یک نسخه‌ی قالب‌بندی‌شده‌ی *همان* متن دارند؛
+      // شمردنِ هر دو، تعدادِ کلمات و زمانِ مطالعه را دو برابر می‌کرد. بلوکِ
+      // «HTML سفارشی» که فقط html دارد از این شرط رد نمی‌شود و شمرده می‌ماند.
+      if (key === "html" && typeof plain.text === "string") continue;
+      // همین قاعده برای پاسخِ پرسش و توضیحِ خبرنامه (answer/answerHtml، …).
+      if (key.endsWith("Html") && typeof plain[key.slice(0, -4)] === "string") continue;
+      collectText(item, output, seen);
+    }
+  }
+}
+
+export function countArticleWords(value) {
+  const text = [];
+  collectText(value, text, new WeakSet());
+  return text.join(" ").match(WORD_PATTERN)?.length || 0;
+}
+
+export function calculateReadingTime(blocks, wordsPerMinute = 200) {
+  const words = countArticleWords(blocks);
+  return words === 0 ? 0 : Math.max(1, Math.ceil(words / wordsPerMinute));
+}
+
