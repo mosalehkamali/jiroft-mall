@@ -41,7 +41,7 @@ export default function FeaturedArticles({ articles = [] }) {
             id="featured-articles-title"
             title={`مقالات منتخب ${storeConfig.brand.name}`}
             highlight="مقالات"
-            subtitle="راهنماها، داستان‌ها و تازه‌ترین نگاه‌های دنیای ورزش"
+            subtitle="راهنماها، داستان‌ها و تازه‌ترین مطالب"
           />
         </div>
 

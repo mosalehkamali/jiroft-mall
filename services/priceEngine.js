@@ -28,7 +28,7 @@ import { resolveServiceSelection } from "@/lib/serviceConfig";
 import { resolveOrderedSelections } from "@/lib/flowConditions";
 import { buildStepSequence } from "@/lib/flowTraversal";
 import { isFeatureEnabled } from "@/lib/features";
-import { purchaseStatus, toPublicProduct } from "@/lib/productRules";
+import { filterableCustomFields, purchaseStatus, toPublicProduct } from "@/lib/productRules";
 import { rulesResolver } from "base/services/productRules.service";
 
 // Discount rules, flash sales, quantity tiers and coupons all belong to the
@@ -329,8 +329,16 @@ export async function attachListingPrices(products, rate) {
 
     // listings leave the server here: strip internal fields, attach "can it be bought"
     const productRules = rulesOf(p.category);
+    const pub = toPublicProduct(p, productRules);
+    // مقدارِ فیلدهای سفارشیِ قابل‌فیلتر کنارِ ویژگی‌ها، تا فیلترِ سمتِ کلاینتِ فهرست ببیندشان
+    const filterValues = Object.fromEntries(
+      filterableCustomFields(productRules)
+        .map((f) => [f.name, pub.customFields?.[f.name]])
+        .filter(([, v]) => v != null && v !== ""),
+    );
     return {
-      ...toPublicProduct(p, productRules),
+      ...pub,
+      attributes: { ...filterValues, ...(pub.attributes || {}) },
       purchase: publicPurchase(purchaseStatus(p, productRules)),
       basePriceToman,
       finalPriceToman,
@@ -674,7 +682,12 @@ export async function buildFlowAddonResolver(cartItems, productMap, rate) {
  *   rate: number
  * }>}
  */
-export async function computeCartPrice(cartItems, user = null, couponCode = null) {
+/**
+ * options.adminOverride: an admin editing an existing order may add any
+ * product — the storefront purchasability rules (store.config.js) are for
+ * customers. Variant ownership is still checked.
+ */
+export async function computeCartPrice(cartItems, user = null, couponCode = null, { adminOverride = false } = {}) {
   await connectToDB();
 
   const rate = await getRate();
@@ -731,6 +744,7 @@ export async function computeCartPrice(cartItems, user = null, couponCode = null
       blocked.add(idx);
       return;
     }
+    if (adminOverride) return;
     const status = purchaseStatus(p, rulesOf(p.category), { variant: v });
     if (!status.purchasable) {
       unavailable.push({ index: idx, productId: ci.productId, variantId: ci.variantId ?? null, name: p.name, ...publicPurchase(status) });

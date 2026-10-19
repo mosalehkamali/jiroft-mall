@@ -2945,7 +2945,9 @@ test("the navigation guard reads live membership, not the JWT role claim", () =>
   assert.match(middleware, /getAdminContext\(\{ token \}\)/);
   assert.match(middleware, /canAccessAdminRoute\(ctx\.permissions, pathname \+ search\)/);
   assert.match(middleware, /runtime: "nodejs"/, "کوئریِ mongoose در runtime لبه کار نمی‌کند");
-  assert.match(middleware, /matcher: \["\/p-user\/:path\*", "\/p-admin\/:path\*"\]/);
+  // the matcher covers every non-static path (feature gating), the panels included
+  assert.match(middleware, /matcher: \["\/\(\(\?!_next\/static/);
+  assert.match(middleware, /pathname\.startsWith\("\/p-admin"\)/);
 });
 
 test("resolveAdminContext never imports next/headers statically", () => {
@@ -3198,7 +3200,7 @@ test("catalog create/edit/delete controls are gated on their own module keys", (
       "sports.delete",
       "sports.reorder",
     ],
-    "src/app/(Admin-Panel)/p-admin/admin-sports/[sportId]/page.jsx": [
+    "src/components/admin/CategoryGrid.jsx": [
       "sports.edit",
       "categories.create",
       "categories.reorder",
@@ -3277,7 +3279,7 @@ test("the shared product card is the single gate for product row actions", () =>
 test("drag-to-reorder is disabled without the reorder permission", () => {
   const cases = [
     ["src/app/(Admin-Panel)/p-admin/admin-sports/page.jsx", "sports.reorder"],
-    ["src/app/(Admin-Panel)/p-admin/admin-sports/[sportId]/page.jsx", "categories.reorder"],
+    ["src/components/admin/CategoryGrid.jsx", "categories.reorder"],
     ["src/app/(Admin-Panel)/p-admin/admin-brands/page.jsx", "brands.reorder"],
     ["src/components/admin/BrandAdminPage.jsx", "series.edit"],
     ["src/components/admin/SerieAdminPage.jsx", "series.edit"],

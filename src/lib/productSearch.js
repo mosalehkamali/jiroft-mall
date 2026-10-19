@@ -17,6 +17,8 @@ import {
   rankBySearch,
   searchTokens,
 } from "@/lib/search";
+import { isFeatureEnabled } from "@/lib/features";
+import { resolveProductRules, searchablePaths } from "@/lib/productRules";
 
 /** فیلدهای متنیِ محصول که جستجو رویشان انجام می‌شود */
 export const PRODUCT_SEARCH_FIELDS = ["name", "sku", "slug", "color", "tag"];
@@ -27,20 +29,43 @@ export const PRODUCT_SEARCH_FIELDS = ["name", "sku", "slug", "color", "tag"];
  * پس «Blade racket» فقط با همین وصله جواب می‌دهد.
  */
 const REF_SOURCES = [
-  ["brand", Brand],
-  ["serie", Serie],
-  ["category", Category],
-  ["sport", Sport],
+  ["brand", Brand, "brands"],
+  ["serie", Serie, "series"],
+  ["category", Category, null],
+  ["sport", Sport, "departments"],
 ];
 
+/**
+ * فیلدهایی که جستجو رویشان انجام می‌شود. ادمین همه‌چیز را جستجو می‌کند؛ مشتری فقط
+ * آنچه store.config.js «searchable» کرده (به‌علاوه‌ی ویژگی‌های دسته‌ی قابل‌جستجو) —
+ * هرگز فیلدی که به او نمایش داده نمی‌شود.
+ */
+async function searchFields(storefront) {
+  const rules = resolveProductRules([]);
+  if (!storefront) {
+    return [...PRODUCT_SEARCH_FIELDS, ...rules.customFields.map((f) => `customFields.${f.key}`)];
+  }
+  const attrNames = await Category.distinct("attributes.name", {
+    attributes: { $elemMatch: { searchable: true, isPublic: { $ne: false } } },
+  });
+  const categories = await Category.find({ "attributes.name": { $in: attrNames } }).select("attributes").lean();
+  const searchableAttrs = new Set();
+  for (const c of categories) for (const a of c.attributes || []) if (a.searchable && a.isPublic !== false) searchableAttrs.add(a.name);
+  return [...searchablePaths(rules), ...[...searchableAttrs].map((n) => `attributes.${n}`)];
+}
+
 /** یک بار refهای مرتبط با کلِ کوئری را می‌گیرد (نه یکی به‌ازای هر توکن) */
-async function loadRefCandidates(query) {
+async function loadRefCandidates(query, storefront) {
   const filter = buildSearchFilter(query, ["title", "name", "slug"]);
   if (!filter) return [];
   // `$or` چون اینجا برعکسِ محصول است: کافی است ref *یکی* از توکن‌ها را داشته باشد
   const anyToken = { $or: filter.$and };
+  const rules = resolveProductRules([]);
+  const sources = REF_SOURCES.filter(([field, , feature]) =>
+    (!feature || isFeatureEnabled(feature)) && (!storefront || rules.fields[field]?.searchable || field === "category"),
+  );
   return Promise.all(
-    REF_SOURCES.map(async ([field, Model]) => [
+    sources.map(async ([field, Model]) => [
       field,
       await Model.find(anyToken).select("_id title name slug").lean(),
     ])
@@ -55,12 +80,12 @@ const hasToken = (doc, token) =>
  * متنیِ محصول بیاید یا برند/سریِ محصول را نشان بدهد.
  * فیلترِ ورودی mutate نمی‌شود؛ اگر کوئری خالی باشد عیناً همان برمی‌گردد.
  */
-export async function withProductSearch(filter, query) {
+export async function withProductSearch(filter, query, { storefront = false } = {}) {
   const tokens = searchTokens(query);
   if (!tokens.length) return { ...filter };
 
-  const textConditions = buildSearchFilter(query, PRODUCT_SEARCH_FIELDS).$and;
-  const refs = await loadRefCandidates(query);
+  const textConditions = buildSearchFilter(query, await searchFields(storefront)).$and;
+  const refs = await loadRefCandidates(query, storefront);
 
   const clauses = tokens.map((token, i) => {
     const or = [...textConditions[i].$or];

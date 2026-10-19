@@ -215,8 +215,8 @@ test("بودجه با یک اسلایدرِ دوسَره گرفته می‌شو�
 
   // دو سرِ اسلایدر، نه یکی
   assert.equal(quizSource.match(/type="range"/g)?.length, 2);
-  assert.ok(quizSource.includes('aria-label="حداقل قیمت (تومان)"'));
-  assert.ok(quizSource.includes('aria-label="حداکثر قیمت (تومان)"'));
+  assert.ok(quizSource.includes('aria-label={`حداقل قیمت (${storeConfig.commerce.currency.label})`}'));
+  assert.ok(quizSource.includes('aria-label={`حداکثر قیمت (${storeConfig.commerce.currency.label})`}'));
 });
 
 test("دامنهٔ اسلایدر دقیقاً کف و سقفِ قیمتِ راکت‌های موجود است", () => {

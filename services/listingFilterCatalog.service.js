@@ -11,6 +11,11 @@ import { applyCategorySubtree, getCategorySubtree } from "base/services/category
 import { collectCategorySubtree, filterCategoriesBySelection, selectedCategoryIds } from "base/utils/categorySubtree";
 import { buildCollaborationScopes, collaborationMatchBranches } from "base/utils/brandCollaboration";
 import { buildAttributeMeta, mergeAttributeMeta, productMatchesAttrFilters } from "@/lib/attributeFilters";
+import { filterableCustomFields } from "@/lib/productRules";
+import { rulesResolver } from "base/services/productRules.service";
+
+// فیلدهای سفارشیِ «قابل فیلتر» (store.config.js) در همان مسیرِ ویژگی‌های دسته فیلتر می‌شوند
+const withCustomValues = (p) => ({ ...p, attributes: { ...(p.customFields || {}), ...(p.attributes || {}) } });
 
 const oid = (value) => new mongoose.Types.ObjectId(String(value));
 
@@ -50,9 +55,10 @@ const getCatalog = unstable_cache(async (scope) => {
   else if (scope.sportId) match = await applyProductSportVisibility(match, {
     sportId: scope.sportId, categoryId: scope.categoryId || null,
   });
-  const products = await Product.find(match).select("category attributes color variants")
+  const rulesOf = await rulesResolver();
+  const products = (await Product.find(match).select("category attributes color variants customFields")
     .populate({ path: "category", select: "title name order attributes" })
-    .populate({ path: "variants", select: "attributes color" }).lean();
+    .populate({ path: "variants", select: "attributes color" }).lean()).map(withCustomValues);
   const categories = new Map();
   for (const product of products) {
     const category = product.category;
@@ -80,7 +86,10 @@ const getCatalog = unstable_cache(async (scope) => {
       .map((category) => ({
         _id: category._id, title: category.title || category.name,
         ...(category.descendantIds && { descendantIds: category.descendantIds }),
-        attributeMeta: buildAttributeMeta(category.attributes, category.products),
+        attributeMeta: buildAttributeMeta(
+          [...(category.attributes || []), ...filterableCustomFields(rulesOf(category._id))],
+          category.products,
+        ),
       })),
   }));
 }, ["listing-filter-catalog-v2-kids-subtree"], {

@@ -1,4 +1,5 @@
 "use client";
+import storeConfig from "base/store.config";
 
 import { useEffect, useId, useRef, useState } from "react";
 import { FiAlignCenter, FiAlignJustify, FiAlignLeft, FiAlignRight, FiBold, FiCheck, FiChevronDown, FiItalic, FiLink, FiMenu, FiSlash, FiType, FiUnderline, FiX } from "react-icons/fi";
@@ -141,7 +142,7 @@ export default function RichTextField({ value, onChange, align, onAlign, aligns 
   const [currentLeading, setCurrentLeading] = useState("");
   // رنگِ انتخاب‌شده در state است تا دکمه‌ی «اعمال رنگ» همیشه بداند چه رنگی را
   // دوباره بگذارد، حتی وقتی خودِ input رویدادی نداده است.
-  const [colour, setColour] = useState("var(--color-primary)");
+  const [colour, setColour] = useState(storeConfig.theme.colors.primary);
 
   // همگام‌سازی فقط وقتی ویرایشگر فوکوس ندارد: حینِ تایپ، React نباید به محتوای
   // contentEditable دست بزند (مکان‌نما می‌پرد)، ولی بازیابیِ یک نسخه‌ی قدیمی یا

@@ -15,6 +15,7 @@
  */
 
 import test, { after, before, beforeEach } from "node:test";
+import { PURE_DEPS as PURE } from "./vmDeps.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { register } from "node:module";
@@ -51,9 +52,9 @@ async function load(relative, deps) {
   await loaded.link(
     (name) =>
       new vm.SyntheticModule(
-        Object.keys(deps[name] ?? {}),
+        Object.keys((deps[name] ?? PURE[name]) ?? {}),
         function () {
-          for (const [key, value] of Object.entries(deps[name] ?? {})) {
+          for (const [key, value] of Object.entries((deps[name] ?? PURE[name]) ?? {})) {
             this.setExport(key, value);
           }
         },

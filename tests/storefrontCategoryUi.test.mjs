@@ -10,6 +10,7 @@ register("./aliasHooks.mjs", import.meta.url);
 register("./listingFiltersHooks.mjs", import.meta.url);
 const require = createRequire(import.meta.url);
 const audience = await import("@/lib/navbarAudience");
+const catalogPathLib = await import("@/lib/catalogPath");
 const attributes = await import("@/lib/attributeFilters");
 const subtree = await import("base/utils/categorySubtree");
 const { readBrandGroupedViewCache, writeBrandGroupedViewCache } = await import("@/lib/brandGroupedViewCache");
@@ -34,6 +35,7 @@ test("desktop navbar renders structural parent and child as real links, preservi
   const { default: Menu } = await component("../src/components/features/navbar/MegamenuInteractiveColumns.jsx", {
     "next/link": ({ href, children, className }) => React.createElement("a", { href, className }, children),
     "@/lib/navbarAudience": audience,
+    "@/lib/catalogPath": catalogPathLib,
   });
   const html = renderToStaticMarkup(React.createElement(Menu, {
     sport: { slug: "tennis", categories: [

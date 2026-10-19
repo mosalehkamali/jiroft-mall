@@ -103,7 +103,7 @@ async function buildBaseMatch({ parentSerieId, allDescendantIds, sportId, catego
   const audienceMatch = buildStorefrontAudienceMatch(targetAudience);
   if (audienceMatch) match.targetAudience = audienceMatch;
   // جستجوی توکنی؛ توکنی که در نامِ محصول نیست می‌تواند با برند/سری تطبیق بخورد
-  Object.assign(match, await withProductSearch(match, search));
+  Object.assign(match, await withProductSearch(match, search, { storefront: true }));
   return sportId
     ? applyProductSportVisibility(match, { sportId, categoryId })
     : match;

@@ -23,6 +23,7 @@ async function updateSport(body, { denied = null, missing = false } = {}) {
       json: (body, options = {}) => ({ body, status: options.status || 200 }),
     } },
     '@/lib/revalidate': { revalidateContent: (tags) => calls.push([...tags]) },
+    '@/lib/brandBrochure': { brochureStatusOf: () => null },
     '@/lib/apiError': {
       apiError: (error, status, details) => ({ body: { error, ...details }, status }),
       handleApiError: (error) => { throw error; },

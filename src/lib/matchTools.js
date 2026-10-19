@@ -56,14 +56,3 @@ export function findMatchCategory(categories, sportSlug, categorySlug) {
   );
 }
 
-/**
- * آدرس‌های تک‌بخشیِ قدیمی که واقعاً منتشر شده و ایندکس شده‌اند.
- * هر سه به ورزشِ تنیس تعلق داشتند (تنها دستهٔ راکتی که در آدرسِ قدیمی رندر
- * می‌شد، راکتِ تنیس بود). برای آدرس‌هایی که هرگز زنده نبوده‌اند ریدایرکتِ
- * حدسی اضافه نمی‌کنیم.
- */
-export const LEGACY_MATCH_REDIRECTS = [
-  { from: "/match/racket", to: "/match/tennis/racket" },
-  { from: "/match/string", to: "/match/tennis/string" },
-  { from: "/match/shoes", to: "/match/tennis/shoes" },
-];

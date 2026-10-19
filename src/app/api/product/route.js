@@ -95,7 +95,7 @@ export async function GET(req) {
       query.targetAudience = audienceMatch;
     }
     // جستجوی توکنی و مستقل از ترتیبِ کلمات (فیلترهای بالا دست‌نخورده می‌مانند)
-    const finalQuery = search ? await withProductSearch(query, search) : query;
+    const finalQuery = search ? await withProductSearch(query, search, { storefront: !isAdmin }) : query;
 
     let productsQuery = Product.find(finalQuery)
       .select(isAdmin ? ADMIN_LIST_FIELDS : undefined)

@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { PURE_DEPS as PURE } from "./vmDeps.mjs";
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
@@ -47,8 +48,8 @@ async function checkout(body, { auth = { userId: 'user' }, replay = null, price 
     },
   };
   const loaded = new vm.SourceTextModule(source, { context });
-  await loaded.link((name) => new vm.SyntheticModule(Object.keys(deps[name]), function () {
-    for (const [key, value] of Object.entries(deps[name])) this.setExport(key, value);
+  await loaded.link((name) => new vm.SyntheticModule(Object.keys((deps[name] ?? PURE[name])), function () {
+    for (const [key, value] of Object.entries((deps[name] ?? PURE[name]))) this.setExport(key, value);
   }, { context }));
   await loaded.evaluate();
   return { response: await loaded.namespace.POST({ json: async () => body }), calls };

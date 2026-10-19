@@ -181,6 +181,7 @@ export const ADMIN_API_PERMISSIONS = {
     PATCH: "orders.changeStatus",
     DELETE: "orders.delete",
   },
+  "/admin/orders/item-options": { GET: "orders.editItems" },
   "/admin/orders/[orderId]/items": {
     POST: "orders.editItems",
     PATCH: "orders.editItems",
@@ -286,7 +287,8 @@ export const PUBLIC_ADMIN_API_PERMISSIONS = {
   "/categories/create": { POST: "categories.create" },
   "/categories/[categoryId]": {
     PUT: "categories.edit",
-    DELETE: "categories.delete",
+    // deleting a category deletes its products too
+    DELETE: ["categories.delete", "products.delete"],
   },
   "/categories/reorder": { PUT: "categories.reorder" },
 

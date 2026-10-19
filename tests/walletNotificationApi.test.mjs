@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { PURE_DEPS as PURE } from "./vmDeps.mjs";
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { readFile } from 'node:fs/promises';
@@ -6,8 +7,8 @@ import { readFile } from 'node:fs/promises';
 async function load(path, deps, env = {}) {
   const context = vm.createContext({ process: { env }, console: { warn() {}, error() {}, log() {} }, Intl });
   const module = new vm.SourceTextModule(await readFile(new URL(path, import.meta.url), 'utf8'), { context });
-  await module.link(name => new vm.SyntheticModule(Object.keys(deps[name]), function () {
-    for (const [key, value] of Object.entries(deps[name])) this.setExport(key, value);
+  await module.link(name => new vm.SyntheticModule(Object.keys((deps[name] ?? PURE[name])), function () {
+    for (const [key, value] of Object.entries((deps[name] ?? PURE[name]))) this.setExport(key, value);
   }, { context }));
   await module.evaluate();
   return module.namespace;
@@ -51,7 +52,7 @@ test('wallet emails describe debit/credit accurately, escape administrator input
     assert.ok(payload.html.includes('&lt;script&gt;'));
     assert.ok(!payload.html.includes('<script>'));
     assert.ok(payload.html.includes('/p-user/wallet'));
-    assert.equal(payload.messageId, '<wallet-wallet-123@tenador.ir>');
+    assert.equal(payload.messageId, '<wallet-wallet-123@localhost>');
     assert.equal(options.socketTimeout, 20000);
   }
 });

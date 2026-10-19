@@ -205,7 +205,7 @@ test("رنگ یک راهِ اعمالِ مستقل از تغییرِ مقدار 
   assert.match(src, /title="اعمال رنگ روی متن انتخاب‌شده"/);
   assert.match(src, /onClick=\{\(\) => exec\("foreColor", colour\)\}/);
   // رنگِ انتخاب‌شده در state است، وگرنه دکمه نمی‌داند چه رنگی را دوباره بگذارد.
-  assert.match(src, /const \[colour, setColour\] = useState\("#aa4725"\)/);
+  assert.match(src, /const \[colour, setColour\] = useState\(storeConfig\.theme\.colors\.primary\)/);
 });
 
 test("هر فرمان روی انتخابِ ذخیره‌شده اجرا می‌شود، نه هر جا که فوکوس است", async () => {
@@ -350,7 +350,7 @@ test("دکمه‌های اسلایدر همان کامپوننتِ صفحه‌ی
   assert.match(home, /<HomeSliderNav prevClass="product-prev-btn" nextClass="product-next-btn" \/>/);
   // مارک‌آپِ دکمه فقط یک جا تعریف شده است.
   const shared = await read("../src/components/features/home/HomeSliderNav.jsx");
-  assert.match(shared, /w-12 h-12 flex items-center justify-center text-gray-400 hover:text-\[#aa4725\]/);
+  assert.match(shared, /w-12 h-12 flex items-center justify-center text-gray-400 hover:text-\[var\(--color-primary\)\]/);
   assert.ok(!home.includes("w-12 h-12 flex items-center justify-center"));
 });
 
@@ -431,7 +431,7 @@ test("پیش‌نمایش رنگِ سایت را نشان می‌دهد، نه �
   const at = css.findIndex((line) => line.trim() === ".site-colors {");
   assert.ok(at > 0, "کلاسِ .site-colors نیست");
   assert.equal(css[at - 1].trim(), ":root,");
-  assert.match(css[at + 1], /--primary: 15 64% 41%;/);
+  assert.match(css[at + 1], /--primary: \d+ \d+% \d+%;/);
   const canvas = await read("../src/components/admin/articles/PreviewCanvas.jsx");
   assert.ok(canvas.includes('className={`site-colors${canEdit ? " preview-canvas" : ""}`}'));
 });

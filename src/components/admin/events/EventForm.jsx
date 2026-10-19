@@ -79,10 +79,10 @@ const EMPTY_FORM = {
   priority: 0,
   visualIdentity: { headerImage: "", icon: "" },
   theme: {
-    primaryColor: "var(--color-primary)",
-    secondaryColor: "var(--color-secondary)",
+    primaryColor: storeConfig.theme.colors.primary,
+    secondaryColor: storeConfig.theme.colors.secondary,
     accentColor: "#ffffff",
-    backgroundColor: "var(--color-text)",
+    backgroundColor: storeConfig.theme.colors.text,
     textPrimary: "#ffffff",
     // hex (not rgba) so the <input type="color"> body-text picker works
     textSecondary: "#b3b3b3",

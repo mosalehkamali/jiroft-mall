@@ -1,4 +1,5 @@
 "use client";
+import storeConfig from "base/store.config";
 
 import { useState, useRef } from "react";
 import BannerRenderer from "@/components/banners/BannerRenderer";
@@ -14,70 +15,70 @@ const TEMPLATES = [
     label: "آتشین",
     emoji: "🔥",
     desc: "پرانرژی برای کمپین‌های تخفیف",
-    defaultColors: { bg: "var(--color-text)", primary: "var(--color-primary)", secondary: "var(--color-secondary)", text: "#ffffff", textSecondary: "rgba(255,255,255,0.7)", accent: "#ffffff" },
+    defaultColors: { bg: storeConfig.theme.colors.text, primary: storeConfig.theme.colors.primary, secondary: storeConfig.theme.colors.secondary, text: "#ffffff", textSecondary: "rgba(255,255,255,0.7)", accent: "#ffffff" },
   },
   {
     key: "luxury",
     label: "لاکچری",
     emoji: "✨",
     desc: "ظریف و بلندپایه برای کالکشن ویژه",
-    defaultColors: { bg: "#0a0a0a", primary: "var(--color-primary)", secondary: "var(--color-secondary)", text: "#ffffff", textSecondary: "rgba(255,255,255,0.55)", accent: "var(--color-secondary)" },
+    defaultColors: { bg: "#0a0a0a", primary: storeConfig.theme.colors.primary, secondary: storeConfig.theme.colors.secondary, text: "#ffffff", textSecondary: "rgba(255,255,255,0.55)", accent: storeConfig.theme.colors.secondary },
   },
   {
     key: "geometric",
     label: "هندسی",
     emoji: "◆",
     desc: "مدرن و جذاب برای معرفی محصول جدید",
-    defaultColors: { bg: "var(--color-surface-soft)", primary: "var(--color-primary)", secondary: "var(--color-secondary)", text: "var(--color-text)", textSecondary: "#555555", accent: "#ffffff" },
+    defaultColors: { bg: storeConfig.theme.colors.surfaceSoft, primary: storeConfig.theme.colors.primary, secondary: storeConfig.theme.colors.secondary, text: storeConfig.theme.colors.text, textSecondary: "#555555", accent: "#ffffff" },
   },
   {
     key: "neon",
     label: "نئون",
     emoji: "⚡",
     desc: "سایبرپانک برای فروش ویژه و فلش‌سیل",
-    defaultColors: { bg: "#070712", primary: "var(--color-primary)", secondary: "var(--color-secondary)", text: "#ffffff", textSecondary: "rgba(255,255,255,0.6)", accent: "var(--color-secondary)" },
+    defaultColors: { bg: "#070712", primary: storeConfig.theme.colors.primary, secondary: storeConfig.theme.colors.secondary, text: "#ffffff", textSecondary: "rgba(255,255,255,0.6)", accent: storeConfig.theme.colors.secondary },
   },
   {
     key: "organic",
     label: "آرگانیک",
     emoji: "🌿",
     desc: "طبیعی و صمیمی برای محصولات آرگانیک",
-    defaultColors: { bg: "#f9f4ef", primary: "var(--color-primary)", secondary: "var(--color-secondary)", text: "#2a1a0e", textSecondary: "#7a5c44", accent: "var(--color-primary)" },
+    defaultColors: { bg: "#f9f4ef", primary: storeConfig.theme.colors.primary, secondary: storeConfig.theme.colors.secondary, text: "#2a1a0e", textSecondary: "#7a5c44", accent: storeConfig.theme.colors.primary },
   },
   {
     key: "editorial",
     label: "مجله‌ای",
     emoji: "📰",
     desc: "سبک مجله برای کالکشن فصلی",
-    defaultColors: { bg: "#fafaf8", primary: "var(--color-primary)", secondary: "var(--color-secondary)", text: "var(--color-text)", textSecondary: "#666666", accent: "var(--color-primary)" },
+    defaultColors: { bg: "#fafaf8", primary: storeConfig.theme.colors.primary, secondary: storeConfig.theme.colors.secondary, text: storeConfig.theme.colors.text, textSecondary: "#666666", accent: storeConfig.theme.colors.primary },
   },
   {
     key: "brutalist",
     label: "بروتالیست",
     emoji: "◼",
     desc: "خشن و بولد برای تخفیف‌های شدید",
-    defaultColors: { bg: "#ffffff", primary: "var(--color-primary)", secondary: "var(--color-secondary)", text: "var(--color-text)", textSecondary: "#333333", accent: "#ffffff" },
+    defaultColors: { bg: "#ffffff", primary: storeConfig.theme.colors.primary, secondary: storeConfig.theme.colors.secondary, text: storeConfig.theme.colors.text, textSecondary: "#333333", accent: "#ffffff" },
   },
   {
     key: "gradient-wave",
     label: "موج گرادیانت",
     emoji: "〰",
     desc: "مدرن و روشن برای برندهای خلاق",
-    defaultColors: { bg: "#1a0533", primary: "var(--color-primary)", secondary: "var(--color-secondary)", text: "#ffffff", textSecondary: "rgba(255,255,255,0.7)", accent: "var(--color-secondary)" },
+    defaultColors: { bg: "#1a0533", primary: storeConfig.theme.colors.primary, secondary: storeConfig.theme.colors.secondary, text: "#ffffff", textSecondary: "rgba(255,255,255,0.7)", accent: storeConfig.theme.colors.secondary },
   },
   {
     key: "elegant-overlay",
     label: "اورلی ظریف",
     emoji: "🖼️",
     desc: "عکس پس‌زمینه با متن روی آن — سبک مجله",
-    defaultColors: { bg: "#6b6560", primary: "var(--color-primary)", secondary: "var(--color-secondary)", text: "#ffffff", textSecondary: "rgba(255,255,255,0.7)", accent: "#ffffff" },
+    defaultColors: { bg: "#6b6560", primary: storeConfig.theme.colors.primary, secondary: storeConfig.theme.colors.secondary, text: "#ffffff", textSecondary: "rgba(255,255,255,0.7)", accent: "#ffffff" },
   },
   {
     key: "symmetric",
     label: "سیمتریک - نوار",
     emoji: "💎",
     desc: "افکت گلس‌مورفیسم مدرن همراه با درخشش Shimmer متحرک",
-    defaultColors: { bg: "#0d0d11", primary: "#16161a", secondary: "var(--color-primary)", text: "#ffffff", textSecondary: "#e4e4e7", accent: "var(--color-secondary)" },
+    defaultColors: { bg: "#0d0d11", primary: "#16161a", secondary: storeConfig.theme.colors.primary, text: "#ffffff", textSecondary: "#e4e4e7", accent: storeConfig.theme.colors.secondary },
   },
   {
     key: "adventure-shoes",

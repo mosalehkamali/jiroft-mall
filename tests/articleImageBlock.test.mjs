@@ -67,8 +67,8 @@ test("image links: what admins type is normalized; only unsafe links are rejecte
     "   ": "",
     "/tennis/racket": "/tennis/racket",
     "tennis/racket": "/tennis/racket",
-    "tenador.com/tennis": "https://example.com/tennis",
-    "www.tenador.com": "https://www.tenador.com/",
+    "example.com/tennis": "https://example.com/tennis",
+    "www.example.com": "https://www.example.com/",
     "https://example.com/x?y=1": "https://example.com/x?y=1",
     "/تنیس/راکت": "/تنیس/راکت",
     "tel:02100000000": "tel:02100000000",
@@ -77,7 +77,7 @@ test("image links: what admins type is normalized; only unsafe links are rejecte
   for (const bad of ["javascript:alert(1)", "//evil.com", "data:text/html,x", "/a b"]) assert.equal(normalizeImageHref(bad), null, bad);
 
   // The reported "stuck" scenario: a protocol-less link used to 400 the whole brand save.
-  const { out, errors } = sanitize({ images: [{ url: URL1, href: "tenador.com/tennis" }] });
+  const { out, errors } = sanitize({ images: [{ url: URL1, href: "example.com/tennis" }] });
   assert.deepEqual(errors, {});
   assert.equal(out.images[0].href, "https://example.com/tennis");
 });

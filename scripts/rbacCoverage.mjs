@@ -147,6 +147,9 @@ function collectFacts() {
       for (const [method, value] of Object.entries(methods)) {
         if (typeof value === "string") {
           ensure(value).apis.push({ route, method, label, via: "direct" });
+        } else if (Array.isArray(value)) {
+          // ["a.b", "c.d"] — every key is required (see the manifest header)
+          for (const key of value) ensure(key).apis.push({ route, method, label, via: "all" });
         } else if (value && Array.isArray(value.any)) {
           for (const key of value.any) {
             ensure(key).apis.push({ route, method, label, via: "any" });

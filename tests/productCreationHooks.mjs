@@ -18,6 +18,10 @@ export async function load(url, context, next) {
 
   // Only external request infrastructure is stubbed. Validation, models,
   // transactions and the routes themselves run against the temporary replica set.
+  // The create route delegates to these services; same stubs, same reason.
+  if (path.endsWith('/services/productWrite.service.js') || path.endsWith('/services/productRules.service.js')) {
+    return { ...result, source: stubRequestInfrastructure(result.source) };
+  }
   if (path.endsWith('/src/app/api/product/create/route.js')) {
     return { ...result, source: stubRequestInfrastructure(result.source) };
   }

@@ -1,6 +1,7 @@
 // Isolated replica set: real order persistence, transactions, pricing and flow
 // validation. No project database, network pricing or notifications are used.
 import test, { before, beforeEach, after } from "node:test";
+import { PURE_DEPS as PURE } from "./vmDeps.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
@@ -30,9 +31,9 @@ async function load(path, deps) {
   const modules = new Map();
   const dependency = async (name) => {
     if (modules.has(name)) return modules.get(name);
-    if (!deps[name]) throw new Error(`Missing dependency: ${name}`);
-    const dependencyModule = new vm.SyntheticModule(Object.keys(deps[name]), function () {
-      for (const [key, value] of Object.entries(deps[name])) this.setExport(key, value);
+    if (!(deps[name] ?? PURE[name])) throw new Error(`Missing dependency: ${name}`);
+    const dependencyModule = new vm.SyntheticModule(Object.keys((deps[name] ?? PURE[name])), function () {
+      for (const [key, value] of Object.entries((deps[name] ?? PURE[name]))) this.setExport(key, value);
     }, { context });
     modules.set(name, dependencyModule);
     await dependencyModule.link(() => {});
@@ -71,7 +72,7 @@ before(async () => {
     "base/models/Payment": { default: { find: () => ({ session: () => ({ lean: async () => [] }) }) } },
     "@/lib/variantImages": { buildVariantSnapshot: (variant) => Object.entries(variant.attributes || {}).map(([name, value]) => ({ name, value })) },
     "@/lib/manualTracking": await import("../src/lib/manualTracking.js"),
-    "@/lib/warehouseDb": { connectWarehouseDB() { throw new Error("warehouse must not be used"); }, getItemTrackingModel() {} },
+    "@/lib/warehouseDb": { connectWarehouseDB() { throw new Error("warehouse must not be used"); }, getItemTrackingModel() {}, warehouseEnabled: () => true },
     "@/lib/productSearch": { rankProducts: (_, products) => products, withProductSearch: async (_, query) => ({ name: query }) },
   };
   for (const [name, model] of Object.entries(mongoose.models)) deps[`base/models/${name}`] = { default: model };

@@ -27,6 +27,14 @@ function tint(alpha) {
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
 }
 
+function siteHost() {
+  try {
+    return new URL(process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_BASE_URL).hostname;
+  } catch {
+    return 'localhost';
+  }
+}
+
 // ─── Transporter ─────────────────────────────────────────────────────────────
 function createTransporter(options = {}) {
   return nodemailer.createTransport({
@@ -863,7 +871,8 @@ export async function sendWalletTransactionEmail(transaction, customerEmail) {
   const result = await transporter.sendMail({
     from: process.env.EMAIL_FROM ?? process.env.EMAIL_USER, to: customerEmail,
     subject: title + ` — ${storeConfig.brand.name}`, html,
-    messageId: '<wallet-' + String(transaction._id).replace(/[^a-zA-Z0-9-]/g, '-') + '@example.com>',
+    // Message-ID on the store's own domain (stable per transaction → no duplicate mails)
+    messageId: '<wallet-' + String(transaction._id).replace(/[^a-zA-Z0-9-]/g, '-') + '@' + siteHost() + '>',
   });
   if (!result.accepted?.length) throw new Error('Wallet email recipient was not accepted');
 }

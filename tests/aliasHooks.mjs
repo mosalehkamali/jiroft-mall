@@ -10,8 +10,19 @@ import { pathToFileURL } from "node:url";
 const ROOT = pathToFileURL(`${process.cwd()}/`).href;
 const withExtension = (url) => (/\.(js|jsx|mjs|cjs|json)$/i.test(url) ? url : `${url}.js`);
 
-export async function resolve(specifier, context, next) {
+// STORE_CONFIG_FIXTURE=tests/fixtures/x.js: every import of the root
+// store.config.js resolves to that file instead (except from the fixture itself).
+const FIXTURE = process.env.STORE_CONFIG_FIXTURE ? new URL(process.env.STORE_CONFIG_FIXTURE, ROOT).href : null;
+const CONFIG = `${ROOT}store.config.js`;
+
+async function aliased(specifier, context, next) {
   if (specifier.startsWith("base/")) return next(withExtension(ROOT + specifier.slice(5)), context);
   if (specifier.startsWith("@/")) return next(withExtension(`${ROOT}src/${specifier.slice(2)}`), context);
   return next(specifier, context);
+}
+
+export async function resolve(specifier, context, next) {
+  const result = await aliased(specifier, context, next);
+  if (FIXTURE && result.url === CONFIG && context.parentURL !== FIXTURE) return { ...result, url: FIXTURE };
+  return result;
 }

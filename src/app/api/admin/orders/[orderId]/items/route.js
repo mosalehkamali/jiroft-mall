@@ -130,7 +130,8 @@ export async function POST(req, { params }) {
       priceResult = await computeCartPrice(
         [{ productId: String(productId), variantId: variantId ? String(variantId) : null, quantity: qty, itemType: "product", flowSelections: validatedSelections }],
         userCtx,
-        null // بدون اعمال مجددِ کوپن روی آیتمِ افزوده‌شده
+        null, // بدون اعمال مجددِ کوپن روی آیتمِ افزوده‌شده
+        { adminOverride: true },
       );
     } catch (err) {
       return NextResponse.json({ message: err.message || "خطا در محاسبه قیمت آیتم" }, { status: 400 });

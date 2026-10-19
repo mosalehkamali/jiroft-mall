@@ -1,6 +1,7 @@
 // Real MongoDB schemas/queries in two separate connections; only auth, cache and
 // notification delivery are stubbed. Never connects to the project's databases.
 import test, { before, beforeEach, after } from "node:test";
+import { PURE_DEPS as PURE } from "./vmDeps.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
@@ -26,9 +27,9 @@ async function load(relative, deps) {
   const context = vm.createContext({ console, Date });
   const mod = new vm.SourceTextModule(await readFile(new URL(relative, import.meta.url), "utf8"), { context });
   await mod.link((name) => {
-    if (!deps[name]) throw new Error(`Missing dependency: ${name}`);
-    return new vm.SyntheticModule(Object.keys(deps[name]), function () {
-      for (const [key, value] of Object.entries(deps[name])) this.setExport(key, value);
+    if (!(deps[name] ?? PURE[name])) throw new Error(`Missing dependency: ${name}`);
+    return new vm.SyntheticModule(Object.keys((deps[name] ?? PURE[name])), function () {
+      for (const [key, value] of Object.entries((deps[name] ?? PURE[name]))) this.setExport(key, value);
     }, { context });
   });
   await mod.evaluate();

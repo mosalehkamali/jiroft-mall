@@ -6,7 +6,7 @@ export default function SearchBar({ value, onChange }) {
     <div className="relative group">
       <input
         type="text"
-        placeholder="جستجوی نام راکت، برند، SKU..."
+        placeholder="جستجوی نام محصول یا برند..."
         value={value}
         onChange={(e) => onChange(e.target.value)}
         className="w-full h-12 pr-12 pl-4 bg-gray-50 border border-gray-100 rounded-[6px] text-sm font-bold outline-none focus:border-[var(--color-primary)] focus:bg-white transition-all shadow-inner"

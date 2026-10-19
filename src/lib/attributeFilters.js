@@ -42,7 +42,8 @@ const TOKEN_SPLIT = /[\s,،؛\/\\|()]+/;
  */
 export function buildAttributeMeta(categoryAttributes = [], products = []) {
   return (categoryAttributes || [])
-    .filter((attr) => attr && attr.filterable) // فقط ویژگی‌های «قابل فیلتر»
+    // فقط ویژگی‌های «قابل فیلتر» — و هرگز ویژگیِ داخلی (isPublic: false)
+    .filter((attr) => attr && attr.filterable && attr.isPublic !== false)
     .map((attr) => {
       const name = attr.name;
       const label = attr.label || name;

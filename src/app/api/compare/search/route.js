@@ -33,7 +33,7 @@ export async function GET(request) {
     if (categoryId) base.category = categoryId;
 
     // جستجوی توکنی: ترتیبِ کلمات و نقطه‌گذاری مهم نیست، برند هم حساب می‌شود
-    const query = await withProductSearch(base, q);
+    const query = await withProductSearch(base, q, { storefront: !includeInactive });
 
     // واکشی سریع محصولات به همراه اطلاعات دسته بندی (برای ساختار شاخص ها)
     const products = await Product.find(query)

@@ -1,5 +1,6 @@
 // Run: node --experimental-vm-modules --test tests/reviewCreditApi.test.mjs
 import test from 'node:test';
+import { PURE_DEPS as PURE } from "./vmDeps.mjs";
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
@@ -8,8 +9,8 @@ async function load(relative, deps) {
   const source = await readFile(new URL(relative, import.meta.url), 'utf8');
   const context = vm.createContext({ console: { warn() {}, error() {} } });
   const loaded = new vm.SourceTextModule(source, { context });
-  await loaded.link((name) => new vm.SyntheticModule(Object.keys(deps[name]), function () {
-    for (const [key, value] of Object.entries(deps[name])) this.setExport(key, value);
+  await loaded.link((name) => new vm.SyntheticModule(Object.keys((deps[name] ?? PURE[name])), function () {
+    for (const [key, value] of Object.entries((deps[name] ?? PURE[name]))) this.setExport(key, value);
   }, { context }));
   await loaded.evaluate();
   return loaded.namespace;

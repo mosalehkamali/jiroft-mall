@@ -4,7 +4,6 @@ import { readFile } from "node:fs/promises";
 
 import {
   GUIDED_QUIZ_TOOLS,
-  LEGACY_MATCH_REDIRECTS,
   findMatchCategory,
   hasGuidedQuiz,
   matchCategoryPath,
@@ -94,7 +93,7 @@ test("هر دستهٔ دارای پرسشنامه، در quizRegistry هم تع�
   }
   // و برعکس: هر پرسشنامهٔ ثبت‌شده باید در فهرستِ فعال هم باشد، وگرنه کدِ مرده است
   const registered = source
-    .split("\n")
+    .split(/\r?\n/)
     .map((line) => line.match(/^ {2}"([^"]+)": \{$/)?.[1])
     .filter(Boolean);
   assert.ok(registered.length >= GUIDED_QUIZ_TOOLS.size, "هیچ پرسشنامه‌ای پیدا نشد");
@@ -119,26 +118,10 @@ test("دسته‌های بدون ورزش یا با شاخصِ ناکافی وا
 
 /* ─────────────── ریدایرکتِ آدرس‌های قدیمی ─────────────── */
 
-test("آدرس‌های تک‌بخشیِ قدیمی به آدرسِ ورزش‌دارشان ریدایرکت می‌شوند", async () => {
+test("the starter ships no /match redirects (legacy URLs belong to a client's own copy)", async () => {
   const { default: config } = await import("../next.config.mjs");
   const redirects = await config.redirects();
-
-  for (const { from, to } of LEGACY_MATCH_REDIRECTS) {
-    const rule = redirects.find((entry) => entry.source === from);
-    assert.ok(rule, `ریدایرکتِ ${from} تعریف نشده است`);
-    assert.equal(rule.destination, to);
-    assert.equal(rule.permanent, true, "باید دائمی (۳۰۸) باشد تا ارزش سئو منتقل شود");
-  }
-});
-
-test("ریدایرکتِ حدسی برای آدرس‌هایی که هرگز زنده نبودند اضافه نشده", async () => {
-  const { default: config } = await import("../next.config.mjs");
-  const redirects = await config.redirects();
-  const matchRules = redirects.filter((entry) => entry.source.startsWith("/match"));
-
-  assert.equal(matchRules.length, LEGACY_MATCH_REDIRECTS.length);
-  // الگوی عمومیِ /match/:slug خطرناک است: /match/tennis را به /match/tennis/tennis می‌برد
-  assert.ok(!matchRules.some((entry) => entry.source.includes(":")));
+  assert.equal(redirects.filter((entry) => entry.source.startsWith("/match")).length, 0);
 });
 
 /* ─────────────── ساختارِ مسیرِ Next ─────────────── */

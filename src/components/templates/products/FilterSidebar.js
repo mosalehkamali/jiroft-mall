@@ -7,6 +7,16 @@ import PriceRangeFilter, {
   getListingPriceToman,
 } from "@/components/features/filters/PriceRangeFilter";
 import { countActiveAttrFilters } from "@/lib/attributeFilters";
+import storeConfig from "base/store.config";
+import { isFeatureEnabled } from "@/lib/features";
+import { resolveProductRules } from "@/lib/productRules";
+
+// کدام فیلترها: قابلیت‌ها + قانونِ filterable در store.config.js
+const RULES = resolveProductRules([]);
+const SHOW_DEPARTMENTS = isFeatureEnabled("departments");
+const SHOW_CATEGORY = RULES.fields.category.filterable;
+const SHOW_BRAND = RULES.fields.brand.filterable;
+const SHOW_SERIE = isFeatureEnabled("series") && RULES.fields.serie.filterable !== false;
 
 export default function FilterSidebar({
   initialProducts,
@@ -95,7 +105,7 @@ export default function FilterSidebar({
       </div>
 
       <div className="bg-white rounded-[6px] border border-gray-100 shadow-sm overflow-hidden">
-        {topCategoryOptions && (
+        {topCategoryOptions && SHOW_CATEGORY && (
           <FilterGroup
             title="نوع محصول"
             items={topCategoryOptions}
@@ -105,9 +115,9 @@ export default function FilterSidebar({
           />
         )}
         {/* فیلتر ورزش (Sport) */}
-        {!hideSportFilter && (
+        {!hideSportFilter && SHOW_DEPARTMENTS && (
           <FilterGroup
-            title="ورزش تخصصی"
+            title={storeConfig.catalog.departmentLabel}
             items={sports}
             type="sports"
             filters={filters}
@@ -117,7 +127,7 @@ export default function FilterSidebar({
 
         {/* فیلتر دسته‌بندی (Category) — اگر slotِ سفارشی داده شده باشد، همان
             slot در انتهای سایدبار رندر می‌شود، نه اینجا. */}
-        {!categoryFilter && <FilterGroup
+        {!categoryFilter && SHOW_CATEGORY && <FilterGroup
           title="نوع محصول"
           items={categories}
           type="categories"
@@ -126,21 +136,21 @@ export default function FilterSidebar({
         />}
 
         {/* فیلتر برند (Brand) */}
-        <FilterGroup
-          title="برندهای معتبر"
+        {SHOW_BRAND && <FilterGroup
+          title="برندها"
           items={brands}
           type="brands"
           filters={filters}
           setFilters={setFilters}
-        />
+        />}
 
-        <FilterGroup
+        {SHOW_SERIE && <FilterGroup
           title="سری محصولات"
           items={series}
           type="series"
           filters={filters}
           setFilters={setFilters}
-        />
+        />}
         {/* فیلتر قیمت — کامپوننتِ مشترکِ اسلایدرِ دوسَره + اینپوت‌های هزارگان‌دار */}
         <PriceRangeFilter
           className="p-5 border-b border-gray-50"

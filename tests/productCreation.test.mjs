@@ -8,7 +8,7 @@ import { createProductWithVariants } from '../src/lib/createProductWithVariants.
 import { makeComboKey } from '../src/lib/variantKey.js';
 
 register('./productCreationHooks.mjs', import.meta.url);
-let repl, Product, Variant, category, fieldsCategory, handleApiError, POST, PUT;
+let repl, Product, Variant, brand, category, fieldsCategory, handleApiError, POST, PUT;
 const required = [{ name: 'size', label: 'سایز کفش', required: true }];
 
 before(async () => {
@@ -18,6 +18,8 @@ before(async () => {
   await import('../models/registerModels.js');
   Product = mongoose.model('Product');
   Variant = mongoose.model('Variant');
+  // a real brand: the create route now refuses a reference to one that doesn't exist
+  brand = await mongoose.model('Brand').create({ name: 'Test Brand', title: 'برند تست' });
   category = await mongoose.model('Category').create({
     name: 'tennis-shoes', title: 'کفش تنیس', sport: new mongoose.Types.ObjectId(),
     variantAttributes: required,
@@ -39,7 +41,7 @@ after(async () => { await mongoose.disconnect(); await repl?.stop(); });
 function data(name) {
   return { name, sku: name, shortDescription: 'short', longDescription: 'long',
     mainImage: 'https://example.com/shoe.jpg', category: category._id,
-    brand: new mongoose.Types.ObjectId(), sport: category.sport };
+    brand: brand._id, sport: category.sport };
 }
 function create(name, variants, extra = {}) {
   return createProductWithVariants({ Product, Variant, productData: { ...data(name), ...extra },

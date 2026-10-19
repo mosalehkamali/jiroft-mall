@@ -1,3 +1,4 @@
+import storeConfig from "base/store.config";
 import ProductListClient from "@/components/templates/products/ProductListClient";
 import SportHero from "@/components/templates/sports/SportHero";
 import ActiveFiltersLine from "@/components/templates/products/ActiveFiltersLine";
@@ -10,9 +11,8 @@ import { getCachedRate } from "@/lib/Exchangerate";
 export const revalidate = 3600;
 
 export const metadata = {
-  title: "خرید تجهیزات تنیس و پدل",
-  description:
-    "مشاهده و خرید تجهیزات تخصصی تنیس و پدل از برندهای معتبر؛ شامل راکت، کفش، پوشاک و لوازم جانبی با ضمانت اصالت.",
+  title: "همه محصولات",
+  description: `مشاهده و خرید همه‌ی محصولات ${storeConfig.brand.name}.`,
   alternates: { canonical: "/products" },
 };
 

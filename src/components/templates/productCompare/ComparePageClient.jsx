@@ -171,7 +171,7 @@ export default function ComparePageClient({ initialCategories }) {
                             placeholder={
                                 lockedCategory
                                     ? `جستجوی محصول دیگر در دسته "${toolCategoryTitle(lockedCategory)}"...`
-                                    : "نام محصول را جستجو کنید (مثلا: راکت ویلسون)..."
+                                    : "نام محصول را جستجو کنید (نام یا برند محصول)..."
                             }
                             value={query}
                             onChange={(e) => setQuery(e.target.value)}

@@ -35,7 +35,6 @@ const { default: Serie } = await import("base/models/Serie");
 const { default: Category } = await import("base/models/Category");
 const { default: Product } = await import("base/models/Product");
 const { default: Variant } = await import("base/models/Variant");
-const { default: PriceCache } = await import("base/models/PriceCache");
 const { default: SlugRegistery } = await import("base/models/SlugRegistery");
 const { sanitizeBrandCategoryArticles, findMissingCategoryIds } = await import("@/lib/brandCategoryArticles");
 const { getBrandCategoryArticleBlocks, getSerieArticleBlocks } = await import("base/services/miniArticle.service");
@@ -194,7 +193,7 @@ test("deleting a category pulls only that category's article from every brand", 
   });
 
   await deleteCategoryWithProducts({
-    Category, Product, Variant, PriceCache, SlugRegistery, Brand,
+    Category, Product, Variant, SlugRegistery, Brand,
     categoryId: racket, confirmationSlug: "racket",
   });
 

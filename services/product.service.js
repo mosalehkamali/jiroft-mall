@@ -224,7 +224,7 @@ export const getFilterableAttributes = unstable_cache(
     const map = new Map();
     for (const cat of categories) {
       for (const attr of cat.attributes || []) {
-        if (attr?.filterable && attr.name && !map.has(attr.name)) {
+        if (attr?.filterable && attr.isPublic !== false && attr.name && !map.has(attr.name)) {
           // filterable:true را همراه می‌بریم تا buildAttributeMeta (که فقط ویژگی‌های
           // قابل فیلتر را می‌پذیرد) این لیستِ ازقبل‌فیلترشده را هم رد نکند.
           map.set(attr.name, {

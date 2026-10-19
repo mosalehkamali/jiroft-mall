@@ -36,14 +36,13 @@ test("purge never fails the admin write: outside Vercel it is a no-op, and API e
   await withPurgeApi({ dangerouslyDeleteByTag: async () => { throw new Error("purge API down"); } }, purgeSportPagesCdn);
 });
 
-test("every CDN-cached sport page carries the tag; the tag is plain ASCII", async () => {
+test("no CDN header rule hard-codes department slugs; the purge tag is plain ASCII", async () => {
+  // Department slugs are store data (admin-created), unknown at build time, so the
+  // starter does not CDN-cache /[department] pages by a slug list. A client copy that
+  // wants it adds its own rule with this tag.
   const { default: config } = await import("../next.config.mjs");
   const rules = await config.headers();
-  const tagOf = (rule) => rule.headers.find((h) => h.key === "Vercel-Cache-Tag")?.value;
-  const cached = rules.filter((rule) => rule.headers.some((h) => h.key === "Vercel-CDN-Cache-Control"));
-  const sportRules = cached.filter((rule) => rule.source.startsWith("/:sport("));
-  assert.equal(sportRules.length, 2);
-  for (const rule of sportRules) assert.equal(tagOf(rule), SPORT_PAGES_CDN_TAG, rule.source);
+  assert.equal(rules.filter((rule) => rule.source.startsWith("/:sport(")).length, 0);
   assert.match(SPORT_PAGES_CDN_TAG, /^[a-z0-9-]+$/, "a non-ASCII header value crashes Node (ERR_INVALID_CHAR)");
 });
 

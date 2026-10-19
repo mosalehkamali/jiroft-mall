@@ -1,4 +1,5 @@
 "use client";
+import storeConfig from "base/store.config";
 
 import { useEffect, useState } from "react";
 import { FiAlignCenter, FiAlignLeft, FiAlignRight, FiChevronDown, FiChevronUp, FiMinus, FiRotateCcw, FiSmartphone, FiX } from "react-icons/fi";
@@ -286,7 +287,7 @@ export default function BlockLayoutModal({ type, style, layout, onApply, onClose
                       <div className="flex items-center gap-1">
                         <input
                           type="color"
-                          value={colors[key] || "var(--color-primary)"}
+                          value={colors[key] || storeConfig.theme.colors.primary}
                           onChange={(event) => setStyle(key, event.target.value)}
                           className="h-8 w-full cursor-pointer border bg-white"
                           style={{ borderColor: "var(--admin-border)", borderRadius: "var(--admin-radius)" }}

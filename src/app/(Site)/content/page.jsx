@@ -17,8 +17,8 @@ export default async function ArticlesPage() {
       <header className="border-b border-black/5 bg-white">
         <div className="container mx-auto px-4 py-14 md:px-12 md:py-20 lg:px-16 xl:px-20">
           <span className="text-sm font-bold text-[var(--color-primary)]">مجله {storeConfig.brand.name}</span>
-          <h1 className="mt-3 text-3xl font-black text-gray-900 md:text-5xl">راهنمای انتخاب و تجربه بهتر ورزش</h1>
-          <p className="mt-5 max-w-3xl text-base leading-8 text-gray-600">مقاله‌های تخصصی، بررسی تجهیزات و تازه‌ترین خبرهای دنیای ورزش‌های راکتی.</p>
+          <h1 className="mt-3 text-3xl font-black text-gray-900 md:text-5xl">راهنما و تازه‌ها</h1>
+          <p className="mt-5 max-w-3xl text-base leading-8 text-gray-600">راهنمای خرید، بررسی محصولات و تازه‌ترین خبرهای فروشگاه.</p>
           {categories.length ? <nav className="mt-8 flex flex-wrap gap-2" aria-label="دسته‌بندی مقالات">{categories.map((category) => <Link key={category._id} href={`/${category.slug}`} className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-bold text-gray-700 transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]">{category.name}</Link>)}</nav> : null}
         </div>
       </header>

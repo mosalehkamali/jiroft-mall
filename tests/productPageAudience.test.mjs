@@ -87,7 +87,7 @@ test("نمودار رادار فقط با isKidsAudience تصمیم گرفته �
     "کامپوننت از منبعِ واحد استفاده نمی‌کند",
   );
   assert.ok(
-    /const showComparisonGraph =\s*!isKidsAudience\(targetAudience\) && hasChartableStats\(technicalStats\)/.test(source),
+    /const showComparisonGraph =\s*(Boolean\(technicalStats\) && )?!isKidsAudience\(targetAudience\) && hasChartableStats\(technicalStats\)/.test(source),
     "شرطِ نمایشِ نمودار عوض شده است",
   );
   assert.ok(
