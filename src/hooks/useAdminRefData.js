@@ -1,6 +1,11 @@
 "use client";
 
-import useSWR from "swr";
+import useSWRBase from "swr";
+import { disabledFeatureForPath } from "@/lib/features";
+
+// endpointِ فیچرِ خاموش (middleware آن را 404 می‌کند) اصلاً درخواست نمی‌شود.
+const useSWR = (key, opts) =>
+  useSWRBase(key && disabledFeatureForPath(key.split("?")[0]) ? null : key, opts);
 
 /**
  * 🟢 داده‌ی مرجعِ کاتالوگ برای دراپ‌داون‌های پنل مدیریت.

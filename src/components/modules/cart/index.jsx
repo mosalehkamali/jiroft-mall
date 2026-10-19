@@ -189,7 +189,7 @@ const CartModule = () => {
             >
               {/* تصویر */}
               <img
-                src={item.product?.mainImage || '/placeholder.jpg'}
+                src={item.product?.mainImage || '/brand/placeholder.svg'}
                 alt={item.product?.name || 'product'}
                 className="h-16 w-16 rounded-[var(--radius)] object-cover"
               />

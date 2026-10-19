@@ -32,6 +32,7 @@ import {
   backoffDelay,
   waitBeforeRetry,
 } from "@/lib/groupedFetchRetry";
+import storeConfig from "base/store.config";
 
 const BATCH_SECTIONS = 2;
 
@@ -420,7 +421,7 @@ export default function SerieGroupedView({
       {/* ───────────────── Hero ───────────────── */}
       <div className="relative h-[100px] md:h-[220px] w-full overflow-hidden">
         <img
-          src={pageInfo.headImage || pageInfo.image || "/images/default-sport.jpg"}
+          src={pageInfo.headImage || pageInfo.image || storeConfig.brand.imageFallback}
           alt={serieTitle}
           className="w-full h-full object-cover scale-105"
         />

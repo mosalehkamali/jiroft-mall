@@ -5,6 +5,10 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { FaEdit, FaTrash, FaImage } from 'react-icons/fa';
 import { useAdminPermissions } from '@/components/admin/AdminPermissionProvider';
+import { isFeatureEnabled } from '@/lib/features';
+import storeConfig from 'base/store.config';
+
+const DEPARTMENTS_ON = isFeatureEnabled('departments');
 
 /**
  * کارت محصول (پنل ادمین) — نسخهٔ فاز ۱
@@ -91,10 +95,10 @@ export default function ProductCard({ product, onEdit, onDelete }) {
         </span>
         <span
           className="truncate max-w-[45%] text-left"
-          title={sport?.name || '-'}
+          title={(DEPARTMENTS_ON ? sport?.name : brand?.name) || '-'}
           style={{ color: 'var(--color-primary)' }}
         >
-          {sport?.name || 'بدون ورزش'}
+          {DEPARTMENTS_ON ? (sport?.name || `بدون ${storeConfig.catalog.departmentLabel}`) : (brand?.name || '')}
         </span>
       </div>
 

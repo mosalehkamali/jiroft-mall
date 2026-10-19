@@ -296,9 +296,10 @@ test("والد فقط از ورزشِ جاری — شاملِ دسته‌های 
     parentCategoryChoices(catalog, TENNIS).map((c) => c._id),
     ["t-racket", "t-guard"],
   );
-  // بدون ورزش، والد بی‌معناست
+  // بدون ورزش: فقط دسته‌های ریشه (sport: null) والد می‌شوند
   assert.deepEqual(parentCategoryChoices(catalog, ""), []);
-  assert.deepEqual(parentCategoryChoices(catalog, null), []);
+  const withRoots = [...catalog, { _id: "root-a", sport: null }, { _id: "root-b" }];
+  assert.deepEqual(parentCategoryChoices(withRoots, null).map((c) => c._id), ["root-a", "root-b"]);
 });
 
 test("«بارگذاری از دسته دیگر» فقط برای دسته‌های اختصاصی نام ورزش را نشان می‌دهد", () => {

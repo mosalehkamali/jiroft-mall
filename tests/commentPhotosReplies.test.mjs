@@ -32,7 +32,7 @@ const { default: Order } = await import("../models/Order.js");
 await import("../models/User.js");
 const { getUserFullName } = await import("../utils/userName.js");
 
-const IMAGEKIT = "https://ik.imagekit.io/tenador";
+const IMAGEKIT = "https://ik.imagekit.io/example";
 process.env.IMAGEKIT_URL_ENDPOINT = IMAGEKIT;
 const img = (name) => `${IMAGEKIT}/reviews/${name}.jpg`;
 

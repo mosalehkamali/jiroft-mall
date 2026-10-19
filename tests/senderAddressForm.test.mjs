@@ -21,7 +21,7 @@ import {
 
 const valid = {
   title: "انبار تهران",
-  fullName: "فروشگاه تنادور",
+  fullName: "فروشگاه نمونه",
   phone: "02112345678",
   province: "تهران",
   city: "تهران",

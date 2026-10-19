@@ -1,7 +1,7 @@
 // اسکریپت تست اتصال به MongoDB
 import mongoose from 'mongoose';
 
-const url = process.env.MONGODB_URI || 'mongodb://localhost:27017/tenador';
+const url = process.env.MONGODB_URI || 'mongodb://localhost:27017/store-base';
 
 async function testConnection() {
   console.log('🔍 در حال تست اتصال به MongoDB...');

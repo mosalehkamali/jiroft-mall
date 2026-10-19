@@ -244,11 +244,11 @@ export default function EditCategory() {
     try {
       const [catsRes, sportsRes] = await Promise.all([
         fetch('/api/categories'),
-        fetch('/api/sports'),
+        isFeatureEnabled('departments') ? fetch('/api/sports') : null,
       ]);
       const catsData = await catsRes.json();
       setCategories(catsData.categories || []);
-      const sportsData = await sportsRes.json();
+      const sportsData = sportsRes ? await sportsRes.json() : {};
       setSports(sportsData.sports || []);
 
       const res = await fetch(`/api/categories/${categoryId}`);
@@ -838,12 +838,9 @@ export default function EditCategory() {
               onChange={(e) => setFormData((prev) => ({ ...prev, parent: e.target.value }))}
               options={parentCategories.map((cat) => ({ value: cat._id, label: getCategoryLabel(cat) }))}
               placeholder="والد را انتخاب کنید"
-              disabled={!formData.sport}
-              hint={
-                !formData.sport
-                  ? 'ابتدا ورزش را انتخاب کنید.'
-                  : 'فقط دسته‌های همین ورزش می‌توانند والد باشند.'
-              }
+              hint={isFeatureEnabled('departments')
+                ? `فقط دسته‌های همین ${storeConfig.catalog.departmentLabel} (یا بدون ${storeConfig.catalog.departmentLabel}) می‌توانند والد باشند.`
+                : undefined}
             />
 
             <Select
@@ -851,7 +848,7 @@ export default function EditCategory() {
               onChange={(e) => copyParentFileds(e.target.value)}
               options={loadFromOptions}
               placeholder="یک دسته را انتخاب کنید"
-              hint="از همه‌ی ورزش‌ها؛ نام ورزش پس از نام دسته می‌آید. ویژگی‌ها و پرامپت‌های آن دسته به لیستِ فعلی «افزوده» می‌شوند."
+              hint="ویژگی‌ها و پرامپت‌های آن دسته به لیستِ فعلی «افزوده» می‌شوند."
             />
 
             {/* AI Prompts Section */}

@@ -2,6 +2,7 @@
 
 import { getCategoryLabel } from "base/utils/categoryLabel";
 import AdminInput from "@/components/admin/AdminInput";
+import { disabledFeatureForPath } from "@/lib/features";
 import ProductSectionJsonModal from '@/components/admin/ProductSectionJsonModal';
 import { BASIC_PRODUCT_FIELDS, productAttributeType } from '@/lib/productSectionJson';
 import { useState, useEffect, useMemo } from 'react';
@@ -290,20 +291,14 @@ export default function ProductEditPage() {
 
     async function fetchData() {
       try {
-        const [sportsRes, brandsRes, categoriesRes, limitedEditionsRes, productRes] = await Promise.all([
-          fetch('/api/sports'),
-          fetch('/api/brands'),
-          fetch('/api/categories'),
-          fetch('/api/limited-editions'),
-          fetch(`/api/product/${id}`),
-        ]);
-
+        // endpointِ فیچرِ خاموش درخواست نمی‌شود (middleware آن را 404 می‌کند).
+        const getJson = (url) => disabledFeatureForPath(url) ? {} : fetch(url).then((r) => r.json());
         const [sportsData, brandsData, categoriesData, limitedEditionsData, productData] = await Promise.all([
-          sportsRes.json(),
-          brandsRes.json(),
-          categoriesRes.json(),
-          limitedEditionsRes.json(),
-          productRes.json(),
+          getJson('/api/sports'),
+          getJson('/api/brands'),
+          getJson('/api/categories'),
+          getJson('/api/limited-editions'),
+          getJson(`/api/product/${id}`),
         ]);
 
         setSports(sportsData.sports || []);
@@ -406,6 +401,7 @@ export default function ProductEditPage() {
   }, [formData.sport]);
 
   async function fetchAthletes(sportId) {
+    if (disabledFeatureForPath('/api/athletes')) return setAthletes([]);
     try {
       const res = await fetch('/api/athletes');
       const data = await res.json();

@@ -29,11 +29,11 @@ export const categorySportTitle = (category) =>
  * دسته‌های قابل انتخاب به‌عنوان والد در یک ورزش. دسته‌ی اشتراکی (که ورزش در
  * additionalSports آن است) هم واقعاً در ویترینِ همان ورزش دیده می‌شود، پس
  * دقیقاً مثل buildCategorySportMatch سمت سرور اینجا هم به حساب می‌آید.
- * بدون ورزش، والد بی‌معناست و لیست خالی برمی‌گردد.
+ * بدون ورزش، دسته ریشه است (sport: null) و والدش هم فقط از دسته‌های ریشه.
  */
 export function parentCategoryChoices(categories = [], sportId) {
   const target = idOf(sportId);
-  if (!target) return [];
+  if (!target) return categories.filter((category) => !categorySportId(category));
 
   return categories.filter(
     (category) =>

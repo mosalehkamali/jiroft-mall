@@ -11,6 +11,7 @@ import {
 } from 'react-icons/fa';
 import { FiTrendingUp, FiBell, FiArrowUpRight } from 'react-icons/fi';
 import { useAdminPermissions } from '@/components/admin/AdminPermissionProvider';
+import storeConfig from 'base/store.config';
 
 const fadeUp = (delay = 0) => ({
   initial: { opacity: 0, y: 16 },
@@ -59,7 +60,7 @@ export default function AdminDashboard() {
   // میان‌برها *قبل از* رندر فیلتر می‌شوند تا کارتِ غیرمجاز نه placeholder
   // بگذارد نه جای خالی؛ col-span ها ثابت‌اند و grid خودش جمع می‌شود.
   const smallCards = [
-    { href: '/p-admin/admin-sports', icon: FaRunning, count: stats.sports, label: 'رشته ورزشی', bg: 'rgba(59,130,246,0.07)', color: '#3b82f6' },
+    { href: '/p-admin/admin-sports', icon: FaRunning, count: stats.sports, label: storeConfig.catalog.departmentLabel, bg: 'rgba(59,130,246,0.07)', color: '#3b82f6' },
     { href: '/p-admin/admin-categories', icon: FaFolderOpen, count: stats.categories, label: 'دسته‌بندی', bg: 'rgba(168,85,247,0.07)', color: '#a855f7' },
     { href: '/p-admin/admin-brands', icon: FaBold, count: stats.brands, label: 'برند همکار', bg: 'rgba(236,72,153,0.07)', color: '#ec4899' },
   ].filter((item) => canRoute(item.href));

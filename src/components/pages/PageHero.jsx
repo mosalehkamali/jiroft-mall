@@ -1,3 +1,4 @@
+import storeConfig from "base/store.config";
 /**
  * PageHero — هدرِ ایمرسیوِ صفحات اطلاع‌رسانی.
  * هم‌خانواده با SportHero (تصویر تمام‌عرض + گرادیان + عنوان وسط‌چین) اما بلندتر،
@@ -27,7 +28,7 @@ export default function PageHero({
   return (
     <section className="relative h-[58vh] min-h-[420px] max-h-[640px] w-full overflow-hidden">
       <img
-        src={image || "/images/default-sport.jpg"}
+        src={image || storeConfig.brand.imageFallback}
         alt={title || ""}
         className="absolute inset-0 w-full h-full object-cover scale-105"
         fetchPriority="high"

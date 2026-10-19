@@ -13,7 +13,7 @@ test("bank details endpoint uses the fixed setting key", () => {
 test("only whitelisted bank account fields are returned", () => {
   assert.deepEqual(
     normalizeBankAccountDetails({
-      ownerName: "  فروشگاه تنادور  ",
+      ownerName: "  فروشگاه نمونه  ",
       cardNumber: "6037990000000000",
       accountNumber: "123456",
       iban: "IR120000000000000000000000",
@@ -21,7 +21,7 @@ test("only whitelisted bank account fields are returned", () => {
       apiSecret: "must not leak",
     }),
     {
-      ownerName: "فروشگاه تنادور",
+      ownerName: "فروشگاه نمونه",
       cardNumber: "6037990000000000",
       accountNumber: "123456",
       iban: "IR120000000000000000000000",
@@ -32,7 +32,7 @@ test("only whitelisted bank account fields are returned", () => {
 test("invalid or incomplete settings are represented as not configured", () => {
   assert.equal(normalizeBankAccountDetails(null), null);
   assert.equal(normalizeBankAccountDetails([]), null);
-  assert.equal(normalizeBankAccountDetails({ ownerName: "تنادور" }), null);
+  assert.equal(normalizeBankAccountDetails({ ownerName: "نمونه" }), null);
 });
 
 test("non-string values and oversized fields are not exposed verbatim", () => {

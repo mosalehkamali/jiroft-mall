@@ -21,7 +21,7 @@ export default function ShowcaseAthletes({ data = { men: [], women: [] } }) {
         {/* avatar */}
         <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-full border border-white/10">
           <img
-            src={athlete.photo || "/default-avatar.png"}
+            src={athlete.photo || "/brand/placeholder.svg"}
             alt={athlete.title}
             className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
           />

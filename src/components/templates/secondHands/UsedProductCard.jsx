@@ -64,7 +64,7 @@ export default function UsedProductCard({
         className="relative w-full aspect-square bg-[#fcfcfc] overflow-hidden"
       >
         <Image
-          src={activeImage || "/images/placeholder.jpg"}
+          src={activeImage || storeConfig.brand.imageFallback}
           alt={name}
           fill
           className="object-contain p-3 transition-all duration-500 group-hover:scale-110"

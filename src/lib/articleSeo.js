@@ -10,7 +10,7 @@ export function absoluteArticleUrl(value = "") {
 }
 
 function imageUrl(article) {
-  return article?.seo?.ogImage || article?.cover?.url || article?.category?.cover?.url || "/images/og-cover.jpg";
+  return article?.seo?.ogImage || article?.cover?.url || article?.category?.cover?.url || storeConfig.brand.ogImage;
 }
 
 export function articleMetadata(article) {
@@ -49,7 +49,7 @@ export function articleCategoryMetadata(category) {
   const title = category.seo?.title || category.name;
   const description = category.seo?.description || category.description || `مقالات ${category.name} ${storeConfig.brand.name}`;
   const canonical = absoluteArticleUrl(category.seo?.canonicalUrl || category.slug);
-  const image = absoluteArticleUrl(category.seo?.ogImage || category.cover?.url || "/images/og-cover.jpg");
+  const image = absoluteArticleUrl(category.seo?.ogImage || category.cover?.url || storeConfig.brand.ogImage);
   return {
     title, description, keywords: category.seo?.keywords || [], alternates: { canonical },
     robots: { index: !category.seo?.noIndex, follow: !category.seo?.noIndex },
@@ -77,7 +77,7 @@ export function articleSchemas(article, products = []) {
       headline: article.title, description: article.excerpt, image: [image], mainEntityOfPage: url,
       datePublished: article.publishedAt, dateModified: article.updatedAt,
       author: { "@type": "Person", name: authorName },
-      publisher: { "@type": "Organization", "@id": `${SITE_URL}/#organization`, name: storeConfig.brand.name, logo: { "@type": "ImageObject", url: absoluteArticleUrl(process.env.NEXT_PUBLIC_LOGO_URL || "/images/logo.png") } },
+      publisher: { "@type": "Organization", "@id": `${SITE_URL}/#organization`, name: storeConfig.brand.name, logo: { "@type": "ImageObject", url: absoluteArticleUrl(process.env.NEXT_PUBLIC_LOGO_URL || storeConfig.brand.logo) } },
       articleSection: article.category.name,
       keywords: (article.tags || []).map((tag) => tag.name).join(", "),
       wordCount: countArticleWords(article.blocks || []),

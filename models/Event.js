@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import storeConfig from "../store.config.js";
 
 const PageSectionSchema = new mongoose.Schema(
   {
@@ -88,7 +89,7 @@ const EventSchema = new mongoose.Schema(
 
     // Theme — all colors are hex strings; effect controls ambient animation
     theme: {
-      primaryColor: { type: String, default: "#aa4725" },
+      primaryColor: { type: String, default: storeConfig.theme.colors.primary },
       secondaryColor: { type: String, default: "#ffbf00" },
       accentColor: { type: String, default: "#ffffff" },
       backgroundColor: { type: String, default: "#0d0d0d" },

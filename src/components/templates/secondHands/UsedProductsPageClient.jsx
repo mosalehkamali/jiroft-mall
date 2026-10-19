@@ -13,6 +13,7 @@ import {
   writeAttrFiltersToParams,
   productMatchesAttrFilters,
 } from '@/lib/attributeFilters';
+import storeConfig from "base/store.config";
 
 const DEFAULT_FILTERS = {
   brands:      [],
@@ -135,7 +136,7 @@ export default function UsedProductsPageClient({
       {/* ─── Hero ─── */}
       <div className="relative h-[120px] md:h-[220px] w-full overflow-hidden">
         <img
-          src={headerImage || "/images/used-products-hero.jpg"}
+          src={headerImage || storeConfig.brand.imageFallback}
           alt="بازار دست دوم"
           className="w-full h-full object-cover scale-105"
           onError={e => { e.target.style.display = 'none'; }}

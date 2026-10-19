@@ -48,6 +48,7 @@ import {
   BRAND_SECTIONS_PER_BATCH,
   mergeGroupedSections,
 } from "base/utils/groupedProductPagination";
+import storeConfig from "base/store.config";
 
 const EMPTY_ATTR_FILTERS = Object.freeze([]);
 
@@ -567,7 +568,7 @@ export default function BrandGroupedView({
       {/* ───────────────── Hero ───────────────── */}
       <div className="relative h-[100px] md:h-[220px] w-full overflow-hidden">
         <img
-          src={pageInfo.headImage || pageInfo.image || "/images/default-sport.jpg"}
+          src={pageInfo.headImage || pageInfo.image || storeConfig.brand.imageFallback}
           alt={headTitle}
           className="w-full h-full object-cover scale-105"
         />

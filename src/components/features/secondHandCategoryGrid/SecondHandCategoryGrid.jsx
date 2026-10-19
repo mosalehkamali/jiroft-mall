@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { FiArrowUpLeft, FiChevronDown } from "react-icons/fi";
 import Image from "next/image";
 import Link from "next/link";
+import storeConfig from "base/store.config";
 
 export default function SecondHandCategoryGrid({ categories = [] }) {
   const [showAll, setShowAll] = useState(false);
@@ -110,7 +111,7 @@ function CategoryCard({ category, className }) {
     >
       {/* تصویر اصلی */}
       <img
-        src={category.image || "/images/used-products-hero.jpg"}
+        src={category.image || storeConfig.brand.imageFallback}
         alt={category.name}
         className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
       />

@@ -150,7 +150,7 @@ const SECTION_DEFINITIONS = [
         // ⚠️ کاملاً متمایز از «کالکشن‌ها» (collections). لیمیتد ادیشن زیرمجموعه‌ی
         // برند است (models/LimitedEdition.js، صفحات admin-brands/[brandId]/
         // limited-editions/*) و کالکشن یک کمپین مستقل است (models/Event.js).
-        description: "نسخه‌های محدود هر برند (مثل Roland Garros) — زیرمجموعه‌ی برند",
+        description: "نسخه‌های محدود هر برند (مثل یک کالکشن ویژه) — زیرمجموعه‌ی برند",
         path: "/p-admin/admin-brands",
         api: ["/api/limited-editions"],
         permissions: [
@@ -393,13 +393,13 @@ const SECTION_DEFINITIONS = [
       },
       {
         key: "homeRolandGarros",
-        title: "بنر رولند گاروس",
-        description: "متون، تصویر و لینک دکمه‌ی بنر رولند گاروس",
+        title: "بنر کالکشن ویژه",
+        description: "متون، تصویر و لینک دکمه‌ی بنر کالکشن ویژه",
         path: "/p-admin/admin-home/roland-garros",
         api: ["/api/admin/home-roland-garros"],
         permissions: [
-          { key: "view", title: "مشاهده بنر رولند گاروس" },
-          { key: "edit", title: "ویرایش بنر رولند گاروس" },
+          { key: "view", title: "مشاهده بنر کالکشن ویژه" },
+          { key: "edit", title: "ویرایش بنر کالکشن ویژه" },
         ],
       },
       {

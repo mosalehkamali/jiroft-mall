@@ -197,7 +197,7 @@ export default function ComparePageClient({ initialCategories }) {
                                                 <div className="w-12 h-12 bg-neutral-100 rounded-lg overflow-hidden shrink-0 relative">
                                                     {/* اینجا از next/image استفاده کنید. برای نمونه img گذاشتم */}
                                                     <img
-                                                        src={item.mainImage || '/placeholder.png'}
+                                                        src={item.mainImage || '/brand/placeholder.svg'}
                                                         alt={item.name}
                                                         className="w-full h-full object-cover"
                                                     />
@@ -620,7 +620,7 @@ function BestInCategory({ categoryId, onAddProduct }) {
                         <div className="flex items-center gap-4">
                             <div className="relative w-14 h-14 shrink-0 rounded-lg overflow-hidden bg-white border border-neutral-50">
                                 <img
-                                    src={data.product.mainImage || '/placeholder.png'}
+                                    src={data.product.mainImage || '/brand/placeholder.svg'}
                                     alt={data.product.nmae}
                                     className="w-full h-full object-contain p-1 group-hover:scale-110 transition-transform duration-500"
                                 />

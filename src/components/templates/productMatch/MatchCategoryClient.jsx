@@ -127,7 +127,7 @@ export default function MatchCategoryClient({
                 className="w-16 h-16 rounded-lg overflow-hidden bg-neutral-50 border border-neutral-100 shrink-0"
               >
                 <img
-                  src={baseProduct.mainImage || '/placeholder.png'}
+                  src={baseProduct.mainImage || '/brand/placeholder.svg'}
                   alt={baseProduct.name}
                   className="w-full h-full object-contain p-1 hover:opacity-90 transition-opacity"
                 />

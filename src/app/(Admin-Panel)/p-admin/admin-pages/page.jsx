@@ -43,8 +43,8 @@ const HOME_SECTIONS = [
   {
     href: "/p-admin/admin-home/roland-garros",
     icon: FiAward,
-    title: "بنر رولند گاروس",
-    desc: "ویرایش متون، تصویر و لینک دکمه‌ی بنر رولند گاروس.",
+    title: "بنر کالکشن ویژه",
+    desc: "ویرایش متون، تصویر و لینک دکمه‌ی بنر کالکشن ویژه.",
   },
   {
     href: "/p-admin/admin-home/featured-articles",

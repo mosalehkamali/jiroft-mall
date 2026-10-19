@@ -80,7 +80,7 @@ export default function ProductSearchBox({ categoryId, categoryTitle, onSelect }
                   >
                     <div className="w-12 h-12 bg-neutral-100 rounded-lg overflow-hidden shrink-0">
                       <img
-                        src={item.mainImage || '/placeholder.png'}
+                        src={item.mainImage || '/brand/placeholder.svg'}
                         alt={item.name}
                         className="w-full h-full object-cover"
                       />

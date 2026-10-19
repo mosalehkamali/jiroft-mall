@@ -2,22 +2,22 @@ export const ROLAND_GARROS_BANNER_SETTING_KEY = "home_roland_garros_banner";
 export const ROLAND_GARROS_BANNER_CACHE_TAG = "home-roland-garros";
 
 export const DEFAULT_ROLAND_GARROS_BANNER = Object.freeze({
-  backgroundText: "Roland Garros",
-  eyebrow: "کالکشن رسمی 2026",
-  titlePrefix: "رولاند",
-  titleHighlight: "گاروس",
-  englishTitlePrefix: "Roland",
-  englishTitleHighlight: "Garros",
+  backgroundText: "Collection",
+  eyebrow: "کالکشن ویژه",
+  titlePrefix: "کالکشن",
+  titleHighlight: "ویژه",
+  englishTitlePrefix: "Featured",
+  englishTitleHighlight: "Collection",
   description:
-    "تجربه‌ای که از قلب پاریس می‌آید. راکت‌ها و اکسسوری‌هایی که مرز بین هنر و ورزش را از بین برده‌اند؛ برای کسانی که به دنبال اصالت هستند.",
+    "محصولات منتخب این فصل را ببینید. متن، تصویر و لینک این بنر از پنل مدیریت قابل ویرایش است.",
   ctaLabel: "مشاهده محصولات",
-  ctaHref: "/wilson/roland-garros",
+  ctaHref: "/products",
   statValue: "۱۰۰٪",
   statLabel: "اصالت تضمین شده",
-  cornerTitle: "PARIS",
-  cornerSubtitle: "تورنمنت 2026",
-  imageUrl: "/images/roland-garros.webp",
-  imageAlt: "محصولات رولاند گاروس",
+  cornerTitle: "NEW",
+  cornerSubtitle: "کالکشن جدید",
+  imageUrl: "/brand/placeholder.svg",
+  imageAlt: "محصولات کالکشن ویژه",
 });
 
 export const ROLAND_GARROS_REQUIRED_FIELDS = Object.keys(

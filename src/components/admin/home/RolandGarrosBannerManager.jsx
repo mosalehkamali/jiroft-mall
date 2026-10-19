@@ -38,13 +38,13 @@ const TEXT_FIELDS = [
   {
     name: "titlePrefix",
     label: "عنوان فارسی - بخش سفید",
-    placeholder: "رولاند",
+    placeholder: "کالکشن",
     icon: FiType,
   },
   {
     name: "titleHighlight",
     label: "عنوان فارسی - بخش رنگی",
-    placeholder: "گاروس",
+    placeholder: "ویژه",
     icon: FiType,
   },
   {
@@ -111,7 +111,7 @@ const TEXT_FIELDS = [
   {
     name: "imageAlt",
     label: "متن جایگزین تصویر",
-    placeholder: "محصولات رولاند گاروس",
+    placeholder: "محصولات کالکشن ویژه",
     icon: FiImage,
   },
 ];
@@ -186,7 +186,7 @@ export default function RolandGarrosBannerManager() {
       } catch (err) {
         if (!cancelled) {
           setLoadError(true);
-          showToast.error(err.message || "خطا در بارگذاری بنر رولند گاروس");
+          showToast.error(err.message || "خطا در بارگذاری بنر کالکشن ویژه");
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -249,7 +249,7 @@ export default function RolandGarrosBannerManager() {
 
       setForm(data.banner);
       setInitial(data.banner);
-      showToast.success("بنر رولند گاروس ذخیره شد");
+      showToast.success("بنر کالکشن ویژه ذخیره شد");
     } catch (err) {
       showError("خطا", err.message || "خطا در ذخیره بنر");
     } finally {
@@ -282,10 +282,10 @@ export default function RolandGarrosBannerManager() {
         <div>
           <h1 className="flex items-center gap-2 text-xl font-bold text-gray-900">
             <FiAward style={{ color: "var(--color-secondary)" }} />
-            بنر رولند گاروس
+            بنر کالکشن ویژه
           </h1>
           <p className="mt-0.5 text-xs font-bold text-gray-400">
-            متن‌ها، تصویر و لینک بنر رولند گاروس صفحه اصلی
+            متن‌ها، تصویر و لینک بنر کالکشن ویژه صفحه اصلی
           </p>
         </div>
 
@@ -337,7 +337,7 @@ export default function RolandGarrosBannerManager() {
                     dir="ltr"
                     value={form.imageUrl}
                     onChange={(event) => updateField("imageUrl", event.target.value)}
-                    placeholder="/images/roland-garros.webp"
+                    placeholder="https://…/banner.webp"
                     className="w-full rounded-xl border-2 border-gray-100 bg-white px-3 py-2.5 text-left text-sm font-bold text-gray-800 outline-none transition-all focus:border-[var(--color-primary)] focus:ring-4 focus:ring-[var(--color-primary)]/10"
                   />
                   <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-gray-900 px-4 py-2.5 text-xs font-bold text-white transition-all hover:bg-gray-700">

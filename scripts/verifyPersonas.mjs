@@ -34,7 +34,7 @@ import {
 
 const PORT = 4100;
 const BASE = `http://localhost:${PORT}`;
-const DB_NAME = "tenador-personas";
+const DB_NAME = "store-base-personas";
 
 /* ────────────────────────────────────────────────────────────────────────────
  * پرسوناها

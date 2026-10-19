@@ -265,7 +265,7 @@ export default function LimitedEditionForm({ brandId, limitedEditionId = null })
                   value={formData.title}
                   onChange={handleChange}
                   className={inputCls}
-                  placeholder="مثلاً رولان گاروس"
+                  placeholder="مثلاً کالکشن تابستان"
                   required
                 />
               </div>

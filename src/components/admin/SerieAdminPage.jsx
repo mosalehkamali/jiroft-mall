@@ -140,7 +140,7 @@ export default function SerieChildrenAdminPage({ serieId, brandId }) {
       <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm flex flex-col md:flex-row items-center gap-5">
         <div className="w-20 h-20 rounded-2xl bg-gray-50 border border-gray-100 p-2 flex items-center justify-center overflow-hidden shrink-0">
           <img
-            src={serie?.image || "/placeholder.jpg"}
+            src={serie?.image || "/brand/placeholder.svg"}
             alt=""
             className="w-full h-full object-cover rounded-xl"
           />
@@ -261,7 +261,7 @@ function ChildCard({ child, onOpen, onProducts, onEdit, onDelete }) {
       <button onClick={onOpen} className="block w-full text-right">
         <div className="relative h-36 bg-gray-50 overflow-hidden">
           <img
-            src={child.image || "/placeholder.jpg"}
+            src={child.image || "/brand/placeholder.svg"}
             alt=""
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
           />

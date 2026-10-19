@@ -65,7 +65,7 @@ test("طرح‌های خطرناک در پیوند پذیرفته نمی‌شو�
 });
 
 test("طرح‌های مجاز در پیوند حفظ می‌شوند", () => {
-  for (const href of ["https://example.com/x", "http://tenador.com", "mailto:a@b.test", "tel:+982100"]) {
+  for (const href of ["https://example.com/x", "http://example.org", "mailto:a@b.test", "tel:+982100"]) {
     assert.equal(sanitizeRichText(`<a href="${href}">م</a>`).includes(`href="${href}"`), true, href);
   }
 });

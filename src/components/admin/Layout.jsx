@@ -1,6 +1,9 @@
 "use client";
 
 import storeConfig from "base/store.config";
+import { isFeatureEnabled } from "@/lib/features";
+
+const RATES_ON = isFeatureEnabled("exchangeRate");
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -99,6 +102,7 @@ export default function AdminLayout({ children }) {
   }, []);
 
   useEffect(() => {
+    if (!RATES_ON) return;
     const controller = new AbortController();
     const fetchPrices = async () => {
       try {
@@ -308,7 +312,7 @@ export default function AdminLayout({ children }) {
               {mounted ? time : "--:--:--"}
             </div>
 
-            <div className="flex items-center gap-2 sm:gap-4 px-2 sm:px-4 py-1.5 border text-xs tabular-nums whitespace-nowrap"
+            {RATES_ON && <div className="flex items-center gap-2 sm:gap-4 px-2 sm:px-4 py-1.5 border text-xs tabular-nums whitespace-nowrap"
               title={pricesError ? "دریافت نرخ ارز ناموفق بود؛ نرخ‌های موجود مربوط به آخرین دریافت موفق هستند." : undefined}
               style={{ background: "var(--admin-card)", borderColor: "var(--admin-border)", borderRadius: "var(--admin-radius)" }}>
               <div className="flex items-center gap-1.5">
@@ -332,7 +336,7 @@ export default function AdminLayout({ children }) {
                   <p className="font-bold" style={{ color: "var(--admin-text)" }}>{formatRate(prices.eur)}</p>
                 </div>
               </div>
-            </div>
+            </div>}
 
             <div className="hidden md:flex items-center gap-2 px-3 py-1.5 border cursor-pointer hover:shadow-sm transition-all"
               style={{ background: "var(--admin-card)", borderColor: "var(--admin-border)", borderRadius: "var(--admin-radius)" }}>

@@ -435,7 +435,7 @@ function StepBody({
     return answers.currentRacket ? (
       <div className="flex items-center gap-3 rounded-[var(--radius)] border border-neutral-200 bg-neutral-50 p-2.5">
         <img
-          src={answers.currentRacket.mainImage || "/placeholder.png"}
+          src={answers.currentRacket.mainImage || "/brand/placeholder.svg"}
           alt={answers.currentRacket.name}
           className="h-12 w-12 shrink-0 rounded object-contain"
         />

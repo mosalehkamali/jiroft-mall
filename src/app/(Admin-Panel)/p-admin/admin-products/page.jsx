@@ -11,6 +11,12 @@ import { confirmDelete, showError } from '@/lib/swal';
 import { FiPlus, FiBox, FiSearch, FiFilter, FiX } from 'react-icons/fi';
 import { useAdminPermissions } from '@/components/admin/AdminPermissionProvider';
 import useSWR from 'swr';
+import storeConfig from 'base/store.config';
+import { isFeatureEnabled } from '@/lib/features';
+
+const DEPARTMENTS_ON = isFeatureEnabled('departments');
+const BRANDS_ON = isFeatureEnabled('brands');
+const SERIES_ON = isFeatureEnabled('series');
 
 // 🟢 داده‌ی مرجع (ورزش/برند/دسته/سری) — به‌ندرت تغییر می‌کند، پنجره‌ی ۵ دقیقه‌ای.
 const REF_DATA = { dedupingInterval: 300_000 };
@@ -33,14 +39,14 @@ export default function AdminProducts() {
   // ─── گزینه‌های فیلتر (🟢 داده‌ی مرجع — با SWR کش می‌شود) ───
   // این چهار درخواست قبلاً در هر بار ورود به صفحه دوباره زده می‌شدند. حالا در
   // پنجره‌ی REF_DATA از کش خوانده می‌شوند؛ رفت‌وبرگشت بین صفحات پنل صفر درخواست.
-  const { data: sportsRes } = useSWR('/api/sports', REF_DATA);
-  const { data: brandsRes } = useSWR('/api/brands', REF_DATA);
+  const { data: sportsRes } = useSWR(DEPARTMENTS_ON ? '/api/sports' : null, REF_DATA);
+  const { data: brandsRes } = useSWR(BRANDS_ON ? '/api/brands' : null, REF_DATA);
   const { data: categoriesRes } = useSWR(
     sportFilter ? `/api/categories?sportId=${sportFilter}` : '/api/categories',
     REF_DATA,
   );
   const { data: seriesRes } = useSWR(
-    brandFilter ? `/api/series?brand=${brandFilter}` : '/api/series',
+    !SERIES_ON ? null : brandFilter ? `/api/series?brand=${brandFilter}` : '/api/series',
     REF_DATA,
   );
 
@@ -199,30 +205,30 @@ export default function AdminProducts() {
           )}
         </div>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <FilterSelect
-            label="ورزش"
+          {DEPARTMENTS_ON && <FilterSelect
+            label={storeConfig.catalog.departmentLabel}
             value={sportFilter}
             onChange={(v) => { setSportFilter(v); setCategoryFilter(''); setPage(1); }}
-            options={[{ value: '', label: 'همه ورزش‌ها' }, ...sports.map((s) => ({ value: s._id, label: s.title || s.name }))]}
-          />
+            options={[{ value: '', label: `همه ${storeConfig.catalog.departmentLabelPlural}` }, ...sports.map((s) => ({ value: s._id, label: s.title || s.name }))]}
+          />}
           <FilterSelect
             label="دسته‌بندی"
             value={categoryFilter}
             onChange={(v) => { setCategoryFilter(v); setPage(1); }}
             options={[{ value: '', label: 'همه دسته‌ها' }, ...categories.map((c) => ({ value: c._id, label: getCategoryLabel(c) }))]}
           />
-          <FilterSelect
+          {BRANDS_ON && <FilterSelect
             label="برند"
             value={brandFilter}
             onChange={(v) => { setBrandFilter(v); setSerieFilter(''); setPage(1); }}
             options={[{ value: '', label: 'همه برندها' }, ...brands.map((b) => ({ value: b._id, label: b.title || b.name }))]}
-          />
-          <FilterSelect
+          />}
+          {SERIES_ON && <FilterSelect
             label="سری والد"
             value={serieFilter}
             onChange={(v) => { setSerieFilter(v); setPage(1); }}
             options={[{ value: '', label: 'همه سری‌ها' }, ...rootSeries.map((s) => ({ value: s._id, label: s.title || s.name }))]}
-          />
+          />}
         </div>
       </div>
 

@@ -92,7 +92,7 @@ test("در ویرایش، خودِ سند از چکِ تکراری کنار گذ
   );
 });
 
-test("نامکِ رزروشده‌ی روت‌های تنادور همچنان رد می‌شود", async () => {
+test("نامکِ رزروشده‌ی روت‌های فروشگاه همچنان رد می‌شود", async () => {
   await assert.rejects(() => assertArticleCategoryRouteAvailable("products"), { name: "ValidationError" });
 });
 

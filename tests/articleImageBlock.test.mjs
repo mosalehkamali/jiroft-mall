@@ -15,8 +15,8 @@ import { imageBlockItems, imageShadeLayer, imageShadeSettings, mirrorFirstImage,
 // articleValidation با نام‌های مستعار (base/ و @/) به بقیه ارجاع می‌دهد.
 register("./aliasHooks.mjs", import.meta.url);
 
-const URL1 = "https://ik.imagekit.io/tenador/a.jpg";
-const URL2 = "https://ik.imagekit.io/tenador/b.jpg";
+const URL1 = "https://ik.imagekit.io/example/a.jpg";
+const URL2 = "https://ik.imagekit.io/example/b.jpg";
 const sanitize = (data) => {
   const errors = {};
   const out = sanitizeArticleBlockData("image", data, errors, "blocks.0.data");

@@ -2,7 +2,7 @@
  * tests/blockAuthoring.test.mjs
  *
  * چهار قاعده‌ی تازه‌ی نویسندگیِ بلوک: کپی بینِ سندها، مقیاسِ بلوک‌های روی تصویر،
- * فاصله‌ی پیش‌فرضِ متن و تیترِ تنادور، و دکمه‌های پیش‌نمایش در فرمِ برند.
+ * فاصله‌ی پیش‌فرضِ متن و تیترِ نمونه، و دکمه‌های پیش‌نمایش در فرمِ برند.
  */
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -19,7 +19,7 @@ test("فاصله‌ی پیش‌فرض فقط برای همان بلوک‌هاس
   assert.match(table, /heading: \{ marginTop: "1rem", marginBottom: "1rem" \}/);
   assert.match(table, /paragraph: \{ marginTop: "1rem", marginBottom: "1rem" \}/);
   assert.match(table, /sectionTitle: \{ marginBottom: "5rem" \}/);
-  // تیترِ تنادور فقط *پایین* می‌گیرد؛ بالا دست‌نخورده می‌ماند.
+  // تیترِ نمونه فقط *پایین* می‌گیرد؛ بالا دست‌نخورده می‌ماند.
   assert.ok(!/sectionTitle: \{[^}]*marginTop/.test(table));
   // و هیچ نوعِ دیگری پیش‌فرض نمی‌گیرد.
   assert.deepEqual([...table.matchAll(/^\s{2}(\w+):/gm)].map((m) => m[1]), ["heading", "paragraph", "sectionTitle"]);

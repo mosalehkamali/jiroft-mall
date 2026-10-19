@@ -18,6 +18,7 @@ import { deriveDisplayName } from "@/lib/adminGuards"
 export const metadata = {
   title: `${storeConfig.brand.name} | پنل مدیریت`,
   description: `پنل مدیریت یکپارچه ${storeConfig.brand.name}`,
+  icons: { icon: storeConfig.brand.favicon, shortcut: storeConfig.brand.favicon, apple: storeConfig.brand.favicon },
   robots: {
     index: false,
     follow: false,

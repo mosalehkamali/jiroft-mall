@@ -340,6 +340,7 @@ The color code may appear in formats like:
   };
 
   const fetchSports = async () => {
+    if (!isFeatureEnabled('departments')) return;
     try {
       const res = await fetch('/api/sports');
       const data = await res.json();
@@ -838,7 +839,7 @@ The color code may appear in formats like:
               options={sports.map((s) => ({ value: s._id, label: s.title || s.name }))}
               placeholder="بدون دپارتمان (دسته‌ی ریشه)"
               disabled={!!lockedSportId}
-              hint={lockedSportId ? 'این دسته به ورزشِ انتخاب‌شده تعلق دارد و قابل تغییر نیست.' : 'اسلاگ دسته فقط در محدوده‌ی همین ورزش یکتاست.'}
+              hint={lockedSportId ? `این دسته به ${storeConfig.catalog.departmentLabel}ِ انتخاب‌شده تعلق دارد و قابل تغییر نیست.` : `اسلاگ دسته فقط در محدوده‌ی همین ${storeConfig.catalog.departmentLabel} یکتاست.`}
             />)}
 
             {isFeatureEnabled('departments') && (<AdditionalSportsField
@@ -879,12 +880,9 @@ The color code may appear in formats like:
               onChange={(e) => setFormData((prev) => ({ ...prev, parent: e.target.value }))}
               options={parentCategories.map((cat) => ({ value: cat._id, label: getCategoryLabel(cat) }))}
               placeholder="والد را انتخاب کنید"
-              disabled={!formData.sport}
-              hint={
-                !formData.sport
-                  ? 'ابتدا ورزش را انتخاب کنید.'
-                  : 'فقط دسته‌های همین ورزش می‌توانند والد باشند.'
-              }
+              hint={isFeatureEnabled('departments')
+                ? `فقط دسته‌های همین ${storeConfig.catalog.departmentLabel} (یا بدون ${storeConfig.catalog.departmentLabel}) می‌توانند والد باشند.`
+                : undefined}
             />
 
             <Select
@@ -894,7 +892,7 @@ The color code may appear in formats like:
               onChange={(e) => loadFromCategory(e.target.value)}
               options={loadFromOptions}
               placeholder="یک دسته را انتخاب کنید"
-              hint="از همه‌ی ورزش‌ها؛ نام ورزش پس از نام دسته می‌آید. تمام فیلدهای آن دسته (به‌جز ورزش) در فرم کپی می‌شود."
+              hint="تمام فیلدهای آن دسته در فرم کپی می‌شود."
             />
 
             {/* AI Prompts Section */}

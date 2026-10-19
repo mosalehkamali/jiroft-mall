@@ -36,7 +36,7 @@ import { SUPER_ADMIN_ROLE_NAME, SUPER_ADMIN_SYSTEM_KEY } from "../src/lib/permis
 
 const PORT = Number(process.env.AUDIT_VERIFY_PORT || 4200);
 const BASE = `http://localhost:${PORT}`;
-const DB_NAME = "tenador-audit";
+const DB_NAME = "store-base-audit";
 const KEEP = process.argv.includes("--keep");
 
 const PHONE = "09121110000";

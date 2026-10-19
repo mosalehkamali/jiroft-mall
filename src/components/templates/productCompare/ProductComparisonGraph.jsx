@@ -247,7 +247,7 @@ export default function ProductComparisonGraph({ technicalStats = {} }) {
                       className="w-full flex items-center gap-3 text-right"
                     >
                       <div className="w-10 h-10 rounded-md overflow-hidden bg-neutral-100 flex-shrink-0">
-                        <img src={r.mainImage || r.image || "/placeholder.png"} alt={r.name} className="w-full h-full object-cover" />
+                        <img src={r.mainImage || r.image || "/brand/placeholder.svg"} alt={r.name} className="w-full h-full object-cover" />
                       </div>
                       <div className="flex-1 text-right">
                         <div className="font-bold text-sm">{r.title || r.name}</div>
@@ -270,7 +270,7 @@ export default function ProductComparisonGraph({ technicalStats = {} }) {
           {comparisonProducts.map((p, idx) => (
             <div key={p._id ?? idx} className={`flex items-center gap-2 bg-white border border-neutral-100 px-3 py-2 rounded-xl shadow-sm`}>
               <div className="w-9 h-9 rounded-md overflow-hidden bg-neutral-100 flex-shrink-0">
-                <img src={p.mainImage || p.image || "/placeholder.png"} alt={p.name} className="w-full h-full object-cover" />
+                <img src={p.mainImage || p.image || "/brand/placeholder.svg"} alt={p.name} className="w-full h-full object-cover" />
               </div>
               <div className="text-sm font-bold max-w-[200px] truncate">{p.title || p.name}</div>
               <button onClick={() => removeComparisonProduct(p._id)} className="p-2 rounded-md hover:bg-neutral-50 text-neutral-500">

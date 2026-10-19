@@ -8,7 +8,7 @@
  */
 import storeConfig from "base/store.config";
 
-/** "#aa4725" → "15 64% 41%" (the shadcn-style triplet some components read as hsl(var(--primary))). */
+/** "#2563eb" → "221 83% 53%" (the shadcn-style triplet some components read as hsl(var(--primary))). */
 function hslTriplet(hex) {
   let h = String(hex).replace("#", "");
   if (h.length === 3) h = h.split("").map((x) => x + x).join("");

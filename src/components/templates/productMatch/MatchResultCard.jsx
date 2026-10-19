@@ -88,7 +88,7 @@ export default function MatchResultCard({ product, diffs, target, categoryStats 
       <Link href={productUrl} className="block">
         <div className="w-full aspect-square bg-neutral-50 overflow-hidden">
           <img
-            src={product.mainImage || '/placeholder.png'}
+            src={product.mainImage || '/brand/placeholder.svg'}
             alt={product.name}
             className="w-full h-full object-contain p-3 hover:opacity-90 hover:scale-105 transition-all duration-500"
           />

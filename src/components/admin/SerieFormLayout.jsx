@@ -26,6 +26,11 @@ export const inputClass =
 export const textareaClass =
   "w-full resize-y rounded-[6px] border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm leading-7 text-gray-900 outline-none transition focus:border-[var(--color-primary)] focus:bg-white focus:ring-2 focus:ring-orange-100";
 
+import { isFeatureEnabled } from "@/lib/features";
+import storeConfig from "base/store.config";
+
+const DEPARTMENTS_ON = isFeatureEnabled("departments");
+
 const uploadClass =
   "!mb-0 [&_button]:rounded-[6px] [&_img]:!h-28 [&_img]:!max-w-full [&_img]:rounded-[6px] [&_input]:rounded-[6px] [&_label]:!mb-1 [&_label]:!text-xs";
 
@@ -326,7 +331,7 @@ export default function SerieFormLayout({
 
       <AccordionBox
         title="اطلاعات پیش‌فرض سری"
-        eyebrow="برای حالت عمومی و fallback همه ورزش‌ها"
+        eyebrow={DEPARTMENTS_ON ? `برای حالت عمومی و fallback همه‌ی ${storeConfig.catalog.departmentLabelPlural}` : "اطلاعات سری"}
         icon={FaLayerGroup}
         open={openBoxes.default}
         onToggle={() => toggleBox("default")}
@@ -462,6 +467,8 @@ export default function SerieFormLayout({
         </div>
       </AccordionBox>
 
+      {/* محتوای مخصوصِ هر دپارتمان — فقط با قابلیت departments */}
+      {DEPARTMENTS_ON && (<>
       <EmptySportState
         availableSports={availableSports}
         selectedSport={selectedSport}
@@ -572,6 +579,8 @@ export default function SerieFormLayout({
       {/* مینی‌مقاله روی صفحه‌ی خودش ویرایش می‌شود — همان الگوی بروشورِ برند.
           داده همان formData.articleBlocks است و این فرم دیگر به آن دست نمی‌زند،
           پس ذخیره‌ی سری هرگز مقاله‌ی ذخیره‌شده را بازنویسی نمی‌کند. */}
+      </>)}
+
       <SerieMiniArticleCard
         className="rounded-[6px] border border-gray-200 bg-white p-4 shadow-sm md:p-6"
         brandId={brandId}

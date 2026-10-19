@@ -8,6 +8,7 @@
 import Reveal from "./Reveal";
 import { getIcon } from "./iconMap";
 import ZoomableImage from "./ZoomableImage";
+import storeConfig from "base/store.config";
 
 /* ─────────────── سرفصلِ مشترکِ بخش‌ها ─────────────── */
 export function SectionHeading({ eyebrow, title, subtitle, accent, center = true }) {
@@ -92,7 +93,7 @@ export function ImageText({ block, accent, zoom = false }) {
               />
             ) : (
               <img
-                src={block.image || "/images/default-sport.jpg"}
+                src={block.image || storeConfig.brand.imageFallback}
                 alt={block.title || ""}
                 className={imgCls}
               />

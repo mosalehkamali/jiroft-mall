@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import useSWR from 'swr';
+import storeConfig from 'base/store.config';
 import Link from 'next/link';
 import Image from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -172,7 +173,7 @@ export default function SliderManagement() {
                         {/* thumbnail */}
                         <div className="relative w-28 h-16 rounded-xl overflow-hidden bg-gray-100 flex-shrink-0 border border-gray-100">
                           <Image
-                            src={slide.image || '/images/placeholder.jpg'}
+                            src={slide.image || storeConfig.brand.imageFallback}
                             alt={slide.title}
                             fill
                             className="object-cover"

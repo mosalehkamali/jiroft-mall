@@ -55,7 +55,7 @@ export default function BestInCategorySection({ categoryId, onSelectProduct }) {
                         <div className="flex items-center gap-4">
                             <div className="relative w-14 h-14 shrink-0 rounded-lg overflow-hidden bg-white border border-neutral-50">
                                 <img
-                                    src={data.product.mainImage || '/placeholder.png'}
+                                    src={data.product.mainImage || '/brand/placeholder.svg'}
                                     alt={data.product.name}
                                     className="w-full h-full object-contain p-1 group-hover:scale-110 transition-transform duration-500"
                                 />
