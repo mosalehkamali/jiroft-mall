@@ -2,50 +2,86 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+This is **Store Base**: a reusable e-commerce starter. Each client store is a separate copy of this
+repository; everything that differs between stores belongs in `store.config.js` (see
+"Store configuration" below and docs/CUSTOMIZATION.md). Keep new per-client choices there rather
+than hard-coding them.
+
 ## Commands
 
 ```bash
 npm run dev          # Start Next.js dev server
 npm run build        # Production build
 npm run lint         # ESLint (next/core-web-vitals)
-npm test             # Jest test suite (node env; tests/setup.js spins up mongodb-memory-server)
-npm run test:product-creation                # Product create + edit end to end (needs a replica set)
-npm test -- tests/paymentWorkflow.test.js   # Run a single test file
-npm test -- -t "name of test"                # Run tests matching a name
-npm run test:sender-address                  # Sender-address validation (print flow)
-npm run test:comment-photos-replies          # Comment photos + replies (real mongo, real Comment schema)
-npm run test:db      # Test MongoDB connection
-npm run check:mongodb # Inspect MongoDB collections/state
+npm test             # Every tests/*.test.mjs in its own process (scripts/run-tests.mjs)
+npm test -- variant product        # Only test files whose name contains a word
+npm run test:store-rules           # Feature registry + product rules (fast, no DB)
+npm run dev:db       # Throwaway MongoDB replica set for local use; prints MONGODB_URI
+npm run seed -- --phone 09120000000 --password '…' [--name …] [--demo]   # First admin (+ demo catalogue)
+npm run smoke -- --phone … --password … [--base http://localhost:3000]   # E2E check of a running store (writes test data)
+npm run ensure:indexes               # Build indexes (autoIndex is off in the app)
+npm run audit:admin-rbac             # Dry-run audit of admin roles/permission keys
+npm run rbac:coverage                # Every permission key enforced somewhere?
+npm run test:db / npm run check:mongodb
 
-# Database migrations (run when needed)
-npm run migrate:used-products
-npm run migrate:coach-codes
-npm run migrate:category-sport   # Drops global slug unique indexes, adds per-sport compound indexes (required in prod)
-npm run check:tracking-variant-refs        # Dry-run: warehouse barcodes whose variantRef points at a deleted variant
-npm run repair:tracking-variant-refs       # Repoint them at the current variant (matched via the warehouse's variantKey snapshot)
-npm run check:order-variant-snapshots      # Dry-run: order lines showing a blank variant (deleted variant, no snapshot)
-npm run backfill:order-variant-snapshots   # Fill variantSnapshot where another order line proves the attributes
-npm run check:article-image-dimensions    # Dry-run: report article/brand image blocks missing width+height
-npm run migrate:article-image-dimensions  # Backfill those dimensions (idempotent); revalidate the `articles` tag afterwards
-npm run check:remove-seller-role          # Dry-run: data still referencing the removed `seller` role
-npm run migrate:remove-seller-role        # Move those references to `store` (users, discount rules, broadcasts, review-credit config)
-
-# Background workers (must run separately from the web process)
-npm run worker:prices
-npm run worker:discounts
-npm run worker:installment-reminders   # Sends installment due-date reminders
-npm run worker:review-followup         # Sends "did your order arrive?" follow-up 3 days after delivery
+# Periodic jobs (no-ops while their feature is off)
+npm run worker:installment-reminders   # Instalment due-date reminders (features.installments)
+npm run worker:review-followup         # "Did your order arrive?" 3 days after delivery (features.reviews)
 ```
 
-`installment-reminders` and `review-followup` are periodic scans (not BullMQ), designed to be triggered by an external scheduler rather than run continuously. In production they run via **Vercel Cron** (`vercel.json`), which calls `GET /api/cron/installment-reminders` and `GET /api/cron/review-followup` — both check an `Authorization: Bearer $CRON_SECRET` header (Vercel sets this automatically when `CRON_SECRET` is configured as a project env var) and 401 otherwise. The `npm run worker:*` scripts remain for local/manual runs.
+`installment-reminders`, `review-followup` and `wallet-notifications` are periodic scans designed to be
+triggered by an external scheduler. In production they run via **Vercel Cron** (`vercel.json`), which calls
+`GET /api/cron/*` — each checks an `Authorization: Bearer $CRON_SECRET` header (Vercel sets this automatically
+when `CRON_SECRET` is configured) and 401s otherwise; a disabled feature's cron path answers 404.
+
+Tests: the legacy suite runs against `tests/fixtures/store.config.full.js` (every feature on, exchange pricing)
+via `STORE_CONFIG_FIXTURE` + `tests/aliasHooks.mjs`; `features.test.mjs` and `productRules.test.mjs` run
+against the shipped `store.config.js`. Tests that load a route into a `vm` take the pure config modules from
+`tests/vmDeps.mjs`.
 
 ## Architecture
+
+### Store configuration (store.config.js)
+
+One plain-data file per store: `brand`, `theme`, `home`, `productPage`, `navigation`, `features`,
+`catalog` (department label, product field rules, custom fields, per-category rules) and `commerce` (currency,
+pricing mode, purchase mode, inventory, delivery, payment methods). It is imported by server code, client
+components, workers and tests — keep it free of imports and env access.
+
+| module | role |
+|---|---|
+| `src/lib/features.js` | feature registry: dependencies, the paths/permission modules each feature owns. `isFeatureEnabled`, `disabledFeatureForPath`, `isHrefEnabled`, `isPermissionKeyEnabled` |
+| `src/middleware.js` | 404s every page/API of a disabled feature, then the panel auth guards |
+| `src/lib/permissions.js` | `computeEffectivePermissions` drops disabled features' keys (full access included); stored keys stay valid |
+| `src/lib/productRules.js` | product field rules by stage (draft/published/purchasable), custom fields, visibility, `purchaseStatus`, `toPublicProduct`, `searchablePaths` — pure, used client and server side |
+| `services/productRules.service.js` | resolves per-category rules (walks category parents) |
+| `services/productWrite.service.js` | the single product-create path (admin form + bulk import) |
+| `services/inventory.service.js` | stock reserve/release (`commerce.inventory.mode = "stock"`) |
+| `src/lib/commerce.js` | delivery/purchase mode + payment methods for checkout UI and API |
+| `src/lib/currency.js` + `src/lib/Exchangerate.js` | pricing mode: `direct` (rate 1) or `exchange`; `roundTo` |
+| `src/components/common/StoreHead.jsx` | theme → CSS variables in all three root layouts |
+| `src/lib/catalogPath.js` | storefront URLs with optional department level |
+
+Rules that are load-bearing:
+
+- **Disabling never deletes data.** Gating is resolution-time only; nothing writes when a feature changes.
+- **A feature is on only if its dependencies are.** Never test a raw config flag — use `isFeatureEnabled`.
+- **Customers never receive internal fields.** Every product leaving the server goes through
+  `toPublicProduct` (listings via `attachListingPrices`, product page via `getProductBySlug`, public product APIs).
+  Purchasability reasons can name internal fields, so customers get only `publicPurchase(status)`.
+- **Purchasing is decided in one place:** `computeCartPrice` refuses unpurchasable lines (`unavailable`), the
+  checkout 409s on any. Admin order edits pass `{ adminOverride: true }`.
+- **Departments are optional.** `Category.sport` / `Product.sport` may be null: a root category lives at
+  `/[category]` (and `/[category]/[brand]`); without the feature *every* category does, and series move to
+  `/[brand]/[serie]`. The resolver is `services/query.service.js`; the navbar uses a virtual root department.
+- **Colours**: components use `var(--color-*)`; anything stored as data or fed to `<input type="color">` (banner/
+  event defaults, pickers) and emails use the config hex values.
 
 ### Route Groups
 
 Three route groups under `src/app/`:
 
-- `(Site)/` — Public storefront (sports, products, articles, athletes, auth, second-hand)
+- `(Site)/` — Public storefront (catalogue incl. optional departments, products, articles, athletes, auth, second-hand)
 - `(Admin-Panel)/p-admin/` — Admin dashboard, protected by role check in each route
 - `(User-Dashboard)/p-user/` — User account pages, protected by `middleware.js`
 
@@ -71,7 +107,7 @@ Mongoose v9 connecting to MongoDB. Connection is cached in `global._mongooseCach
 
 All models are in `models/`. **Always import `models/registerModels.js` before using any model** — it registers all schemas as side-effects to prevent tree-shaking from dropping model definitions at build time.
 
-Three separate MongoDB URIs: `MONGODB_URI_TENADOR` (primary), `MONGODB_URI_LOCAL` (dev), `MONGODB_URI_WAREHOUSE` (separate warehouse DB).
+`MONGODB_URI` must point at a **replica set** (product writes use transactions). `MONGODB_URI_WAREHOUSE` is the separate warehouse DB, used only with `features.warehouse` (`src/lib/warehouseDb.js` refuses to connect otherwise).
 
 ### Caching Strategy
 
@@ -91,7 +127,9 @@ After any admin mutation, call `revalidateContent(tags)` from `src/lib/revalidat
 
 ### Pricing
 
-`services/priceEngine.js` computes prices server-side (base price in Toman, discount rules, exchange rate conversion from USD). Results are precomputed and stored in `PriceCache` model. BullMQ workers (`workers/priceWorker.js`, `workers/discountWorker.js`) handle async recalculation when products or discount rules change.
+`services/priceEngine.js` computes prices server-side at request time: stored price × rate (rate is 1 in
+`direct` pricing mode), discount rules, flash sales, quantity tiers and coupons (all of which belong to
+`features.discounts`), then rounding (`commerce.pricing.roundTo`). There is no price cache or price worker.
 
 ### Variant identity
 
@@ -133,8 +171,8 @@ constraints, asserts `_id`s survive an edit). Both must stay green — they are 
 
 Note that a *deliberate* combination removal still deletes the variant and so still dangles old references; that is
 why `order.items[].variantSnapshot` exists (written at checkout since 2026-06-25, read by `VariantSummary` with a
-fallback to `variant.attributes`). Orders placed before that date have no snapshot and display blank if their variant
-was deleted — see the two `*variant*` scripts above.
+fallback to `variant.attributes`). Orders without a snapshot display a blank
+variant if it was deleted.
 
 ### Product create/edit: one validator, one transaction
 
@@ -548,17 +586,7 @@ collapse, the larger wins). The editor shows blocks as separate cards, so this o
 2.25rem value like any other. `sanitizeArticleBlockStyle` therefore strips `"none"` (the new default) and
 keeps `"md"`, which is the reverse of before — a stored `"md"` must survive a save.
 
-Existing content keeps its exact look because the migration writes the previously implicit spacing:
-
-```bash
-npm run check:block-spacing     # dry run
-npm run migrate:block-spacing   # writes style.spacing = "md" where it was implicit (idempotent)
-```
-
-It walks articles, article revisions, brand mini articles + category articles + brochures, and serie
-articles, including blocks nested in merged blocks. **paragraph (`my-5`) and divider (`my-10`) carry their
-own margins, not the shared one, so they are deliberately skipped** — pinning "md" would change 20/40px to 36px.
-Run it right after deploying; until then, untouched blocks render flush.
+**paragraph and divider carry their own margins, not the shared one.**
 
 ```bash
 npm run test:block-spacing
@@ -579,19 +607,6 @@ cannot carry a media query — the same split the block layout box uses.
 
 A merged block **without** a grid is the pre-grid rendering path and has no gap setting,
 so it now renders at 0 too.
-
-Existing content keeps its exact look by making the old implicit gap explicit:
-
-```bash
-npm run check:merged-gap     # dry run
-npm run migrate:merged-gap   # writes desktop 1.5 / mobile 1 where gap was absent (idempotent)
-```
-
-**Run it before content gets re-saved.** Saving a merged block through the admin writes
-`gap: 0` explicitly (that is the new default), after which the migration can no longer
-tell "never configured" from "deliberately zero" — exactly like the block-spacing
-migration, and for the same reason. A block whose gap is already explicit is never
-touched, and a grid-less merged block is skipped rather than given a grid it never had.
 
 ### Block layout box, and the editable Preview
 
@@ -779,7 +794,7 @@ Each rule exists for a real trap:
 - Scrolling is applied as a **delta** (`start - dx`), which is direction-agnostic: in this
   RTL document `scrollLeft` runs from 0 down to −max, and the same formula holds.
 
-### Merged-block slider controls, and the «تیتر تنادور» block
+### Merged-block slider controls, and the «تیتر بخش» block
 
 Both reuse the homepage's own implementation rather than a look-alike, because a
 copy is a thing that drifts the first time one side changes.
@@ -799,7 +814,7 @@ Out of flow is the point: on the homepage the buttons sit *level with the sectio
 not between the heading and the slider, and the 40/64px is the header's own bottom margin.
 A normal row would instead add its height to the gap between the preceding block and the
 slider, and that gap is something the admin sets per block. Measured: the frame's height
-equals the scroller's, so a «تیتر تنادور» above a slider keeps exactly the spacing it was
+equals the scroller's, so a «تیتر بخش» above a slider keeps exactly the spacing it was
 given, and the buttons still land 64px above the slider.
 
 | rule | why |
@@ -813,7 +828,7 @@ given, and the buttons still land 64px above the slider.
 The buttons disable at the two ends (`disabled:opacity-40`). The homepage never passes
 those props — it does not load `swiper/css/navigation` — so its output is unchanged.
 
-**«تیتر تنادور»** renders `HomeSectionHeading`, the same component the four homepage
+**«تیتر بخش»** renders `HomeSectionHeading`, the same component the four homepage
 sections use, so typography, sizes, colours and the subtitle's side rule are not
 re-specified anywhere. Only three texts are editable (orange, the rest of the title,
 subtitle) and `styleKeys` is spacing-only.
@@ -918,18 +933,6 @@ Rules that are load-bearing:
 `flattenArticleBlocks` treats them differently on purpose — a merged block is *replaced*
 by its children (it has no content of its own), an image block yields **itself and** its
 children, so the image-dimension script still sees every image.
-
-```bash
-npm run check:image-overlay-text     # dry run
-npm run migrate:image-overlay-text   # each overlayText becomes a nested paragraph
-```
-
-The migration loses nothing: every `overlayText` becomes a nested paragraph in order,
-`overlay.align`/`overlay.color` become that paragraph's `style`, the old implicit
-`bg-black/35` becomes `shade: 35` (or nothing, if the admin had turned the shade off), and
-`overlay.position` becomes `contentPosition`. Size and direction are not carried over —
-a paragraph has its own. **Run it before an admin re-saves those blocks:** a save drops
-`overlayText` (it is no longer in the validator) and the text does not come back.
 
 ```bash
 npm run test:article-image-block
@@ -1045,7 +1048,7 @@ the viewport — inherent to being a block.
 
 Note the block emits an `<h1>`, exactly as the site header does, so an article that uses it
 has two `<h1>`s (its own title and the block's). That is the price of being identical;
-`articleHeadings` deliberately ignores it, like `tenadorTitle`.
+`articleHeadings` deliberately ignores it, like `sectionTitle`.
 
 ```bash
 npm run test:block-layout
@@ -1151,7 +1154,7 @@ the rules exist only under `.a-image-overlay`.
 
 **Default spacing is per type.** "Zero unless configured" stays the general rule;
 `BLOCK_DEFAULT_SPACING` lists the three deliberate exceptions — heading and paragraph get
-1rem top and bottom, the Tenador title gets 5rem at the **bottom only**. An admin's
+1rem top and bottom, the section title gets 5rem at the **bottom only**. An admin's
 `style.spacing` replaces the default outright, and `layout.mt`/`mb` still override one side
 at a time; the paragraph's old `my-5` class is gone so there is only ever one source.
 
@@ -1191,7 +1194,7 @@ formatting (`richTextValue`), so existing content needs no migration:
   that isn't on a control to its *first* control — a click in the FAQ answer's
   contentEditable focused the question, a click on an entity chip hit the first chip's
   remove button, a click on an image preview opened the file picker.
-- FAQ **questions**, titles, labels and the Tenador title stay plain: a question sits in a
+- FAQ **questions**, titles, labels and the section title stay plain: a question sits in a
   `<summary>`, where a link fights the toggle.
 - `RichParagraph` in the renderer emits the old `<p>` byte for byte when there is no html. With
   html it adds `rt-inline`, which gives only the **descendants** the size-following line
@@ -1246,7 +1249,10 @@ npm run test:block-layout   # includes tests/richTextBlocks.test.mjs
 
 `SlugRegistery` model maps dynamic URL segments (sport/category/brand slugs) to their entity types. `actions/registerSlug.js` is a server action that creates entries on entity creation. This powers ISR revalidation — when a slug is revalidated, the correct entity page is rebuilt.
 
-**Categories are scoped under a sport.** A `Category` has a required `sport` ref, and the slug is unique only within that sport (compound index `{ sport, slug }`) — two sports can each have a `racket` category. The public URL structure is nested: `/[sportSlug]/[categorySlug]` (e.g. `/tennis/racket`). Correspondingly `SlugRegistery` is no longer globally unique on `slug`; uniqueness is `{ type, slug, filterValue }`. Existing prod data must be migrated with `npm run migrate:category-sport`, which drops the old global `slug_1` indexes and reports any categories still missing a sport (these stay hidden from storefront/sitemap until assigned one).
+**Categories may be scoped under a department.** `Category.sport` is optional: the slug is unique within its
+department (compound index `{ sport, slug }`), and root categories (`sport: null`) are unique among themselves.
+Root category slugs share the URL root with brands and departments, so
+`services/categorySportValidation.service.js` refuses collisions.
 
 ### Feature Subsystems
 
@@ -1379,26 +1385,14 @@ npm run verify:audit-trail   # real HTTP against a built app on a throwaway DB
 ### Key Conventions
 
 - **RTL/Persian first:** The app is fully right-to-left. UI components use Vazirmatn font (loaded in `src/app/globals.css`). Always consider RTL layout when building new UI. Farsi inline comments are common throughout the codebase.
-- **Images via ImageKit (migrated from Cloudinary):** Uploads go through `POST /api/upload` using the ImageKit SDK; coach-document PDFs are uploaded as private files and served through the signed-URL proxy at `src/app/api/files/pdf/route.js`. `next/image` uses a custom loader (`src/lib/imagekitLoader.js`) so Vercel image optimization is bypassed entirely; the loader still passes through legacy `res.cloudinary.com` URLs until the DB migration (`scripts/migrate-cloudinary-to-imagekit*.mjs`) is fully done, and skips transforms for SVGs (adds `tr=orig-true` to stop ImageKit rasterizing them). Never use local `/public` for user-uploaded content.
+- **Images via ImageKit (migrated from Cloudinary):** Uploads go through `POST /api/upload` using the ImageKit SDK; coach-document PDFs are uploaded as private files and served through the signed-URL proxy at `src/app/api/files/pdf/route.js`. `next/image` uses a custom loader (`src/lib/imagekitLoader.js`) so Vercel image optimization is bypassed entirely; the loader also passes through `res.cloudinary.com` URLs unchanged, and skips transforms for SVGs (adds `tr=orig-true` to stop ImageKit rasterizing them). Never use local `/public` for user-uploaded content.
 - **React Compiler is enabled** (`reactCompiler: true` in `next.config.mjs`) — don't add manual `useMemo`/`useCallback` for plain render memoization.
-- **Tailwind v4:** No `tailwind.config.js` — configuration is done via CSS variables in `globals.css`. Primary color: `#aa4725`, secondary: `#ffbf00`.
+- **Tailwind v4:** No `tailwind.config.js` — configuration is done via CSS variables in `globals.css`; the values come from `store.config.js` → `theme` (emitted by `StoreHead`). Use `var(--color-primary)` etc., never hex literals.
 - **Mixed JS/JSX:** Most files are `.js` or `.jsx`, not TypeScript. `tsconfig.json` exists but `strict` is off.
 - **Path aliases:** `@/*` maps to `src/*`; `base/*` maps to the repo root.
 
 ### Environment Variables
 
-Required in `.env` (no `.env.example` exists):
-
-```
-MONGODB_URI_TENADOR / MONGODB_URI_LOCAL / MONGODB_URI_WAREHOUSE
-IMAGEKIT_PUBLIC_KEY / IMAGEKIT_PRIVATE_KEY / IMAGEKIT_URL_ENDPOINT / NEXT_PUBLIC_IMAGEKIT_URL_ENDPOINT
-CLOUDINARY_CLOUD_NAME / CLOUDINARY_API_KEY / CLOUDINARY_API_SECRET   # legacy — only the one-off Cloudinary→ImageKit migration scripts need these
-AccessTokenPrivateKey / RefreshTokenPrivateKey
-GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET
-NEXT_PUBLIC_BASE_URL / NEXT_PUBLIC_SITE_URL / NEXT_PUBLIC_LOGO_URL
-EMAIL_HOST / EMAIL_PORT / EMAIL_USER / EMAIL_PASS / EMAIL_FROM / ADMIN_EMAIL
-BULLMQ_QUEUE / BATCH_SIZE / PRECOMPUTE_CONCURRENCY / PRICE_CACHE_TTL
-REDIS_URL                                                    # BullMQ connection (workers)
-NEXT_PUBLIC_VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY / VAPID_SUBJECT   # Web push
-CRON_SECRET                                                  # Authenticates Vercel Cron requests to /api/cron/*
-```
+See `.env.example` (required: `MONGODB_URI`, `AccessTokenPrivateKey`, `RefreshTokenPrivateKey`,
+`NEXT_PUBLIC_SITE_URL`; everything else enables an optional service or feature). The ImageKit client is
+created lazily (`src/lib/imagekit.js`), so the app builds and runs before uploads are configured.
