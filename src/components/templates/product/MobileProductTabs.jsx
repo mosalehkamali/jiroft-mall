@@ -19,7 +19,7 @@ export function useMobileProductLayout() {
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 }
 
-export default function MobileProductTabs({ tabs, renderContent }) {
+export default function MobileProductTabs({ tabs, renderContent, keepMounted = [] }) {
   const [openSection, setOpenSection] = useState("description");
   const instanceId = useId();
   const reduceMotion = useReducedMotion();
@@ -77,7 +77,7 @@ export default function MobileProductTabs({ tabs, renderContent }) {
         const panelId = `${instanceId}-${tab.id}`;
         return (
           <section key={tab.id} className={styles.section} data-open={isOpen}>
-            <h3 className={styles.heading}>
+            <div className={styles.heading}>
               <button
                 id={`${panelId}-heading`}
                 type="button"
@@ -100,13 +100,17 @@ export default function MobileProductTabs({ tabs, renderContent }) {
                 </span>
                 <span className={styles.titleGroup}>
                   <span className={styles.title}>{tab.label}</span>
-                  {tab.count > 0 && <span className={styles.count}>{tab.count.toLocaleString("fa-IR")}</span>}
+                  {tab.countContent ? <span className="inline-flex w-10 shrink-0 justify-center">{tab.countContent}</span> : tab.count > 0 && <span className={styles.count}>{tab.count.toLocaleString("fa-IR")}</span>}
                 </span>
                 <FiArrowLeft className={styles.chevron} aria-hidden="true" />
               </button>
-            </h3>
+            </div>
             <div id={panelId} role="region" aria-labelledby={`${panelId}-heading`} aria-hidden={!isOpen} inert={!isOpen}>
-              <AnimatePresence initial={false}>
+              {keepMounted.includes(tab.id) ? (
+                <motion.div initial={false} animate={{ height: isOpen ? "auto" : 0, opacity: isOpen ? 1 : 0 }} style={{ overflow: isOpen ? "visible" : "hidden" }} transition={{ duration: reduceMotion ? 0 : 0.28, ease: [0.22, 1, 0.36, 1] }}>
+                  <div className={styles.content}>{renderContent(tab.id, isOpen)}</div>
+                </motion.div>
+              ) : <AnimatePresence initial={false}>
                 {isOpen && (
                   <motion.div
                     key={tab.id}
@@ -118,7 +122,7 @@ export default function MobileProductTabs({ tabs, renderContent }) {
                     <div className={styles.content}>{renderContent(tab.id)}</div>
                   </motion.div>
                 )}
-              </AnimatePresence>
+              </AnimatePresence>}
             </div>
           </section>
         );

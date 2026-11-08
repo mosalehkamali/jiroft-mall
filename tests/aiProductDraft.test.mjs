@@ -194,3 +194,428 @@ test('a category with no scoped attribute says so instead of leaving a dangling 
   assert.ok(draft.includes('Every attribute in this category applies to every target audience.'));
   assert.ok(!draft.includes('Applies ONLY when targetAudience'));
 });
+
+// ── تنظیمات پرامپت: روتِ واقعیِ پنل → سندِ واقعی → روتِ واقعیِ پیش‌نویس ─────────
+
+test('prompt settings: saved through the admin route, applied per category by the draft route', async () => {
+  const { GET, PUT } = await import('../src/app/api/admin/product-prompts/route.js');
+  const Category = mongoose.model('Category');
+  const squash = await Category.create({ name: 'squash-racket', title: 'راکت', sport: padel._id });
+  const put = (body) => PUT({ json: async () => body });
+  const load = async () => (await (await GET()).json()).config;
+
+  // هنوز چیزی ذخیره نشده: پنل نقطه‌ی شروع را می‌بیند
+  const initial = await load();
+  assert.equal(initial.updatedAt, null);
+  assert.deepEqual(initial.groups, []);
+  assert.ok(initial.document.some((s) => s.kind === 'fields'));
+  const withTask = (rules) => initial.document.map((s) => (s.key === 'task' ? { ...s, rules } : s));
+
+  const group = (rules, categories = [String(tennisCategory._id), String(padelCategory._id), String(squash._id)]) =>
+    ({ title: 'راکت‌ها', categories, rules });
+  const body = {
+    updatedAt: null,
+    document: withTask(['READ the raw product content provided below.', 'GLOBAL RULE FOR EVERY PRODUCT']),
+    groups: [group([
+      { field: 'name', text: 'GROUP RULE FOR ALL RACKETS', categories: [] },
+      { field: 'name', text: 'GROUP RULE ONLY TENNIS AND PADEL', categories: [String(tennisCategory._id), String(padelCategory._id)] },
+    ])],
+  };
+
+  // اعتبارسنجی: قاعده‌ای که به دسته‌ی بیرون از گروه اشاره کند رد می‌شود و چیزی ذخیره نمی‌شود
+  const outside = await put({ ...body, groups: [group([{ field: 'name', text: 'x', categories: [String(squash._id)] }], [String(tennisCategory._id)])] });
+  assert.equal(outside.status, 400);
+  assert.ok((await outside.json()).fieldErrors['groups.0.rules.0']);
+  const phantom = await put({ ...body, groups: [group([], [String(new mongoose.Types.ObjectId())])] });
+  assert.equal(phantom.status, 400);
+  assert.equal((await load()).updatedAt, null);
+
+  const saved = await put(body);
+  assert.equal(saved.status, 200, JSON.stringify(await saved.clone().json()));
+  const { config } = await saved.json();
+  assert.ok(config.updatedAt);
+  assert.deepEqual(await load(), config);
+
+  // نسخه‌ی کهنه: ذخیره‌ی دوم روی updatedAtِ قدیمی بازنویسی نمی‌کند
+  assert.equal((await put({ ...body, document: withTask(['OVERWRITE']) })).status, 409);
+  assert.deepEqual((await load()).document, config.document);
+
+  const draftFor = async (id) => (await (await requestDraft(id)).json()).draft;
+  const tennisDraft = await draftFor(tennisCategory._id);
+  const squashDraft = await draftFor(squash._id);
+  const otherDraft = await draftFor((await Category.create({ name: 'balls', title: 'توپ', sport: tennis._id }))._id);
+
+  for (const d of [tennisDraft, squashDraft, otherDraft]) assert.ok(d.includes('\nGLOBAL RULE FOR EVERY PRODUCT\n'));
+  assert.equal(outputExample(squashDraft).sport, String(padel._id));
+  assert.ok(tennisDraft.includes('GROUP RULE FOR ALL RACKETS') && tennisDraft.includes('GROUP RULE ONLY TENNIS AND PADEL'));
+  assert.ok(squashDraft.includes('GROUP RULE FOR ALL RACKETS') && !squashDraft.includes('ONLY TENNIS AND PADEL'));
+  assert.ok(!otherDraft.includes('GROUP RULE'));
+  // داده‌های تزریقی همچنان سر جای خودشان‌اند
+  assert.ok(tennisDraft.includes('AVAILABLE BRANDS') && tennisDraft.includes(String(brand._id)));
+
+  // دسته‌ی حذف‌شده: ذخیره‌های بعدی قفل نمی‌شوند و قاعده‌اش به هیچ دسته‌ای نمی‌خورد
+  const doomed = await Category.create({ name: 'doomed', title: 'موقت', sport: tennis._id });
+  const withDoomed = { ...body, updatedAt: config.updatedAt, groups: [group(
+    [{ field: 'tag', text: 'DOOMED ONLY', categories: [String(doomed._id)] }],
+    [String(tennisCategory._id), String(doomed._id)],
+  )] };
+  const second = await put(withDoomed);
+  assert.equal(second.status, 200);
+  await Category.deleteOne({ _id: doomed._id });
+  const third = await put({ ...withDoomed, updatedAt: (await second.json()).config.updatedAt });
+  assert.equal(third.status, 200, JSON.stringify(await third.clone().json()));
+  assert.ok(!(await draftFor(tennisCategory._id)).includes('DOOMED ONLY'));
+
+  await mongoose.model('ProductPromptConfig').deleteMany({});
+});
+
+test('prompt settings pages save separately: each part leaves the others alone, group ids are stable', async () => {
+  const { GET, PUT } = await import('../src/app/api/admin/product-prompts/route.js');
+  const put = async (body) => { const res = await PUT({ json: async () => body }); return { status: res.status, body: await res.json() }; };
+  const load = async () => (await (await GET()).json()).config;
+  await mongoose.model('ProductPromptConfig').deleteMany({});
+  const initial = await load();
+  const withTask = (rules) => initial.document.map((s) => (s.key === 'task' ? { ...s, rules } : s));
+
+  const groupA = { title: 'A', categories: [String(tennisCategory._id)], rules: [{ field: 'name', text: 'RULE A', categories: [] }] };
+  const groupB = { title: 'B', categories: [String(padelCategory._id)], rules: [{ field: 'brand', text: 'BRAND RULE', categories: [] }] };
+  let r = await put({ updatedAt: null, groups: [groupA, groupB] });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const [idA, idB] = r.body.config.groups.map((g) => g._id);
+  assert.match(idA, /^[a-f\d]{24}$/);
+  // اولین ذخیره کلِ پرامپت را به سند می‌برد: همان متنِ نقطه‌ی شروع
+  assert.deepEqual(r.body.config.document, initial.document);
+  assert.deepEqual(r.body.config.fieldRules, initial.fieldRules);
+  assert.deepEqual(r.body.config.templates, initial.templates);
+  assert.ok((await mongoose.model('ProductPromptConfig').findOne({ key: 'product' }).lean()).document.length > 0);
+
+  // صفحه‌ی پرامپت پایه گروه‌ها را نمی‌فرستد: گروه‌ها و شناسه‌هایشان دست‌نخورده
+  r = await put({ updatedAt: r.body.config.updatedAt, document: withTask(['ONLY TASK RULE']) });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.deepEqual(r.body.config.groups.map((g) => g._id), [idA, idB]);
+  assert.deepEqual(r.body.config.groups[1].rules, [{ field: 'brand', text: 'BRAND RULE', categories: [] }]);
+
+  // صفحه‌ی یک گروه فقط groups می‌فرستد (با _id): بخش‌های پایه دست‌نخورده، شناسه‌ها پایدار
+  const edited = { ...r.body.config.groups[0], rules: [{ field: 'name', text: 'RULE A EDITED', categories: [] }] };
+  r = await put({ updatedAt: r.body.config.updatedAt, groups: [edited, r.body.config.groups[1]] });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.deepEqual(r.body.config.document.find((s) => s.key === 'task').rules, ['ONLY TASK RULE']);
+  assert.deepEqual(r.body.config.groups.map((g) => g._id), [idA, idB]);
+  assert.deepEqual(await load(), r.body.config);
+
+  // ساختِ گروهِ تازه (بدونِ _id) به انتها می‌رود و شناسه می‌گیرد؛ قبلی‌ها همان می‌مانند
+  r = await put({ updatedAt: r.body.config.updatedAt, groups: [...r.body.config.groups, { title: 'C', categories: [String(tennisCategory._id)], rules: [] }] });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.deepEqual(r.body.config.groups.slice(0, 2).map((g) => g._id), [idA, idB]);
+  assert.match(r.body.config.groups[2]._id, /^[a-f\d]{24}$/);
+
+  // بدنه‌ی بی‌محتوا ذخیره نمی‌شود؛ نسخه‌ی کهنه ۴۰۹؛ حذفِ {{source_text}} ۴۰۰ و بدونِ نوشتن
+  assert.equal((await put({ updatedAt: r.body.config.updatedAt })).status, 400);
+  assert.equal((await put({ updatedAt: null, fieldRules: [] })).status, 409);
+  const noSource = await put({ updatedAt: r.body.config.updatedAt, document: initial.document.filter((s) => s.key !== 'source_text') });
+  assert.equal(noSource.status, 400);
+  assert.ok(noSource.body.fieldErrors.document.includes('source_text'));
+  const noIdentifier = await put({ updatedAt: r.body.config.updatedAt, fieldRules: initial.fieldRules.map((f) => (f.field === 'name' ? { ...f, heading: 'نام:' } : f)) });
+  assert.equal(noIdentifier.status, 400);
+  assert.ok(noIdentifier.body.fieldErrors['fieldRules.name.heading']);
+
+  const draft = (await (await requestDraft(tennisCategory._id)).json()).draft;
+  assert.ok(draft.includes('\nONLY TASK RULE\n') && draft.includes('RULE A EDITED') && !draft.includes('READ the raw product content'));
+  const padelDraft = (await (await requestDraft(padelCategory._id)).json()).draft;
+  assert.ok(padelDraft.includes('BRAND RULE') && !padelDraft.includes('RULE A EDITED'));
+
+  // بازگردانی: همان نقطه‌ی شروع، گروه‌ها دست‌نخورده
+  const restored = await put({ updatedAt: r.body.config.updatedAt, document: initial.document, fieldRules: initial.fieldRules, templates: initial.templates });
+  assert.equal(restored.status, 200);
+  assert.deepEqual(restored.body.config.document, initial.document);
+  assert.equal(restored.body.config.groups.length, 3);
+  assert.ok((await (await requestDraft(tennisCategory._id)).json()).draft.includes('READ the raw product content'));
+
+  await mongoose.model('ProductPromptConfig').deleteMany({});
+});
+
+test('a document saved in the old shape keeps its rules, and its first save carries them over', async () => {
+  const { GET, PUT } = await import('../src/app/api/admin/product-prompts/route.js');
+  const Config = mongoose.model('ProductPromptConfig');
+  const load = async () => (await (await GET()).json()).config;
+  await Config.deleteMany({});
+  const old = await Config.create({
+    key: 'product',
+    base: [{ section: 'task', rules: ['OLD TASK RULE'] }, { section: 'language', rules: [] }, { section: 'field:name', rules: ['OLD NAME RULE'] }],
+    groups: [{ title: 'old', categories: [tennisCategory._id], rules: [{ field: 'name', text: 'OLD GROUP RULE', categories: [] }] }],
+  });
+  const beforeDraft = (await (await requestDraft(tennisCategory._id)).json()).draft;
+  assert.ok(beforeDraft.includes('OLD TASK RULE') && beforeDraft.includes('OLD NAME RULE') && beforeDraft.includes('OLD GROUP RULE'));
+  assert.ok(!beforeDraft.includes('LANGUAGE RULE'));
+
+  // خواندن چیزی نمی‌نویسد
+  const config = await load();
+  assert.equal((await Config.findById(old._id).lean()).document.length, 0);
+  assert.deepEqual(config.document.find((s) => s.key === 'task').rules, ['OLD TASK RULE']);
+
+  // ذخیره‌ی یک بخشِ بی‌ربط، بقیه را از دست نمی‌دهد و پرامپت عوض نمی‌شود
+  const res = await PUT({ json: async () => ({ updatedAt: config.updatedAt, templates: config.templates }) });
+  assert.equal(res.status, 200, JSON.stringify(await res.clone().json()));
+  assert.ok((await Config.findById(old._id).lean()).document.length > 0);
+  assert.equal((await (await requestDraft(tennisCategory._id)).json()).draft, beforeDraft);
+  await Config.deleteMany({});
+});
+
+test('every part survives the real schema: sections, group sections, dynamic-field rules, templates, exact whitespace', async () => {
+  const { GET, PUT } = await import('../src/app/api/admin/product-prompts/route.js');
+  const put = async (body) => { const res = await PUT({ json: async () => body }); return { status: res.status, body: await res.json() }; };
+  const load = async () => (await (await GET()).json());
+  await mongoose.model('ProductPromptConfig').deleteMany({});
+  const { config: initial } = await load();
+
+  const cat = await mongoose.model('Category').create({
+    name: 'schema-cat', title: 'دسته‌ی اسکیما', sport: tennis._id,
+    attributes: [{ name: 'Head', label: 'سر' }],
+    variantAttributes: [{ name: 'Grip', label: 'گریپ' }],
+    technicalStats: [{ name: 'power', label: 'قدرت' }],
+    customTab: { enabled: true, name: 'Tech', items: [{ title: 'ONE' }] },
+  });
+  const id = String(cat._id);
+
+  // انتخابگرِ گروه فقط برچسبِ دسته را لازم دارد، نه تعریفِ ویژگی‌هایش
+  const option = (await load()).categories.find((c) => c._id === id);
+  assert.ok(!('fields' in option) && !('attributes' in option));
+
+  const newSection = { key: 'exception', kind: 'text', name: 'Exception Rules', heading: '\n\n  ***  \nEXCEPTIONS\n\ndesc  ', rules: ['  spaced rule  ', '2. my number'] };
+  const groupSection = { key: 'g-sec', name: 'قواعد گروه', heading: 'GROUP GENERAL', rules: [{ text: 'GENERAL RULE', categories: [id] }] };
+  const rules = ['attribute:Head', 'variant:Grip', 'stat:power', 'tabItem:ONE', 'sport', 'customTabItems', 'section:task', 'section:exception'].map((field) => ({ field, text: `RULE FOR ${field}`, categories: [] }));
+  const body = {
+    updatedAt: null,
+    document: [...initial.document, newSection],
+    fieldRules: initial.fieldRules.map((f) => (f.field === 'name' ? { ...f, heading: '\n=== the name field ===  ' } : f)),
+    templates: { ...initial.templates, attribute_rule: ' <<{{text}}>> ', field_empty: '' },
+    groups: [{ title: 'G', categories: [id], rules, sections: [groupSection] }],
+  };
+  const saved = await put(body);
+  assert.equal(saved.status, 200, JSON.stringify(saved.body));
+
+  const { config } = await load();
+  assert.deepEqual(config.document.at(-1), newSection);
+  assert.deepEqual(config.groups[0].sections, [groupSection]);
+  assert.deepEqual(config.groups[0].rules, rules);
+  assert.equal(config.templates.attribute_rule, ' <<{{text}}>> ');
+  assert.equal(config.templates.field_empty, '');
+  assert.equal(config.fieldRules.find((f) => f.field === 'name').heading, '\n=== the name field ===  ');
+
+  const draft = (await (await requestDraft(id)).json()).draft;
+  assert.ok(draft.includes('\n\n  ***  \nEXCEPTIONS\n\ndesc  \n  spaced rule  \n2. my number'));
+  assert.ok(draft.includes('\n=== the name field ===  \nMUST strictly follow'));
+  assert.ok(draft.includes('GROUP GENERAL\nGENERAL RULE\n'));
+  assert.ok(draft.includes(' <<RULE FOR attribute:Head>> '));
+  // قاعده‌ی گروه روی بخش‌های پایه، از جمله بخشی که ادمین اضافه کرده؛ پرامپت پایه دست نمی‌خورد
+  assert.ok(draft.includes('OUTPUT only the JSON — nothing else.\nRULE FOR section:task\n'));
+  assert.ok(draft.includes('2. my number\nRULE FOR section:exception'));
+  assert.ok(!config.document.find((sec) => sec.key === 'task').rules.includes('RULE FOR section:task'));
+  const outsider = (await (await requestDraft(tennisCategory._id)).json()).draft;
+  assert.ok(!outsider.includes('RULE FOR section:'));
+  for (const text of ['Guide: RULE FOR variant:Grip', 'Rule: RULE FOR stat:power', 'Selection Rule: RULE FOR tabItem:ONE', 'RULE FOR sport', 'RULE FOR customTabItems']) {
+    assert.ok(draft.includes(text), text);
+  }
+
+  // ویرایشِ قاعده‌ی بخش و قاعده‌ی بخشِ گروه همان‌طور که صفحه‌ی پیش‌نمایش می‌فرستد؛ خودِ فیلدها و دسته دست نمی‌خورند
+  const before = await mongoose.model('Category').findById(id).lean();
+  const again = await put({
+    updatedAt: config.updatedAt,
+    document: config.document.map((s) => (s.key === 'exception' ? { ...s, rules: ['EDITED SECTION RULE', s.rules[1]] } : s)),
+    groups: [{ ...config.groups[0], sections: [{ ...config.groups[0].sections[0], rules: [{ text: 'EDITED GROUP GENERAL', categories: [id] }] }] }],
+  });
+  assert.equal(again.status, 200, JSON.stringify(again.body));
+  const edited = (await (await requestDraft(id)).json()).draft;
+  assert.ok(edited.includes('EDITED SECTION RULE') && edited.includes('EDITED GROUP GENERAL'));
+  assert.ok(!edited.includes('spaced rule') && !edited.includes('GENERAL RULE\n'));
+  assert.deepEqual(await mongoose.model('Category').findById(id).lean(), before);
+
+  await mongoose.model('ProductPromptConfig').deleteMany({});
+  await mongoose.model('Category').deleteOne({ _id: id });
+});
+
+// ── پیش‌نمایش و ویرایش از پیش‌نمایش: روت‌های واقعی روی سندِ واقعی ─────────────────
+
+let previewSeq = 0;
+const previewCategory = async () => mongoose.model('Category').create({
+  name: `preview-racket-${++previewSeq}`, title: `راکت پیش‌نمایش ${previewSeq}`, sport: tennis._id,
+  prompts: [{ field: 'name', context: 'CATEGORY NAME RULE' }, { field: 'tag', context: 'CATEGORY TAG RULE' }],
+  attributes: [{ name: 'Head Size', label: 'اندازه سر', prompt: 'HEAD RULE' }, { name: 'Weight', label: 'وزن', prompt: 'WEIGHT RULE' }],
+  variantAttributes: [{ name: 'Grip', label: 'گریپ', prompt: 'GRIP RULE' }],
+  technicalStats: [{ name: 'power', label: 'قدرت' }],
+  technicalStatsPrompt: 'TECH RULE',
+  customTab: { enabled: true, name: 'تکنولوژی', prompt: 'TAB RULE', items: [{ title: 'ONE', prompt: 'ONE HINT' }, { title: 'TWO', prompt: 'TWO HINT' }] },
+});
+const getPreview = async (id) => {
+  const { GET } = await import('../src/app/api/admin/product-prompts/preview/route.js');
+  const res = await GET({ url: `http://x/api/admin/product-prompts/preview?categoryId=${id}` });
+  return { status: res.status, body: await res.json() };
+};
+const patchRule = async (body) => {
+  const { PATCH } = await import('../src/app/api/admin/product-prompts/category-rule/route.js');
+  const res = await PATCH({ json: async () => body });
+  return { status: res.status, body: await res.json() };
+};
+
+test('preview: the route returns the rules of the real draft with their sources, and no data lists', async () => {
+  const { PUT } = await import('../src/app/api/admin/product-prompts/route.js');
+  await mongoose.model('ProductPromptConfig').deleteMany({});
+  const cat = await previewCategory();
+  const saved = await (await PUT({ json: async () => ({ updatedAt: null, groups: [
+    { title: 'G', categories: [String(cat._id)], rules: [{ field: 'name', text: 'GROUP NAME RULE', categories: [] }] },
+  ] }) })).json();
+
+  const { status, body } = await getPreview(cat._id);
+  assert.equal(status, 200, JSON.stringify(body));
+  assert.equal(body.updatedAt, saved.config.updatedAt);
+  const draft = (await (await requestDraft(cat._id)).json()).draft;
+  const name = body.model.fields.find((f) => f.key === 'name');
+  assert.equal(name.rules.groups[0].source.groupId, saved.config.groups[0]._id);
+  assert.equal(name.rules.category.source.kind, 'categoryField');
+  for (const r of [...name.rules.base, ...name.rules.groups, name.rules.category]) assert.ok(draft.includes(r.text), r.text);
+  assert.ok(draft.includes('Extraction Rule: HEAD RULE') && draft.includes('Guide: GRIP RULE'));
+  assert.ok(draft.includes('"ONE" | Selection Rule: ONE HINT'));
+  assert.deepEqual(body.model.attributes.map((a) => Object.keys(a).sort()), [['label', 'name', 'rules', 'scope'], ['label', 'name', 'rules', 'scope']]);
+  assert.ok(!('values' in body.model));
+  // بدنه‌ی بخش‌های داده‌ای در پیش‌نمایش نیست؛ فقط سربرگشان
+  assert.ok(!('bodies' in body.model));
+  assert.ok(body.model.sections.some((sec) => sec.kind === 'data' && sec.key === 'brands' && sec.heading.includes('AVAILABLE BRANDS')));
+  const json = JSON.stringify(body);
+  assert.ok(!json.includes(String(brand._id)) && !json.includes('parentBrandName') && !json.includes(rawContent));
+
+  assert.equal((await getPreview('nope')).status, 400);
+  assert.equal((await getPreview(new mongoose.Types.ObjectId())).status, 404);
+  await mongoose.model('ProductPromptConfig').deleteMany({});
+  await mongoose.model('Category').deleteOne({ _id: cat._id });
+});
+
+test('preview edits: each category-owned source is written in place, nothing else changes, a stale edit is refused', async () => {
+  const Category = mongoose.model('Category');
+  const cat = await previewCategory();
+  const before = await Category.findById(cat._id).lean();
+  const [one, two] = before.customTab.items;
+
+  const edits = [
+    [{ kind: 'attribute', name: 'Weight' }, 'WEIGHT RULE', 'WEIGHT EDITED', (c) => c.attributes[1].prompt],
+    [{ kind: 'variantAttribute', name: 'Grip' }, 'GRIP RULE', 'GRIP EDITED', (c) => c.variantAttributes[0].prompt],
+    [{ kind: 'technicalStats' }, 'TECH RULE', 'TECH EDITED', (c) => c.technicalStatsPrompt],
+    [{ kind: 'customTab' }, 'TAB RULE', 'TAB EDITED', (c) => c.customTab.prompt],
+    [{ kind: 'customTabItem', itemId: String(two._id) }, 'TWO HINT', 'TWO EDITED', (c) => c.customTab.items[1].prompt],
+    [{ kind: 'categoryField', field: 'name' }, 'CATEGORY NAME RULE', 'NAME EDITED', (c) => c.prompts.find((p) => p.field === 'name').context],
+  ];
+  for (const [source, previous, text, read] of edits) {
+    const r = await patchRule({ categoryId: String(cat._id), source, previous, text: `  ${text}  ` });
+    assert.equal(r.status, 200, `${source.kind}: ${JSON.stringify(r.body)}`);
+    assert.equal(read(await Category.findById(cat._id).lean()), text, source.kind);
+    // دوباره با همان متنِ قبلی: در این فاصله عوض شده → ۴۰۹، بدونِ نوشتن
+    const stale = await patchRule({ categoryId: String(cat._id), source, previous, text: 'OVERWRITE' });
+    assert.equal(stale.status, 409, source.kind);
+    assert.equal(read(await Category.findById(cat._id).lean()), text, source.kind);
+  }
+
+  const after = await Category.findById(cat._id).lean();
+  // همسایه‌ها دست‌نخورده: ویژگی/آیتم/پرامپتِ دیگر، شناسه‌ی آیتم‌ها و بقیه‌ی دسته
+  assert.equal(after.attributes[0].prompt, 'HEAD RULE');
+  assert.equal(after.customTab.items[0].prompt, 'ONE HINT');
+  assert.deepEqual(after.customTab.items.map((i) => String(i._id)), [String(one._id), String(two._id)]);
+  assert.equal(after.prompts.find((p) => p.field === 'tag').context, 'CATEGORY TAG RULE');
+  for (const key of ['title', 'name', 'slug', 'sport', 'technicalStats']) assert.deepEqual(after[key], before[key], key);
+
+  // متنِ خالی برای پرامپتِ فیلد = حذفِ همان مدخل
+  assert.equal((await patchRule({ categoryId: String(cat._id), source: { kind: 'categoryField', field: 'tag' }, previous: 'CATEGORY TAG RULE', text: '' })).status, 200);
+  assert.deepEqual((await Category.findById(cat._id).lean()).prompts.map((p) => p.field), ['name']);
+
+  // پیش‌نویسِ واقعی همان متن‌های تازه را دارد
+  const draft = (await (await requestDraft(cat._id)).json()).draft;
+  for (const t of ['WEIGHT EDITED', 'GRIP EDITED', 'TECH EDITED', 'TAB EDITED', '"TWO" | Selection Rule: TWO EDITED', 'NAME EDITED']) assert.ok(draft.includes(t), t);
+  assert.ok(!draft.includes('CATEGORY TAG RULE'));
+
+  // ورودیِ نامعتبر و منبع‌های غیرِ دسته
+  for (const source of [{ kind: 'base', section: 'task', index: 0 }, { kind: 'system' }, { kind: 'categoryField', field: 'nope' }, { kind: 'customTabItem', itemId: 'x' }]) {
+    assert.equal((await patchRule({ categoryId: String(cat._id), source, previous: '', text: 'x' })).status, 400, JSON.stringify(source));
+  }
+  assert.equal((await patchRule({ categoryId: String(cat._id), source: { kind: 'technicalStats' }, previous: 1, text: 'x' })).status, 400);
+  assert.equal((await patchRule({ categoryId: String(new mongoose.Types.ObjectId()), source: { kind: 'technicalStats' }, previous: 'x', text: 'y' })).status, 404);
+  await Category.deleteOne({ _id: cat._id });
+});
+
+test('category PUT: custom tab prompts survive a client that does not send them, and are written when it does', async () => {
+  const { PUT } = await import('../src/app/api/categories/[categoryId]/route.js');
+  const Category = mongoose.model('Category');
+  const cat = await previewCategory();
+  const put = async (customTab) => {
+    const res = await PUT({ json: async () => ({ customTab }) }, { params: Promise.resolve({ categoryId: String(cat._id) }) });
+    assert.equal(res.status, 200, JSON.stringify(await res.clone().json()));
+    return (await Category.findById(cat._id).lean()).customTab;
+  };
+  const stored = (await Category.findById(cat._id).lean()).customTab;
+  const withoutPrompts = { enabled: true, name: 'تکنولوژی', items: stored.items.map(({ _id, title }) => ({ _id: String(_id), title })) };
+
+  let tab = await put(withoutPrompts);
+  assert.equal(tab.prompt, 'TAB RULE');
+  assert.deepEqual(tab.items.map((i) => i.prompt), ['ONE HINT', 'TWO HINT']);
+
+  tab = await put({ ...withoutPrompts, prompt: ' NEW TAB ', items: [{ ...withoutPrompts.items[0], prompt: '' }, withoutPrompts.items[1], { title: 'THREE', prompt: 'THREE HINT' }] });
+  assert.equal(tab.prompt, 'NEW TAB');
+  assert.deepEqual(tab.items.map((i) => i.prompt), ['', 'TWO HINT', 'THREE HINT']);
+  assert.deepEqual(tab.items.slice(0, 2).map((i) => String(i._id)), stored.items.map((i) => String(i._id)));
+  await Category.deleteOne({ _id: cat._id });
+});
+
+// ── حالتِ «پرامپت نهایی»: باید با پرامپتِ واقعی نویسه‌به‌نویسه یکی باشد ───────────────
+
+test('final prompt mode: identical to the real draft, character for character, except the source text slot', async () => {
+  const { GET } = await import('../src/app/api/admin/product-prompts/final-prompt/route.js');
+  const { PUT } = await import('../src/app/api/admin/product-prompts/route.js');
+  const finalPrompt = async (id) => {
+    const res = await GET({ url: `http://x/api/admin/product-prompts/final-prompt?categoryId=${id}` });
+    return { status: res.status, body: await res.json() };
+  };
+  const PLACEHOLDER = 'PLACEHOLDER FOR SOURCE TEXT';
+  const Category = mongoose.model('Category');
+  await mongoose.model('ProductPromptConfig').deleteMany({});
+
+  // هر منبع یک قاعده دارد؛ «$&» و «$'» اگر replace الگو را تفسیر کند متن را خراب می‌کنند
+  const cat = await previewCategory();
+  await Category.updateOne({ _id: cat._id }, { $push: { prompts: { field: 'color', context: "COST RULE $& and $' and $1" } } });
+  const { GET: getConfig } = await import('../src/app/api/admin/product-prompts/route.js');
+  const initialDoc = (await (await getConfig()).json()).config.document;
+  const saved = await PUT({ json: async () => ({ updatedAt: null,
+    document: initialDoc.map((sec) => (sec.key === 'task' ? { ...sec, rules: ['EDITED BASE TASK RULE'] } : sec)),
+    groups: [{ title: 'G', categories: [String(cat._id)], rules: [{ field: 'name', text: 'GROUP NAME RULE', categories: [] }] }],
+  }) });
+  assert.equal(saved.status, 200);
+
+  const source = 'REAL SOURCE TEXT of a product, long enough to pass validation, appearing only once.';
+  const draftRes = await POST({ json: async () => ({ categoryId: String(cat._id), rawContent: `  ${source}\n` }) });
+  const { draft } = await draftRes.json();
+  assert.equal(draft.split(source).length, 2);
+
+  const { status, body } = await finalPrompt(cat._id);
+  assert.equal(status, 200, JSON.stringify(body));
+  assert.equal(body.prompt, draft.replace(source, () => PLACEHOLDER));
+
+  // در همان جای متنِ منبع، یک بار، و بدونِ نشانگرِ موقت
+  assert.equal(body.prompt.split(PLACEHOLDER).length, 2);
+  assert.match(body.prompt, /\nRAW PRODUCT CONTENT\n=+\nPLACEHOLDER FOR SOURCE TEXT\n\n=+\nREQUIRED JSON OUTPUT STRUCTURE\n/);
+  assert.ok(!body.prompt.includes('SOURCE_TEXT_SLOT_'));
+
+  // هر آنچه به AI می‌رسد هست: قواعد از هر منبع و فهرست‌های داده
+  for (const text of [
+    '\nEDITED BASE TASK RULE\n', 'GROUP NAME RULE', 'CATEGORY NAME RULE', "COST RULE $& and $' and $1", 'TECH RULE', 'TAB RULE',
+    'Extraction Rule: HEAD RULE', 'Guide: GRIP RULE', '"ONE" | Selection Rule: ONE HINT',
+    'AVAILABLE BRANDS', String(brand._id), 'AVAILABLE ATHLETES', 'AVAILABLE SERIES', 'AVAILABLE LIMITED EDITIONS', '"customTabItems"',
+  ]) assert.ok(body.prompt.includes(text), text);
+
+  // دو بار ساختن یک متن می‌دهد (نشانگرِ تصادفی به خروجی نشت نمی‌کند)
+  assert.equal((await finalPrompt(cat._id)).body.prompt, body.prompt);
+
+  // ویرایشِ تازه بلافاصله دیده می‌شود
+  await Category.updateOne({ _id: cat._id }, { $set: { technicalStatsPrompt: 'TECH RULE AFTER EDIT' } });
+  assert.ok((await finalPrompt(cat._id)).body.prompt.includes('TECH RULE AFTER EDIT'));
+
+  assert.equal((await finalPrompt('nope')).status, 400);
+  assert.equal((await finalPrompt(new mongoose.Types.ObjectId())).status, 404);
+  await mongoose.model('ProductPromptConfig').deleteMany({});
+  await Category.deleteOne({ _id: cat._id });
+});

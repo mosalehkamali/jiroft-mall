@@ -1,11 +1,18 @@
 "use client";
 
 import { useState, useRef } from "react";
+import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
-import ProductComparisonGraph from "@/components/templates/productCompare/ProductComparisonGraph";
 import AttributeInfoTooltip from "./AttributeInfoTooltip";
 import { isKidsAudience } from "base/utils/targetAudience";
 import { hasChartableStats } from "@/lib/technicalStatsChart.mjs";
+
+// recharts بزرگ‌ترین چانکِ صفحه است و نمودار تا بازشدنِ تبِ مشخصات رندر نمی‌شود، پس
+// همان موقع بارگذاری می‌شود. خطای بارگذاری فقط نمودار را حذف می‌کند، نه کلِ صفحه را.
+const ProductComparisonGraph = dynamic(
+  () => import("@/components/templates/productCompare/ProductComparisonGraph").catch(() => () => null),
+  { ssr: false, loading: () => <div className="h-[420px]" aria-hidden="true" /> },
+);
 
 // یک ردیفِ مشخصات فنی. اگر ویژگی توضیح داشته باشد، کلِ ردیف کلیک‌پذیر می‌شود و
 // تولتیپِ آن باز/بسته می‌شود (آیکونِ ؟ فقط نشانگر است).
@@ -64,7 +71,7 @@ function SpecRow({ attr, index, open, onToggle, onClose }) {
 // ویژگی‌ها پیش از رسیدن به اینجا سمتِ سرور بر اساس مخاطب هدف فیلتر شده‌اند
 // (services/product.service.js و صفحه‌ی دستِ‌دوم)؛ اینجا فقط رندر می‌شوند.
 // تنها تصمیمِ وابسته به مخاطب هدف در این لایه، نمایشِ نمودار رادار است.
-const ProductAttributesTable = ({ attributes = [], technicalStats, targetAudience }) => {
+const ProductAttributesTable = ({ attributes = [], technicalStats, targetAudience, active = true }) => {
   // فقط یک تولتیپ هم‌زمان باز است → اندیسِ ردیفِ باز در والد نگه‌داری می‌شود.
   const [openIndex, setOpenIndex] = useState(null);
 
@@ -98,7 +105,7 @@ const ProductAttributesTable = ({ attributes = [], technicalStats, targetAudienc
       </div>
 
       <div dir="rtl">
-        {showComparisonGraph && (
+        {active && showComparisonGraph && (
           <ProductComparisonGraph technicalStats={technicalStats} />
         )}
       </div>

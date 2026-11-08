@@ -11,11 +11,19 @@ import { BLOCK_ALIGN_SELF, BLOCK_WIDTH_CLASS, blockBoxProps, blockWidth, groupBl
 import DragScroll from "@/components/features/articles/DragScroll";
 import HomeSectionHeading from "@/components/features/home/HomeSectionHeading";
 import SportHero from "@/components/templates/sports/SportHero";
+import SeriesSlider from "@/components/templates/sports/SeriesSlider";
+import FullBleed from "@/components/features/articles/FullBleed";
+import ReviewSlider from "@/components/features/articles/ReviewSlider";
+import BestSellers from "@/components/features/bestSellers/BestSellers";
+import BrandsTicker from "@/components/features/brandsTicker/BrandsTicker";
+import { hasLegacyBlocks, upgradeLegacyBlocks } from "@/lib/legacyArticleBlocks";
+import ComparisonBanner from "@/components/features/comparisonBanner/ComparisonBanner";
+import MatchBanner from "@/components/features/matchBanner/MatchBanner";
 import MergedSliderNav from "@/components/features/articles/MergedSliderNav";
 import ImageSliderControls from "@/components/features/articles/ImageSliderControls";
 import { imageBlockItems, imageShadeLayer } from "@/lib/articleImageBlock";
-import { IMAGE_SLIDER_DELAY, IMAGE_SLIDER_HEIGHT, blockChildren, blockHoldsBlocks, flattenArticleBlocks, imageOverlayChildren, imageSliderChildren, isMergedBlock, mergedChildren, sanitizeMergedGrid } from "@/lib/articleBlockTypes";
-import { categoryPath } from "@/lib/catalogPath";
+import { ICON_LOGO_PADDING, ICON_LOGO_RADIUS, iconLogoBox } from "@/lib/entityImages";
+import { FULL_BLEED_BLOCK_TYPES, isBlockTypeEnabled, IMAGE_SLIDER_DELAY, IMAGE_SLIDER_HEIGHT, REVIEW_SLIDER_HEADING, blockChildren, blockHoldsBlocks, flattenArticleBlocks, imageOverlayChildren, imageSliderChildren, isMergedBlock, mergedChildren, sanitizeMergedGrid } from "@/lib/articleBlockTypes";
 
 const ordered = (values, map) => (Array.isArray(values) ? values : values ? [values] : []).map((id) => map?.[String(id)]).filter(Boolean);
 // فاصله‌ی پیش‌فرض صفر است: دو بلوکِ پشتِ‌سرِ‌هم که فاصله‌ای برایشان تنظیم نشده،
@@ -255,26 +263,40 @@ function MergedBlock({ items, spacing }) {
   </div></SliderFrame>;
 }
 
-function EntityCards({ title, items, kind, visuals, inMerged = false }) {
-  if (!items.length) return null;
-  const v = visuals || {};
-  const details = {
-    brands: (item) => ({ image: item.logo || item.image || item.icon, href: `/${item.slug}` }),
-    series: (item) => ({ image: item.logo || item.image || item.headImage, href: `/products?serie=${encodeURIComponent(item.slug || "")}` }),
-    categories: (item) => ({ image: item.image || item.icon, href: item.slug ? categoryPath(item) : "/products" }),
-    sports: (item) => ({ image: item.image || item.icon, href: `/${item.slug}` }),
+// ——— «آیکن و لوگو» ————————————————————————————————————————————————————————
+/**
+ * یک تصویر و متنِ اختیاری زیرش، *در یک قاب*: زمینه (همان imageShadeLayer ـِ بلوکِ
+ * تصویر، پس رنگِ ساده و گرادیان یکی‌اند)، گردی و فاصله‌ی داخلی روی خودِ قاب.
+ *
+ *  - اندازه مالِ *کادر* است، نه تصویر (iconLogoBox): عرض × (ارتفاع یا همان عرض).
+ *    تصویر با fill و contain داخلش می‌نشیند، پس ابعادِ ذاتیِ فایل — لوگوی پهن، آیکنِ
+ *    مربع، تصویرِ بلند — هیچ اثری روی اندازه‌ی بلوک ندارد و هیچ‌وقت کشیده نمی‌شود.
+ *    max-width + aspect-ratio: در خانه‌ی باریک‌تر، کادر *با همان نسبت* کوچک می‌شود
+ *    (قبلاً ارتفاعِ ثابت می‌ماند و عرض جمع می‌شد).
+ *  - بی‌متن، هیچ فاصله‌ی خالی‌ای زیرِ تصویر نیست (پاراگراف اصلاً رندر نمی‌شود).
+ *  - پیوند یک لایه‌ی absolute روی کلِ قاب است (stretched link)، نه <a> دورِ همه‌چیز:
+ *    متنِ غنی خودش می‌تواند پیوند داشته باشد و <a> داخلِ <a> HTMLِ نامعتبر است.
+ *    پیوندهای متن روی آن لایه می‌نشینند و کلیک‌پذیر می‌مانند.
+ */
+function IconLogoBlock({ data, visuals, spacing }) {
+  if (!data.url) return null;
+  const { width, height } = iconLogoBox(data);
+  const alt = data.alt || data.imageLabel || "";
+  const hasText = Boolean(data.html || (data.text && data.text.trim()));
+  const frame = {
+    background: imageShadeLayer(data)?.background,
+    borderRadius: `${data.radius ?? ICON_LOGO_RADIUS.default}px`,
+    padding: `${data.padding ?? ICON_LOGO_PADDING.default}px`,
   };
-  return (
-    <section className={blockSection} style={v.spacing || undefined}>
-      {title ? <h2 className="mb-5 text-xl font-black text-gray-900" style={v.text ? { color: v.text } : undefined}>{title}</h2> : null}
-      <div className={`grid gap-3 ${inMerged ? slotGrid(items.length, SLOT_TILES) : "grid-cols-2 sm:grid-cols-3 md:grid-cols-4"}`}>
-        {items.map((item) => {
-          const meta = details[kind](item);
-          return <Link key={item._id} href={meta.href} className="group flex min-h-32 flex-col items-center justify-center rounded-[var(--radius)] border border-black/10 bg-white p-5 text-center transition-[transform,border-color,box-shadow] motion-safe:hover:-translate-y-1 hover:border-[var(--color-primary)] hover:shadow-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]">{meta.image ? <span className="relative mb-3 block h-14 w-20"><Image src={meta.image} alt={item.title || item.name} fill sizes="80px" className="object-contain" /></span> : null}<strong className="text-sm text-gray-800 group-hover:text-[var(--color-primary)]">{item.title || item.name}</strong></Link>;
-        })}
+  return <div className={blockSection} style={spacing || undefined}>
+    <div className={`relative flex w-full flex-col items-center gap-3${data.href ? " transition-opacity has-[>a:hover]:opacity-90" : ""}`} style={frame}>
+      <div className="relative max-w-full shrink-0" style={{ width: `${width}px`, aspectRatio: `${width} / ${height}` }}>
+        <Image src={data.url} alt={alt} fill sizes={`${width}px`} className="object-contain object-center" />
       </div>
-    </section>
-  );
+      {hasText ? <RichParagraph className="w-full text-[16px] leading-7 text-gray-700 [&_a]:relative [&_a]:z-[1]" style={{ textAlign: visuals.align || "center" }} html={data.html} text={data.text} preLine /> : null}
+      {data.href ? <Link href={data.href} aria-label={alt || data.text || "پیوند"} className="absolute inset-0 rounded-[inherit] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]" /> : null}
+    </div>
+  </div>;
 }
 
 // ——— بلوکِ تصویر: چند تصویر، ارتفاعِ دلخواه، پیوند، و بلوک‌های روی تصویر ————
@@ -418,6 +440,7 @@ export default function ArticleBlockRenderer({ blocks = [], entities, preview = 
   const renderBlock = (block, inMerged = false) => {
     const data = block.data || {};
     const v = blockVisuals(block);
+    if (!isBlockTypeEnabled(block.type)) return null;
     if (isMergedBlock(block)) {
       // فرزندان با همین renderBlock رندر می‌شوند — هر نوع بلوک داخلِ ادغام دقیقاً
       // همان‌طور دیده می‌شود که بیرونِ آن.
@@ -426,12 +449,16 @@ export default function ArticleBlockRenderer({ blocks = [], entities, preview = 
       // بدونِ grid: همان ردیفِ پیش‌فرضِ قبلی، بدونِ هیچ تغییری.
       // پیش‌نمایشِ ادمین وضعیتِ ذخیره‌نشده را رندر می‌کند، پس grid اینجا هم پاک‌سازی می‌شود.
       const grid = sanitizeMergedGrid(data.grid);
-      return grid
+      const merged = grid
         ? <MergedGrid key={block.id} items={items} grid={grid} spacing={v.spacing} />
         : <MergedBlock key={block.id} items={items} spacing={v.spacing} />;
+      // فقط از بلوک‌های لبه‌به‌لبه ساخته شده (مثلاً دو بنرِ کنارِ هم)؟ پس خودش هم
+      // لبه‌به‌لبه است — مثلِ همان ردیفِ صفحه‌ی اصلی. ادغامِ تودرتو در خانه‌ی خودش می‌ماند.
+      const bleeds = !inMerged && items.every(({ child }) => FULL_BLEED_BLOCK_TYPES.has(child.type));
+      return bleeds ? <FullBleed key={block.id}>{merged}</FullBleed> : merged;
     }
     if (block.type === "sectionTitle") {
-      // متنِ نارنجی و ادامه‌ی عنوان یک عنوان‌اند؛ برشِ رنگ از همان رشته انجام
+      // متنِ رنگی و ادامه‌ی عنوان یک عنوان‌اند؛ برشِ رنگ از همان رشته انجام
       // می‌شود، پس چندواژه‌ای هم درست رنگ می‌گیرد.
       const highlight = (data.highlight || "").trim();
       const rest = (data.title || "").trim();
@@ -464,6 +491,7 @@ export default function ArticleBlockRenderer({ blocks = [], entities, preview = 
     // تصویرِ محتوا با نسبتِ واقعیِ خودش رندر می‌شود: عرض/ارتفاعِ ذخیره‌شده فقط
     // جا را پیش از بارگذاری رزرو می‌کند (aspect-ratio: auto w/h) و پس از بارگذاری
     // نسبتِ ذاتیِ تصویر جای آن را می‌گیرد — پس هیچ بُرشی رخ نمی‌دهد.
+    if (block.type === "iconLogo") return data.url ? <IconLogoBlock key={block.id} data={data} visuals={v} spacing={v.spacing} /> : null;
     if (block.type === "imageSlider") {
       // تصویرها *همان* بلوکِ تصویرند و با همین renderBlock رندر می‌شوند، پس هر
       // توانایی‌ای که بیرون دارند (چند تصویر، پیوند، لایه‌ی تیره، بلوکِ رویی)
@@ -503,10 +531,6 @@ export default function ArticleBlockRenderer({ blocks = [], entities, preview = 
     // (نگهدارنده‌ی زمانِ بارگذاری) که هر PNG شفافی را روی یک مستطیلِ خاکستری صاف
     // می‌کرد — جای پس‌زمینه‌ی صفحه. ابعادِ کاشی از aspect-* می‌آید نه از رنگ، پس
     // حذفش نه پرش می‌سازد نه چیزی از تصویرهای بدونِ شفافیت کم می‌کند.
-    if (block.type === "gallery") {
-      const images = (data.images || []).map((image) => typeof image === "string" ? { url: image, alt: "" } : image).filter((image) => image.url);
-      return images.length ? <div key={block.id} className={`${blockSection} grid gap-3 ${inMerged ? slotGrid(images.length, SLOT_TILES) : "grid-cols-2"}`} style={v.spacing || undefined}>{images.map((image, index) => <figure key={`${image.url}-${index}`} className={`relative overflow-hidden rounded-[var(--radius)] ${index === 0 && images.length % 2 ? "col-span-2 aspect-[16/8]" : "aspect-square"}`}><Image src={image.url} alt={image.alt || data.alt || "تصویر گالری مقاله"} fill sizes="(max-width: 768px) 50vw, 400px" className="object-cover" loading="lazy" />{image.caption ? <figcaption className="absolute inset-x-0 bottom-0 bg-black/60 p-2 text-xs text-white">{image.caption}</figcaption> : null}</figure>)}</div> : null;
-    }
     if (block.type === "video" && data.url) {
       const embed = videoEmbed(data.url);
       return <figure key={block.id} className={blockSection} style={v.spacing || undefined}><div className="aspect-video overflow-hidden rounded-[var(--radius)] bg-black">{embed ? <iframe src={embed} title={data.title || "ویدئوی مقاله"} loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen className="h-full w-full" /> : <video src={data.url} controls preload="metadata" className="h-full w-full" />}</div>{data.title ? <figcaption className="mt-3 text-center text-xs text-gray-500">{data.title}</figcaption> : null}</figure>;
@@ -540,19 +564,85 @@ export default function ArticleBlockRenderer({ blocks = [], entities, preview = 
       return <div key={block.id} className={`${blockSection} ${variant.wrapper}`} style={v.spacing || undefined}><DragScroll /><table className="w-full min-w-[560px] text-right text-sm"><thead className={variant.head} style={head}><tr>{(data.headers || []).map((header, index) => <th key={index} scope="col" className={variant.th}>{header}</th>)}</tr></thead><tbody>{(data.rows || []).map((row, rowIndex) => <tr key={rowIndex} className={variant.row}>{row.map((cellValue, index) => <td key={index} className={variant.cell} style={cell}>{cellValue}</td>)}</tr>)}</tbody></table></div>;
     }
     if (block.type === "faq") return <section key={block.id} className={blockSection} style={v.spacing || undefined}><div className="space-y-3">{(data.items || []).filter((item) => item.question).map((item, index) => <details key={index} className="group rounded-[var(--radius)] border border-gray-200 bg-white p-5" style={merge(v.background && { backgroundColor: v.background }, v.accent && { borderColor: v.accent })}><summary className="cursor-pointer list-none font-bold text-gray-900" style={v.text ? { color: v.text } : undefined}>{item.question}</summary><RichParagraph className="mt-4 border-t border-gray-100 pt-4 leading-8 text-gray-600" style={merge(v.text && { color: v.text }, item.answerAlign && { textAlign: item.answerAlign })} html={item.answerHtml} text={item.answer} /></details>)}</div></section>;
-    if (block.type === "productCard" || block.type === "productSlider") {
-      const products = block.type === "productCard" ? ordered(data.product, maps.products) : ordered(data.products, maps.products);
-      return products.length ? <section key={block.id} className={blockSection} style={v.spacing || undefined}>{data.title ? <h2 className="mb-5 text-xl font-black" style={v.text ? { color: v.text } : undefined}>{data.title}</h2> : null}<PublicProductGrid products={products} rate={rate} fill={inMerged} /></section> : null;
+    if (block.type === "productCard") {
+      // محصولِ نو با کارتِ محصول، آگهیِ دست‌دوم با کارتِ دست‌دوم — همان کارت‌های سایت.
+      const products = ordered(data.product, maps.products);
+      const used = products.length ? [] : ordered(data.usedProduct, maps.usedProducts);
+      if (!products.length && !used.length) return null;
+      return <section key={block.id} className={blockSection} style={v.spacing || undefined}>
+        {data.title ? <h2 className="mb-5 text-xl font-black" style={v.text ? { color: v.text } : undefined}>{data.title}</h2> : null}
+        {products.length ? <PublicProductGrid products={products} rate={rate} fill={inMerged} /> : <PublicUsedProductGrid products={used} fill={inMerged} />}
+      </section>;
     }
-    if (["latestProducts", "bestSellers", "amazingOffers"].includes(block.type)) {
-      const products = entities?.dynamicProducts?.[String(block.id)] || [];
-      return products.length ? <section key={block.id} className={blockSection} style={v.spacing || undefined}><h2 className="mb-5 text-xl font-black" style={v.text ? { color: v.text } : undefined}>{data.title}</h2><PublicProductGrid products={products} rate={rate} fill={inMerged} /></section> : null;
+    if (block.type === "productSlider") {
+      // همان اسلایدرِ «پرفروش‌ترین‌ها»ی صفحه‌ی اصلی (BestSellers)، لبه‌به‌لبه. عنوان
+      // یک متن است و واژه‌ی اولش رنگی، مثلِ صفحه‌ی اصلی. کلیدِ غایب (اسلایدرِ قدیمی)
+      // پیش‌فرضِ خودِ کامپوننت را می‌گیرد.
+      const products = ordered(data.products, maps.products);
+      const usedProducts = ordered(data.usedProducts, maps.usedProducts);
+      if (!products.length && !usedProducts.length) return null;
+      const title = typeof data.title === "string" ? data.title.trim() : undefined;
+      const slider = <BestSellers
+        products={products}
+        usedProducts={usedProducts}
+        rate={rate}
+        title={title}
+        highlight={title === undefined ? undefined : title.split(/\s+/)[0]}
+        subtitle={data.subtitle}
+        ctaLabel={data.cta}
+        ctaHref={data.ctaHref}
+        isolated
+        fitContainer={inMerged}
+      />;
+      return <div key={block.id} className={blockSection} style={v.spacing || undefined}>{inMerged ? slider : <FullBleed>{slider}</FullBleed>}</div>;
     }
-    if (["brandSlider", "collectionSlider", "categorySlider", "sportSlider"].includes(block.type)) {
-      const config = { brandSlider: ["brands", data.brands], collectionSlider: ["series", data.collections], categorySlider: ["categories", data.categories], sportSlider: ["sports", data.sports] }[block.type];
-      return <EntityCards key={block.id} title={data.title} kind={config[0]} items={ordered(config[1], maps[config[0]])} visuals={v} inMerged={inMerged} />;
+    if (block.type === "brandBar") {
+      // همان نوارِ برندهای صفحه‌ی اصلی (BrandsTicker) با همان ترتیب؛ brands غایب یعنی
+      // همه، وگرنه فقط برندهای انتخاب‌شده.
+      const all = entities?.tickerBrands || [];
+      const chosen = Array.isArray(data.brands) ? new Set(data.brands.map(String)) : null;
+      const brands = chosen ? all.filter((brand) => chosen.has(brand.id)) : all;
+      if (!brands.length) return null;
+      const bar = <BrandsTicker brands={brands} />;
+      return <div key={block.id} className={blockSection} style={v.spacing || undefined}>{inMerged ? bar : <FullBleed>{bar}</FullBleed>}</div>;
     }
-    if (block.type === "usedProducts") return <section key={block.id} className={blockSection} style={v.spacing || undefined}>{data.title ? <h2 className="mb-5 text-xl font-black" style={v.text ? { color: v.text } : undefined}>{data.title}</h2> : null}<PublicUsedProductGrid fill={inMerged} products={ordered(data.products, maps.usedProducts)} /></section>;
+    if (block.type === "sportSeriesSlider") {
+      // همان اسلایدرِ سری‌های صفحه‌ی ورزش (SeriesSlider)؛ فقط عنوان از داده‌ی بلوک
+      // می‌آید و کارت‌ها به /ورزش/برند/سری می‌روند. داخلِ خانه‌ی ادغام، تعدادِ کارت
+      // از عرضِ همان خانه حساب می‌شود (fitContainer)، نه از پنجره.
+      const resolved = entities?.sportSeries?.[String(block.id)];
+      if (!resolved?.series?.length) return null;
+      const slider = <SeriesSlider
+        series={resolved.series}
+        sportSlug={resolved.sport.slug}
+        sportTitle={resolved.sport.title}
+        heading={{ highlight: data.highlight || "", title: data.title || "", subtitle: data.subtitle || "" }}
+        fitContainer={inMerged}
+      />;
+      // مثلِ صفحه‌ی ورزش لبه‌به‌لبه؛ داخلِ خانه‌ی ادغام یا روی تصویر در همان خانه می‌ماند.
+      return <div key={block.id} className={blockSection} style={v.spacing || undefined}>
+        {inMerged ? slider : <FullBleed>{slider}</FullBleed>}
+      </div>;
+    }
+    if (block.type === "reviewSlider") {
+      const reviews = ordered(data.reviews, maps.reviews);
+      if (!reviews.length) return null;
+      // بلوکی که پیش از عنوان‌دار شدن ذخیره شده کلیدها را ندارد → عنوانِ پیش‌فرض.
+      const heading = Object.fromEntries(Object.entries(REVIEW_SLIDER_HEADING).map(([key, fallback]) => [key, data[key] ?? fallback]));
+      const slider = <ReviewSlider reviews={reviews} heading={heading} />;
+      // مثلِ اسلایدرِ سری‌ها لبه‌به‌لبه؛ داخلِ خانه‌ی ادغام یا روی تصویر در همان خانه.
+      return <div key={block.id} className={blockSection} style={v.spacing || undefined}>{inMerged ? slider : <FullBleed>{slider}</FullBleed>}</div>;
+    }
+    if (block.type === "comparisonBanner" || block.type === "matchBanner") {
+      // همان دو بنرِ صفحه‌ی اصلی، فقط با متن‌های بلوک. کلیدِ غایب (undefined) پیش‌فرضِ
+      // خودِ بنر را می‌گیرد. اندازه‌ها با container query از عرضِ خودِ بلوک می‌آیند،
+      // پس در ستونِ مقاله، تمام‌عرض یا کنارِ هم در یک بلوکِ ادغام‌شده درست است.
+      // لبه‌به‌لبه مثلِ صفحه‌ی اصلی؛ دو بنرِ کنارِ هم در یک بلوکِ ادغام‌شده را خودِ
+      // بلوکِ ادغام‌شده لبه‌به‌لبه می‌کند (FULL_BLEED_BLOCK_TYPES).
+      const Banner = block.type === "comparisonBanner" ? ComparisonBanner : MatchBanner;
+      const banner = <Banner title={data.title} highlight={data.highlight} description={data.description} cta={data.cta} />;
+      return <div key={block.id} className={blockSection} style={v.spacing || undefined}>{inMerged ? banner : <FullBleed>{banner}</FullBleed>}</div>;
+    }
     if (block.type === "relatedArticles") {
       const articles = ordered(data.articles, maps.articles).filter((item) => item.category?.status !== "archived");
       return articles.length ? <section key={block.id} className={blockSection} style={v.spacing || undefined}><h2 className="mb-5 text-xl font-black" style={v.text ? { color: v.text } : undefined}>{data.title || "مقالات مرتبط"}</h2><div className={`grid gap-4 ${inMerged ? slotGrid(articles.length) : "md:grid-cols-2"}`}>{articles.map((article) => <ArticleCard key={article._id} article={article} />)}</div></section> : null;
@@ -597,7 +687,10 @@ export default function ArticleBlockRenderer({ blocks = [], entities, preview = 
   };
 
   const rendered = [];
-  for (const block of normalizeHeadingLevels(blocks)) {
+  // محتوای ذخیره‌شده پیش از حذفِ گالری/محصولاتِ دست‌دوم/اسلایدرِ برند به جانشینش
+  // رندر می‌شود؛ بی‌جانشین‌ها (بلوک‌های پویا و اسلایدرهای کالکشن/دسته/ورزش) هیچ.
+  const current = hasLegacyBlocks(blocks) ? upgradeLegacyBlocks(blocks) : blocks;
+  for (const block of normalizeHeadingLevels(current)) {
     const node = renderBlock(block);
     if (node) rendered.push({ block, node: boxed(block, node) });
   }

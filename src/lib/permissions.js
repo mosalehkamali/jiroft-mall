@@ -203,6 +203,17 @@ const SECTION_DEFINITIONS = [
         ],
       },
       {
+        key: "productPrompts",
+        title: "تنظیمات پرامپت محصول",
+        description: "پرامپت پایه و گروه‌های پرامپت دسته برای ساخت پیش‌نویس محصول با AI",
+        path: "/p-admin/admin-products/prompt-settings",
+        api: ["/api/admin/product-prompts"],
+        permissions: [
+          { key: "view", title: "مشاهده تنظیمات پرامپت" },
+          { key: "edit", title: "ویرایش تنظیمات پرامپت" },
+        ],
+      },
+      {
         key: "variants",
         title: "واریانت‌ها",
         description: "واریانت‌ها، موجودی و قیمت هر محصول",
@@ -1076,6 +1087,7 @@ export const ADMIN_ROUTE_PERMISSIONS = {
   "/p-admin/admin-products/add": ["products.create"],
   "/p-admin/admin-products/import": ["products.create"],
   "/p-admin/admin-products/edit/[productId]": ["products.edit"],
+  "/p-admin/admin-products/[productId]/regenerate": ["products.edit"],
   "/p-admin/admin-products/[productId]/variants": ["variants.view"],
   "/p-admin/admin-products/[productId]/variants/add": ["variants.edit"],
 
@@ -1094,6 +1106,10 @@ export const ADMIN_ROUTE_PERMISSIONS = {
   "/p-admin/admin-sports/edit/[sportId]": ["sports.edit"],
   "/p-admin/admin-sports/[sportId]": ["sports.view"],
   "/p-admin/admin-sports/[sportId]/brochure": ["sports.edit"],
+  "/p-admin/admin-products/prompt-settings": ["productPrompts.view"],
+  "/p-admin/admin-products/prompt-settings/base": ["productPrompts.view"],
+  "/p-admin/admin-products/prompt-settings/groups/[groupId]": ["productPrompts.view"],
+  "/p-admin/admin-products/prompt-settings/preview": ["productPrompts.view"],
   "/p-admin/admin-sports/[sportId]/brochure/preview": ["sports.edit"],
   "/p-admin/admin-sports/[sportId]/athletes": ["athletes.view"],
 

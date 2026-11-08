@@ -14,6 +14,7 @@ import { toast } from 'react-toastify'
 import Swal from 'sweetalert2'
 import OrderFlowSelectionsView from '@/components/order/OrderFlowSelectionsView'
 import VariantSummary from '@/components/order/VariantSummary'
+import DownloadInvoiceButton from '@/components/order/DownloadInvoiceButton'
 import ReviewModal from './ReviewModal'
 
 // وضعیت‌های سفارش که اجازه‌ی ثبت نظر می‌دهند (مطابق enum مدل Order)
@@ -134,6 +135,7 @@ function OrderDetailModal({ order, onClose, isStore = false }) {
 
           {/* Scrollable content */}
           <div className="overflow-y-auto flex-1 p-5 space-y-5">
+            <DownloadInvoiceButton order={order} />
 
             {/* وضعیت */}
             <div className="flex flex-wrap gap-2">

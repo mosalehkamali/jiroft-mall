@@ -8,7 +8,7 @@ import { ProductCard } from '@/components/admin';
 import AdminLoader from '@/components/admin/AdminLoader';
 import { showToast } from '@/lib/toast';
 import { confirmDelete, showError } from '@/lib/swal';
-import { FiPlus, FiBox, FiSearch, FiFilter, FiX } from 'react-icons/fi';
+import { FiPlus, FiBox, FiSearch, FiFilter, FiX, FiSliders } from 'react-icons/fi';
 import { useAdminPermissions } from '@/components/admin/AdminPermissionProvider';
 import useSWR from 'swr';
 import storeConfig from 'base/store.config';
@@ -158,6 +158,15 @@ export default function AdminProducts() {
             className="flex items-center gap-2 px-4 py-2.5 rounded-[var(--radius)] text-sm font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 transition-all"
           >
             ورود گروهی
+          </button>
+          )}
+          {/* کلیدِ productPrompts با خاموش‌بودنِ aiProductDraft از مجوزها حذف می‌شود */}
+          {can('productPrompts.view') && (
+          <button
+            onClick={() => router.push('/p-admin/admin-products/prompt-settings')}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-[var(--radius)] text-sm font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 transition-all"
+          >
+            <FiSliders size={16} /> تنظیمات پرامپت AI
           </button>
           )}
         </div>

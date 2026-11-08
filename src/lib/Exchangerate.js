@@ -15,7 +15,7 @@ const getStoredRate = unstable_cache(
     const doc = await ExchangeRate.findOne({ currency: "EUR" }).lean();
     return doc?.rateToToman ?? null;
   },
-  ["exchange-rate"],
+  ["exchange-rate-v2"],
   { revalidate: 10800, tags: ["exchange-rate"] }
 );
 

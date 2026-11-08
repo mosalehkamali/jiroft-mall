@@ -1,4 +1,5 @@
 import storeConfig from "base/store.config";
+import { listingPage, listingCanonical } from "@/lib/seo/listingPagination";
 import { getPageDataBySlug } from "base/services/product.service";
 import { getSeriesBySport, getSeriesFilterIndex } from "base/services/series.service";
 import { resolvePageContext } from "base/services/query.service";
@@ -16,7 +17,7 @@ import { buildTaxonomyMetadata } from "@/lib/seo/taxonomySeo";
 import TaxonomyStructuredData from "@/components/seo/TaxonomyStructuredData";
 import TaxonomyBreadcrumbs from "@/components/seo/TaxonomyBreadcrumbs";
 import { getBrandGroupedSections } from "base/services/brandGrouped.service";
-import { resolveArticleEntities } from "base/services/publicArticle.service";
+import { getCachedBlockEntities } from "base/services/publicArticle.service";
 import { getPublishedBrandBrochure, getPublishedSportBrochure } from "base/services/miniArticle.service";
 import { normalizeTargetAudience } from "base/utils/targetAudience";
 import { BRAND_SECTIONS_PER_BATCH } from "base/utils/groupedProductPagination";
@@ -30,7 +31,7 @@ const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000").r
 // کش روت ساخته نشود؛ کوئری‌ها همچنان با unstable_cache کش می‌مانند.
 export const dynamic = "force-dynamic";
 
-export async function generateMetadata({ params }) {
+export async function generateMetadata({ params, searchParams }) {
   const { sportSlug } = await params;
 
   // RULE 2: یک سگمنتیِ ریشه فقط می‌تواند SPORT یا BRAND باشد؛ هر چیزِ دیگر ۴۰۴
@@ -65,7 +66,7 @@ export async function generateMetadata({ params }) {
     title,
     description,
     metadataBase: new URL(SITE_URL),
-    alternates: { canonical: pageUrl },
+    alternates: { canonical: listingCanonical(pageUrl, ctx.filters.brand ? 1 : (await searchParams)?.page) },
     openGraph: {
       title,
       description,
@@ -106,6 +107,7 @@ export default async function DynamicSportPage({ params, searchParams }) {
   // removes the generic 20-product cap and exposes related limited editions as
   // collaboration sections without changing Product.
   const sp = (await searchParams) || {};
+  const page = listingPage(sp.page);
   const targetAudience = normalizeTargetAudience(sp.targetAudience);
   if (ctx.filters.brand && !ctx.filters.sport) {
     const brandId = ctx.filters.brand._id;
@@ -116,7 +118,7 @@ export default async function DynamicSportPage({ params, searchParams }) {
     const brochureBlocks = await getPublishedBrandBrochure(brandId);
     if (brochureBlocks) {
       const { default: BrandBrochure } = await import("@/components/features/brands/BrandBrochure");
-      const brochureEntities = await resolveArticleEntities({ blocks: brochureBlocks });
+      const brochureEntities = await getCachedBlockEntities(brochureBlocks);
       const brochureFilters = { ...ctx.filters, brand: { ...ctx.filters.brand, articleBlocks: undefined, series: undefined } };
       return (
         <>
@@ -148,7 +150,7 @@ export default async function DynamicSportPage({ params, searchParams }) {
       }),
       getCachedRate(),
       articleBlocks.length > 0
-        ? resolveArticleEntities({ blocks: articleBlocks })
+        ? getCachedBlockEntities(articleBlocks)
         : Promise.resolve(null),
     ]);
 
@@ -210,7 +212,7 @@ export default async function DynamicSportPage({ params, searchParams }) {
     : null;
   if (sportBrochureBlocks) {
     const { default: BrandBrochure } = await import("@/components/features/brands/BrandBrochure");
-    const brochureEntities = await resolveArticleEntities({ blocks: sportBrochureBlocks });
+    const brochureEntities = await getCachedBlockEntities(sportBrochureBlocks);
     return (
       <>
         <TaxonomyStructuredData
@@ -229,13 +231,14 @@ export default async function DynamicSportPage({ params, searchParams }) {
   }
 
   const [data, series, seriesIndex, rate] = await Promise.all([
-    getPageDataBySlug(sportSlug, targetAudience),
+    getPageDataBySlug(sportSlug, targetAudience, (page - 1) * 20),
     getSeriesBySport(sportSlug, targetAudience),
     getSeriesFilterIndex(),
     getCachedRate(),
   ]);
   if (!data) notFound();
 
+  if (page > 1 && (page - 1) * 20 >= data.totalResults) notFound();
   const serializedSportInfo = JSON.parse(JSON.stringify(data.info));
   const serializedProducts = JSON.parse(JSON.stringify(data.products));
   const serializedSeries = JSON.parse(JSON.stringify(series));
@@ -269,7 +272,8 @@ export default async function DynamicSportPage({ params, searchParams }) {
         canonical={`${SITE_URL}/${sportSlug}`}
       />
       <SportPageClient
-        key={JSON.stringify([sportSlug, targetAudience])}
+        initialOffset={(page - 1) * 20}
+        key={JSON.stringify([sportSlug, targetAudience, page])}
         filters={ctx.filters}
         pageInfo={serializedSportInfo}
         products={serializedProducts}

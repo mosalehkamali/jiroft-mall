@@ -1,12 +1,26 @@
 import {
-  FiAlignRight, FiBarChart2, FiBox, FiColumns, FiGrid, FiImage, FiLink, FiList,
-  FiFeather, FiLayout, FiMail, FiMessageSquare, FiMinus, FiPlay, FiShoppingBag, FiStar, FiTable,
-  FiLayers, FiTag, FiType, FiZap,
+  FiAlignRight, FiBox, FiColumns, FiImage, FiLink, FiList,
+  FiFeather, FiLayout, FiMail, FiMessageSquare, FiMinus, FiPlay, FiTable,
+  FiAward, FiLayers, FiMessageCircle, FiShuffle, FiTag, FiTarget, FiType, FiZap,
 } from "react-icons/fi";
-import { ARTICLE_BLOCK_TYPES, IMAGE_SLIDER_DELAY, IMAGE_SLIDER_HEIGHT } from "@/lib/articleBlockTypes";
+import { ARTICLE_BLOCK_TYPES, IMAGE_SLIDER_DELAY, IMAGE_SLIDER_HEIGHT, REVIEW_SLIDER_HEADING, isBlockTypeEnabled } from "@/lib/articleBlockTypes";
+import { isFeatureEnabled } from "@/lib/features";
+
+const SECOND_HAND = isFeatureEnabled("secondHand");
+import { COMPARISON_BANNER_TEXT, MATCH_BANNER_TEXT, PRODUCT_SLIDER_TEXT } from "@/lib/homeBannerTexts";
+import { ICON_LOGO_BACKGROUND, ICON_LOGO_PADDING, ICON_LOGO_RADIUS, ICON_LOGO_SIZE } from "@/lib/entityImages";
 
 const text = (key, label, kind = "text", extra = {}) => ({ key, label, kind, ...extra });
 const entity = (key, label, entityType, multiple = true) => ({ key, label, kind: multiple ? "entities" : "entity", entityType });
+
+// دو بنرِ صفحه‌ی اصلی، عیناً همان کامپوننت‌ها؛ فقط چهار متن قابلِ تنظیم است — نه
+// پیوند، نه رنگ، نه چیدمان (styleKeys فقط فاصله).
+const homeBannerFields = [
+  text("title", "خطِ اولِ عنوان", "text", { row: "title" }),
+  text("highlight", "خطِ دوم (رنگی)", "text", { row: "title" }),
+  text("description", "توضیح", "textarea"),
+  text("cta", "متنِ دکمه"),
+];
 
 // چیدمانِ فرمِ ویرایش — فقط ظاهر، بی‌اثر بر داده:
 //   row: فیلدهای پشتِ‌سرِ‌همی که row یکسان دارند کنارِ هم در یک ردیف می‌نشینند
@@ -51,7 +65,7 @@ export const ARTICLE_BLOCKS = {
     label: "تیتر بخش", group: "محتوا", icon: FiFeather,
     defaults: { highlight: "", title: "", subtitle: "" },
     fields: [
-      text("highlight", "متن نارنجی (ابتدای عنوان)", "text", { row: "title" }),
+      text("highlight", "متن رنگی (ابتدای عنوان)", "text", { row: "title" }),
       text("title", "ادامه‌ی عنوان", "text", { row: "title" }),
       text("subtitle", "زیرعنوان"),
     ],
@@ -64,7 +78,25 @@ export const ARTICLE_BLOCKS = {
   image: { label: "تصویر", group: "رسانه", icon: FiImage, defaults: { url: "", alt: "", caption: "" }, fields: [text("images", "تصاویر", "imageList"), text("displayHeight", "ارتفاع نمایش", "imageHeight", { advanced: true }), text("caption", "زیرنویس"), text("shade", "لایه‌ی رنگ و جای محتوا", "imageShade", { advanced: true }), text("blocks", "بلوک‌های روی تصویر", "mergedBlocks", { addLabel: "بلوک روی تصویر", addGroup: "media" })], styleKeys: SPACING_ONLY },
   // اسلایدرِ تصویر: ظرفی که فقط بلوکِ *تصویر* می‌پذیرد، با اندازه‌ی ثابت.
   imageSlider: { label: "اسلایدر تصویر", group: "رسانه", icon: FiColumns, defaults: { blocks: [], delay: IMAGE_SLIDER_DELAY.default, height: IMAGE_SLIDER_HEIGHT.default }, fields: [text("slider", "اندازه و زمان‌بندی", "imageSliderSettings", { section: "تنظیمات کلِ اسلایدر" }), text("blocks", "اسلایدها — هر اسلاید یک بلوکِ تصویر با بلوک‌های روی خودش", "imageSliderBlocks")], styleKeys: SPACING_ONLY },
-  gallery: { label: "گالری", group: "رسانه", icon: FiGrid, defaults: { images: [] }, fields: [text("images", "تصاویر", "gallery")], styleKeys: SPACING_ONLY },
+  // یک آیکن/لوگو/تصویر از دادهِ واقعیِ یک ورزش، برند، سری یا دسته، در یک قابِ رنگی با
+  // متنِ غنیِ اختیاری زیرش و پیوندِ اختیاری. بخش‌ها به ترتیبِ کار: منبع و تصویر،
+  // اندازه، زمینه (همان لایه‌ی رنگِ بلوکِ تصویر) و قاب، متن، پیوند. عوض‌کردنِ منبع
+  // تصویرِ قبلی را خالی می‌کند (clears)، چون دیگر از آن منبع نیست.
+  iconLogo: {
+    label: "آیکن و لوگو", group: "رسانه", icon: FiAward,
+    defaults: { source: null, url: "", alt: "", imageLabel: "", width: ICON_LOGO_SIZE.default, height: null, radius: ICON_LOGO_RADIUS.default, padding: ICON_LOGO_PADDING.default, text: "", href: "", ...ICON_LOGO_BACKGROUND },
+    fields: [
+      { ...entity("source", "جستجوی ورزش، برند، سری یا دسته", "imageSource", false), clears: ["url", "alt", "imageLabel"], section: "۱. منبع و تصویر" },
+      text("url", "تصاویرِ این منبع", "entityImages"),
+      text("size", "اندازه‌ی تصویر", "iconSize", { section: "۲. اندازه" }),
+      text("background", "زمینه", "iconBackground", { section: "۳. زمینه و قاب" }),
+      text("radius", "گردیِ گوشه‌ها (px)", "number", { row: "box" }),
+      text("padding", "فاصله‌ی داخلی (px)", "number", { row: "box" }),
+      text("text", "متنِ زیرِ تصویر (اختیاری)", "rich", { section: "۴. متن" }),
+      text("href", "پیوندِ کلِ بلوک (اختیاری)", "url", { section: "۵. پیوند" }),
+    ],
+    styleKeys: SPACING_ONLY,
+  },
   video: { label: "ویدئو", group: "رسانه", icon: FiPlay, defaults: { url: "", title: "" }, fields: [text("url", "آدرس ویدئو", "url", { row: "video" }), text("title", "عنوان ویدئو", "text", { row: "video" })], styleKeys: SPACING_ONLY },
   quote: { label: "نقل‌قول", group: "محتوا", icon: FiMessageSquare, defaults: { text: "", author: "" }, fields: [text("text", "متن نقل‌قول", "rich"), text("author", "نام گوینده")], styleKeys: ["spacing", "textColor", "background", "accent"] },
   // همان هدرِ صفحه‌ی ورزش. ظاهرش از SportHero می‌آید، پس فقط دو چیز تنظیم‌پذیر است.
@@ -92,17 +124,74 @@ export const ARTICLE_BLOCKS = {
   callout: { label: "نکته برجسته", group: "محتوا", icon: FiZap, defaults: { title: "", text: "", tone: "info" }, fields: [text("title", "عنوان", "text", { row: "head" }), text("tone", "نوع", "select", { row: "head", options: ["info", "success", "warning", "danger"], labels: { info: "اطلاعات", success: "موفقیت", warning: "هشدار", danger: "خطر" } }), text("text", "متن", "rich")], styleKeys: ["spacing", "textColor", "background", "accent"] },
   table: { label: "جدول", group: "داده", icon: FiTable, defaults: { headers: ["ستون ۱", "ستون ۲"], rows: [["", ""]] }, fields: [text("table", "داده‌های جدول", "table")], styleKeys: ["spacing", "textColor", "accent", "tableVariant"] },
   faq: { label: "سوالات متداول", group: "داده", icon: FiList, defaults: { items: [{ question: "", answer: "" }] }, fields: [text("items", "پرسش‌ها", "faq")], styleKeys: ["spacing", "textColor", "background", "accent"] },
-  productCard: { label: "کارت محصول", group: "فروشگاه", icon: FiBox, defaults: { product: null }, fields: [entity("product", "محصول", "product", false)], styleKeys: TITLED },
-  productSlider: { label: "اسلایدر محصول", group: "فروشگاه", icon: FiColumns, defaults: { title: "", products: [] }, fields: [text("title", "عنوان"), entity("products", "محصولات", "product")], styleKeys: TITLED },
-  collectionSlider: { label: "اسلایدر کالکشن", group: "فروشگاه", icon: FiColumns, defaults: { title: "", collections: [] }, fields: [text("title", "عنوان"), entity("collections", "کالکشن‌ها", "collection")], styleKeys: TITLED },
-  brandSlider: { label: "اسلایدر برند", group: "فروشگاه", icon: FiTag, defaults: { title: "", brands: [] }, fields: [text("title", "عنوان"), entity("brands", "برندها", "brand")], styleKeys: TITLED },
-  categorySlider: { label: "اسلایدر دسته‌بندی", group: "فروشگاه", icon: FiGrid, defaults: { title: "", categories: [] }, fields: [text("title", "عنوان"), entity("categories", "دسته‌بندی‌ها", "category")], styleKeys: TITLED },
-  sportSlider: { label: "اسلایدر ورزش", group: "فروشگاه", icon: FiBarChart2, defaults: { title: "", sports: [] }, fields: [text("title", "عنوان"), entity("sports", "ورزش‌ها", "sport")], styleKeys: TITLED },
-  latestProducts: { label: "جدیدترین محصولات", group: "پویا", icon: FiShoppingBag, defaults: { title: "جدیدترین محصولات", limit: 12, sports: [], categories: [] }, fields: [text("title", "عنوان", "text", { row: "head" }), text("limit", "تعداد", "number", { row: "head" }), entity("sports", "محدود به ورزش", "sport"), entity("categories", "محدود به دسته", "category")], styleKeys: TITLED },
-  bestSellers: { label: "پرفروش‌ترین‌ها", group: "پویا", icon: FiStar, defaults: { title: "پرفروش‌ترین‌ها", limit: 12, categories: [] }, fields: [text("title", "عنوان", "text", { row: "head" }), text("limit", "تعداد", "number", { row: "head" }), entity("categories", "محدود به دسته", "category")], styleKeys: TITLED },
-  amazingOffers: { label: "پیشنهادهای شگفت‌انگیز", group: "پویا", icon: FiZap, defaults: { title: "پیشنهادهای شگفت‌انگیز", limit: 12 }, fields: [text("title", "عنوان", "text", { row: "head" }), text("limit", "تعداد", "number", { row: "head" })], styleKeys: TITLED },
-  usedProducts: { label: "محصولات دست دوم", group: "فروشگاه", icon: FiShoppingBag, defaults: { title: "محصولات دست دوم", products: [] }, fields: [text("title", "عنوان"), entity("products", "آگهی‌ها", "usedProduct")], styleKeys: TITLED },
+  // محصولِ نو *یا* آگهیِ دست‌دوم: انتخابِ یکی دیگری را خالی می‌کند (clears).
+  productCard: {
+    label: "کارت محصول", group: "فروشگاه", icon: FiBox,
+    defaults: { product: null, usedProduct: null },
+    fields: [
+      { ...entity("product", "محصول", "product", false), clears: ["usedProduct"] },
+      ...(SECOND_HAND ? [{ ...entity("usedProduct", "یا آگهیِ دست‌دوم", "usedProduct", false), clears: ["product"] }] : []),
+    ],
+    styleKeys: TITLED,
+  },
+  // همان اسلایدرِ «پرفروش‌ترین‌ها»ی صفحه‌ی اصلی (BestSellers)، لبه‌به‌لبه. عنوان یک
+  // متن است و واژه‌ی اولش مثلِ صفحه‌ی اصلی رنگی می‌شود. ظاهر تنظیم‌پذیر نیست.
+  productSlider: {
+    label: "اسلایدر محصولات", group: "فروشگاه", icon: FiColumns,
+    defaults: { products: [], usedProducts: [], ...PRODUCT_SLIDER_TEXT },
+    fields: [
+      entity("products", "محصولات", "product"),
+      ...(SECOND_HAND ? [entity("usedProducts", "آگهی‌های دست‌دوم (پس از محصولات)", "usedProduct")] : []),
+      text("title", "عنوان (واژه‌ی اول رنگی)", "text", { row: "title" }),
+      text("subtitle", "زیرعنوان", "text", { row: "title" }),
+      text("cta", "متنِ دکمه", "text", { row: "cta" }),
+      text("ctaHref", "نشانیِ دکمه", "url", { row: "cta" }),
+    ],
+    styleKeys: SPACING_ONLY,
+  },
+  // نوارِ برندهای صفحه‌ی اصلی (BrandsTicker)، لبه‌به‌لبه. بلوکِ تازه همه‌ی برندها را
+  // دارد (brands غایب)؛ برداشتنِ یکی فهرست را صریح می‌کند و برندِ برداشته با جستجو
+  // برمی‌گردد. تنظیمِ دیگری ندارد.
+  brandBar: {
+    label: "نوار برندها", group: "فروشگاه", icon: FiTag, hidden: !isBlockTypeEnabled("brandBar"),
+    defaults: {},
+    fields: [{ ...entity("brands", "برندها — همه به‌طورِ پیش‌فرض؛ هر کدام را بردارید، با جستجو برمی‌گردد", "tickerBrand"), allByDefault: true, browse: true }],
+    styleKeys: SPACING_ONLY,
+  },
+  // همان اسلایدرِ سری‌های صفحه‌ی ورزش (SeriesSlider)، با سری‌هایی که ادمین برمی‌گزیند.
+  // اول ورزش؛ عوض‌شدنِ ورزش سری‌های قبلی را پاک می‌کند (clears)، چون سری‌های
+  // ورزشِ دیگر اینجا معنایی ندارند. جستجوی سری‌ها به ورزش محدود است (scope) و
+  // بدونِ تایپ هم فهرستِ کاملشان باز می‌شود (browse). عنوان مثلِ «تیتر بخش».
+  sportSeriesSlider: {
+    label: "اسلایدر سری‌ها", group: "فروشگاه", icon: FiLayers, hidden: !isBlockTypeEnabled("sportSeriesSlider"),
+    defaults: { sport: null, series: [], highlight: "سری‌های", title: "", subtitle: "جدیدترین کالکشن‌های 2026" },
+    fields: [
+      { ...entity("sport", "ورزش", "sport", false), clears: ["series"] },
+      { ...entity("series", "سری‌ها — فقط سری‌هایی که در این ورزش محصول دارند", "sportSerie"), scope: "sport", scopeHint: "ابتدا ورزش را انتخاب کنید", browse: true },
+      text("highlight", "متن رنگی (ابتدای عنوان)", "text", { row: "title" }),
+      text("title", "ادامه‌ی عنوان (خالی = نامِ ورزش)", "text", { row: "title" }),
+      text("subtitle", "زیرعنوان"),
+    ],
+    // ظاهر عیناً همان اسلایدرِ سری‌های صفحه‌ی ورزش است و تنظیم‌پذیر نیست.
+    styleKeys: SPACING_ONLY,
+  },
+  // نظرهای تأییدشده‌ی محصولِ نو و دست‌دوم در قابِ اسلایدرِ سری‌ها (عنوانِ دورنگ مثلِ
+  // «تیتر بخش»)؛ کارت‌ها عیناً کارتِ نظرِ صفحه‌ی دست‌دوم‌اند و تنظیمِ ظاهری ندارند.
+  // با فوکوس، تازه‌ترین نظرها بدونِ تایپ باز می‌شوند.
+  reviewSlider: {
+    label: "اسلایدر نظرات", group: "فروشگاه", icon: FiMessageCircle, hidden: !isBlockTypeEnabled("reviewSlider"),
+    defaults: { reviews: [], ...REVIEW_SLIDER_HEADING },
+    fields: [
+      { ...entity("reviews", "نظرها — همه‌ی نظرهای تأییدشده‌ی محصولات نو و دست‌دوم", "review"), browse: true },
+      text("highlight", "متن رنگی (ابتدای عنوان)", "text", { row: "title" }),
+      text("title", "ادامه‌ی عنوان", "text", { row: "title" }),
+      text("subtitle", "زیرعنوان"),
+    ],
+    styleKeys: SPACING_ONLY,
+  },
   relatedArticles: { label: "مقالات مرتبط", group: "محتوا", icon: FiList, defaults: { title: "مقالات مرتبط", articles: [] }, fields: [text("title", "عنوان"), entity("articles", "مقالات", "article")], styleKeys: TITLED },
+  comparisonBanner: { label: "بنر ابزار مقایسه", group: "بازاریابی", icon: FiShuffle, hidden: !isBlockTypeEnabled("comparisonBanner"), defaults: { ...COMPARISON_BANNER_TEXT }, fields: homeBannerFields, styleKeys: SPACING_ONLY },
+  matchBanner: { label: "بنر انتخاب هوشمند", group: "بازاریابی", icon: FiTarget, hidden: !isBlockTypeEnabled("matchBanner"), defaults: { ...MATCH_BANNER_TEXT }, fields: homeBannerFields, styleKeys: SPACING_ONLY },
   newsletterCta: { label: "عضویت خبرنامه", group: "بازاریابی", icon: FiMail, defaults: { title: "", description: "", buttonLabel: "عضویت" }, fields: [text("title", "عنوان", "text", { row: "head" }), text("buttonLabel", "متن دکمه", "text", { row: "head" }), text("description", "توضیح", "rich", { htmlKey: "descriptionHtml", align: false })], styleKeys: ["spacing", "textColor", "background", "accent"] },
   customHtml: { label: "HTML سفارشی", group: "پیشرفته", icon: FiBox, defaults: { html: "" }, fields: [text("html", "کد HTML", "html")], styleKeys: TEXTY },
   // فقط با «ادغام» ساخته می‌شود (hidden: در کتابخانه‌ی بلوک نیست). فرزندان عیناً در data.blocks می‌مانند.

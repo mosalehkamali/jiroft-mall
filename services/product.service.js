@@ -16,6 +16,12 @@ import { filterAttributesByAudience } from "base/utils/targetAudience";
 import { purchaseStatus, toPublicProduct } from "@/lib/productRules";
 import { rulesForCategory } from "base/services/productRules.service";
 import { publicPurchase } from "base/services/priceEngine";
+import {
+  CARD_BRAND_FIELDS,
+  CARD_CATEGORY_FIELDS,
+  PRODUCT_PAGE_BRAND_FIELDS,
+  WITHOUT_AI_PROMPTS,
+} from "@/lib/publicProductFields";
 
 const modelsMap = { Sport, Brand, Athlete, Category };
 
@@ -32,7 +38,7 @@ export const getProducts = unstable_cache(
   async () => {
     return getProductListingPage();
   },
-  ["all-products-kids-separated-v2"],
+  ["all-products-kids-separated-v3"],
   { revalidate: 10800, tags: ["products"] }
 );
 
@@ -49,8 +55,8 @@ export const getHomeProducts = unstable_cache(
     const products = await Product.find({ isActive: true })
       .sort({ createdAt: -1 })
       .limit(20)
-      .populate("brand")
-      .populate("category")
+      .populate("brand", CARD_BRAND_FIELDS)
+      .populate("category", CARD_CATEGORY_FIELDS)
       .populate("variants")
       .lean();
 
@@ -76,8 +82,8 @@ async function buildSliderList(ids, rate) {
   if (!Array.isArray(ids) || ids.length === 0) return null;
 
   const products = await Product.find({ _id: { $in: ids }, isActive: true })
-    .populate("brand")
-    .populate("category")
+    .populate("brand", CARD_BRAND_FIELDS)
+    .populate("category", CARD_CATEGORY_FIELDS)
     .populate("variants")
     .lean();
 
@@ -117,8 +123,8 @@ export const getHomeSliderProducts = unstable_cache(
       const recent = await Product.find({ isActive: true })
         .sort({ createdAt: -1 })
         .limit(20)
-        .populate("brand")
-        .populate("category")
+        .populate("brand", CARD_BRAND_FIELDS)
+        .populate("category", CARD_CATEGORY_FIELDS)
         .populate("variants")
         .lean();
       const pricedFallback = await attachListingPrices(recent, rate);
@@ -132,7 +138,7 @@ export const getHomeSliderProducts = unstable_cache(
 
     return JSON.parse(JSON.stringify({ bestSellers, offers }));
   },
-  ["home-slider-products"],
+  ["home-slider-products-v2"],
   { revalidate: 10800, tags: ["products", "home-sliders"] }
 );
 
@@ -144,12 +150,12 @@ export const getProductBySlug = unstable_cache(
       await connectToDB();
 
       const product = await Product.findOne({ slug: decodedSlug, isActive: true })
-        .populate("brand")
+        .populate("brand", PRODUCT_PAGE_BRAND_FIELDS)
         .populate("serie")
         .populate("limitedEdition")
         .populate("sport")
         .populate("athlete")
-        .populate("category")
+        .populate("category", WITHOUT_AI_PROMPTS)
         .populate("variants")
         .lean();
 
@@ -204,7 +210,7 @@ export const getProductBySlug = unstable_cache(
       throw err;
     }
   },
-  ["product-by-slug"],
+  ["product-by-slug-v3"],
   { revalidate: 10800, tags: ["products"] }
 );
 
@@ -242,7 +248,7 @@ export const getFilterableAttributes = unstable_cache(
 );
 
 export const getPageDataBySlug = unstable_cache(
-  async (slug, targetAudience = null) => {
+  async (slug, targetAudience = null, offset = 0) => {
     await connectToDB();
 
     const slugData = await SlugRegistery.findOne({ slug: slug.toLowerCase() }).lean();
@@ -254,7 +260,7 @@ export const getPageDataBySlug = unstable_cache(
       return null;
     }
 
-    const entityInfo = await EntityModel.findOne({ slug }).lean();
+    const entityInfo = await EntityModel.findOne({ slug }).select(WITHOUT_AI_PROMPTS).lean();
     if (!entityInfo) return null;
 
     const articleBlocks =
@@ -268,6 +274,7 @@ export const getPageDataBySlug = unstable_cache(
     const [listing, articleEntities] = await Promise.all([
       getProductListingPage({
         filter: { [slugData.filterField]: entityInfo._id, targetAudience },
+        offset,
       }),
       articleBlocks.length > 0
         ? import("base/services/publicArticle.service").then(
@@ -294,7 +301,7 @@ export const getPageDataBySlug = unstable_cache(
       })
     );
   },
-  ["page-data-by-slug-kids-separated-v2"],
+  ["page-data-by-slug-kids-separated-v3"],
   {
     revalidate: 10800,
     tags: ["products", "sports", "categories", "brands", "series", "articles"],

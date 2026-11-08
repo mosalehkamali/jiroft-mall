@@ -167,12 +167,10 @@ test("هر بلوکی که شبکه‌ی داخلی دارد، inMerged را م�
   const src = await read("../src/components/features/articles/ArticleBlockRenderer.jsx");
   for (const call of [
     /<PublicProductGrid products=\{products\} rate=\{rate\} fill=\{inMerged\} \/>/,
-    /<PublicUsedProductGrid fill=\{inMerged\}/,
-    /<EntityCards [^>]*inMerged=\{inMerged\}/,
+    /<PublicUsedProductGrid products=\{used\} fill=\{inMerged\} \/>/,
     /<ImageBlock [^>]*inMerged=\{inMerged\}/,
   ]) assert.match(src, call, String(call));
-  // گالری و مقالاتِ مرتبط هم همان قاعده را دارند.
-  assert.match(src, /inMerged \? slotGrid\(images\.length, SLOT_TILES\) : "grid-cols-2"/);
+  // مقالاتِ مرتبط هم همان قاعده را دارند (گالری و کارت‌های کالکشن/برند/دسته/ورزش حذف شدند).
   assert.match(src, /inMerged \? slotGrid\(articles\.length\) : "md:grid-cols-2"/);
 });
 
@@ -344,10 +342,12 @@ test("سربرگِ کارت رنگِ ثابت ندارد و از گروه می�
 // روزی از هم دور می‌افتد که یکی‌شان عوض شود.
 test("دکمه‌های اسلایدر همان کامپوننتِ صفحه‌ی اصلی‌اند", async () => {
   const nav = await read("../src/components/features/articles/MergedSliderNav.jsx");
-  const home = await read("../src/components/features/bestSellers/BestSellers.js");
+  const home = await read("../src/components/features/bestSellers/ProductSliderContent.jsx");
   assert.match(nav, /import HomeSliderNav from "@\/components\/features\/home\/HomeSliderNav"/);
   assert.match(home, /import HomeSliderNav from "@\/components\/features\/home\/HomeSliderNav"/);
-  assert.match(home, /<HomeSliderNav prevClass="product-prev-btn" nextClass="product-next-btn" \/>/);
+  // کلاس‌های پایه همان‌اند؛ isolated (بلوکِ «اسلایدر محصولات») فقط کلاسِ یکتای خودش را می‌افزاید.
+  assert.match(home, /<HomeSliderNav prevClass=\{scope\("product-prev-btn"\)\} nextClass=\{scope\("product-next-btn"\)\} \/>/);
+  assert.ok(home.includes('const scope = (base) => (isolated ? `${base} ${base}-${instance}` : base);'));
   // مارک‌آپِ دکمه فقط یک جا تعریف شده است.
   const shared = await read("../src/components/features/home/HomeSliderNav.jsx");
   assert.match(shared, /w-12 h-12 flex items-center justify-center text-gray-400 hover:text-\[var\(--color-primary\)\]/);
@@ -395,7 +395,7 @@ test("ناوبری بیرونِ جریانِ صفحه است، با همان ف�
   // تا اسلایدر همانی می‌ماند که ادمین تنظیم کرده.
   assert.match(nav, /className="pointer-events-none absolute bottom-full end-0 mb-10 md:mb-16"/);
   // mb-10/md:mb-16 دقیقاً فاصله‌ی سرصفحه تا اسلایدر در صفحه‌ی اصلی است.
-  const home = await read("../src/components/features/bestSellers/BestSellers.js");
+  const home = await read("../src/components/features/bestSellers/ProductSliderContent.jsx");
   assert.match(home, /justify-between mb-10 md:mb-16/);
   const renderer = await read("../src/components/features/articles/ArticleBlockRenderer.jsx");
   assert.match(renderer, /<div className=\{`\$\{blockSection\} relative`\}/);
@@ -405,7 +405,7 @@ test("حرکتِ اسلایدرِ ادغام‌شده از همان تنظیما
   const shared = await read("../src/lib/homeSlider.js");
   assert.match(shared, /HOME_SLIDER_AUTOPLAY = \{ delay: 5000, disableOnInteraction: true \}/);
   assert.match(shared, /HOME_SLIDER_SPEED = 300/);
-  for (const file of ["bestSellers/BestSellers.js", "amazingOffers/AmazingOffers.js"]) {
+  for (const file of ["bestSellers/ProductSliderContent.jsx", "amazingOffers/AmazingOffers.js"]) {
     const src = await read(`../src/components/features/${file}`);
     assert.match(src, /import \{ HOME_SLIDER_AUTOPLAY, HOME_SLIDER_SPEED \} from "@\/lib\/homeSlider"/);
     assert.match(src, /speed=\{HOME_SLIDER_SPEED\}/);
@@ -433,7 +433,8 @@ test("پیش‌نمایش رنگِ سایت را نشان می‌دهد، نه �
   assert.equal(css[at - 1].trim(), ":root,");
   assert.match(css[at + 1], /--primary: \d+ \d+% \d+%;/);
   const canvas = await read("../src/components/admin/articles/PreviewCanvas.jsx");
-  assert.ok(canvas.includes('className={`site-colors${canEdit ? " preview-canvas" : ""}`}'));
+  // the canvas (the bleed root) carries site-colors; a page frame may add its background after it
+  assert.ok(canvas.includes('className={`site-colors${canEdit ? " preview-canvas" : ""}'));
 });
 
 // ——— بلوکِ هدر ————————————————————————————————————————————————
@@ -518,10 +519,22 @@ test("اسلایدر با عوض‌شدنِ اسلاید تغییرِ انداز
   const css = await read("../src/app/globals.css");
   // ارتفاع روی خودِ خانه است و از متغیّرِ ظرف می‌آید؛ تصویر در همان قاب برش می‌خورد.
   assert.match(css, /\.a-slide \{\s*\r?\n\s*height: var\(--slide-h\);/);
-  assert.match(css, /\.a-slide img \{[\s\S]*?object-fit: cover;/);
+  assert.match(css, /\.a-slide img:not\(\.a-image-overlay \*\) \{[\s\S]*?object-fit: cover;/);
   // بدونِ !important: کلاس‌های خودِ بلوکِ تصویر تک‌کلاسه‌اند و انتخابگرِ نزولی خاص‌تر است.
   const slice = css.slice(css.indexOf(".a-slider {"), css.indexOf("ارتفاعِ خطِ متنِ بلوک‌ها"));
   assert.ok(!slice.includes("!important"));
+});
+
+test("قاعده‌های اسلاید به بلوک‌های رویِ تصویر نمی‌رسند", async () => {
+  const css = await read("../src/app/globals.css");
+  // هر انتخابگرِ نزولیِ .a-slide (جز فرزندِ مستقیم) باید در لایه‌ی رویی بایستد؛ وگرنه
+  // لوگوی برندِ کارتِ محصولِ روی تصویر 100% و cover می‌گرفت و از تصویرِ محصول بزرگ‌تر می‌شد.
+  const selectors = [...css.matchAll(/^([^{}@/\n][^{}]*?)\s*\{/gm)]
+    .flatMap((m) => m[1].split(","))
+    .map((s) => s.trim())
+    .filter((s) => /^\.a-slide\s/.test(s) && !s.startsWith(".a-slide >"));
+  assert.ok(selectors.length >= 6, "slide rules not found");
+  for (const selector of selectors) assert.ok(selector.endsWith(":not(.a-image-overlay *)"), `unbounded: ${selector}`);
 });
 
 test("یک تایمر، با پاک‌سازی؛ ناوبریِ دستی آن را از نو می‌چیند", async () => {

@@ -713,9 +713,10 @@ useEffect(() => {
           <div className="relative flex items-center justify-between h-full gap-6">
             <div className="flex items-center gap-5 flex-shrink-0">
               <div className="origin-right flex-shrink-0">
-                <Link href="/">
+                <Link href="/" prefetch={false}>
                   <Image
                     src={storeConfig.brand.logo}
+                  loading="eager"
                     alt="logo"
                     width={160}
                     height={65}
@@ -830,6 +831,7 @@ useEffect(() => {
                 onClick={() => setOpenCart(true)}
               >
                 <IconButton
+                  ariaLabel="سبد خرید"
                   className="bg-transparent border-white hover:bg-white text-white hover:text-black transition-all"
                   variant="outline"
                 >
@@ -919,9 +921,10 @@ useEffect(() => {
                   <HiOutlineViewGrid size={24} />
                 )}
               </button>
-              <Link href="/" className="flex-shrink-0">
+              <Link href="/" prefetch={false} className="flex-shrink-0">
                 <Image
                   src={storeConfig.brand.logo}
+                  loading="eager"
                   alt="logo"
                   width={100}
                   height={45}

@@ -2,11 +2,9 @@
 
 import { useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { FiFileText, FiSettings, FiMessageSquare } from "react-icons/fi";
+import { FiArrowUpLeft, FiFileText, FiSettings, FiMessageSquare } from "react-icons/fi";
 import ProductDescription from "./ProductDescription";
 import ProductAttributesTable from "./ProductAttributesTable";
-import ProductReviews from "./ProductReviews";
-import ReviewForm from "@/components/reviews/ReviewForm";
 import MobileProductTabs, { useMobileProductLayout } from "./MobileProductTabs";
 import { isFeatureEnabled } from "@/lib/features";
 
@@ -25,16 +23,16 @@ const getItemLinkProps = (link) => {
 
 const CustomTabItemLogo = ({ item, linkProps }) => {
   const className =
-    "group flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden p-1 sm:h-[72px] sm:w-[72px]";
+    "flex h-20 w-[clamp(4rem,22vw,5.5rem)] shrink-0 items-center justify-center focus-visible:outline-none sm:h-[104px] sm:w-32";
 
   const logo = item.image ? (
     <img
       src={item.image}
       alt={item.title || ""}
-      className="h-full w-full object-contain p-2 transition-transform duration-300 group-hover:scale-105"
+      className="h-full w-full object-contain"
     />
   ) : (
-    <FiFileText className="text-xl text-gray-300 transition-transform duration-300 group-hover:scale-105" />
+    <FiFileText className="text-2xl text-stone-400" />
   );
 
   if (linkProps) {
@@ -52,23 +50,25 @@ const CustomTabItemCard = ({ item }) => {
   const linkProps = getItemLinkProps(item.link);
   const title = item.title || "";
   const titleClass =
-    "text-base font-extrabold leading-7 text-[var(--color-dark)] transition-colors duration-200 hover:text-[var(--color-primary)]";
+    "text-base font-extrabold leading-7 text-[var(--color-dark)] [overflow-wrap:anywhere] sm:text-xl sm:leading-8";
 
   return (
-    <article className="flex h-full items-start gap-4 p-2 text-right sm:p-3">
+    <article className="group/item flex min-w-0 items-center gap-3 py-3 text-right sm:gap-6 sm:py-4">
       <CustomTabItemLogo item={item} linkProps={linkProps} />
-      <div className="min-w-0 flex-1 pt-1">
-        <div className="relative inline-flex max-w-full pr-3 before:absolute before:right-0 before:top-1/2 before:h-5 before:w-0.5 before:-translate-y-1/2 before:rounded-full before:bg-[var(--color-primary)] before:content-['']">
+      <div className="min-w-0 flex-1 py-2 sm:py-3">
+        <div>
           {linkProps ? (
-            <a {...linkProps} className={titleClass}>
-              {title}
+            <a {...linkProps} className={`${titleClass} inline-flex max-w-full items-baseline gap-2 decoration-[var(--color-primary)] underline-offset-4 hover:text-[var(--color-primary)] group-has-[:focus-visible]/item:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)] motion-safe:transition-colors`}>
+              <span className="min-w-0">{title}</span>
+              <FiArrowUpLeft aria-hidden="true" className="size-3.5 shrink-0 self-center text-[var(--color-primary)]" />
             </a>
           ) : (
             <h4 className={titleClass}>{title}</h4>
           )}
         </div>
+        <span aria-hidden="true" className="mt-1.5 block h-px w-8 origin-right bg-[var(--color-primary)]/45 motion-safe:transition-transform motion-safe:duration-300 motion-safe:group-hover/item:scale-x-125" />
         {item.description && (
-          <p className="mt-2 pr-3 text-sm leading-7 text-gray-500">
+          <p className="mt-1.5 text-sm leading-7 text-stone-600 [overflow-wrap:anywhere] sm:leading-8">
             {item.description}
           </p>
         )}
@@ -84,9 +84,9 @@ const ProductTabs = ({
   targetAudience,
   customTab,
   customTabItemIds = [],
-  productId,
-  reviews = [],
-  reviewStats = { count: 0, average: 0 },
+  reviewsPanel,
+  reviewCount,
+  mobileReviewCount,
 }) => {
   const isMobile = useMobileProductLayout();
   const [activeTab, setActiveTab] = useState("description");
@@ -117,11 +117,16 @@ const ProductTabs = ({
         ]
       : []),
     ...(isFeatureEnabled("reviews")
-      ? [{ id: "reviews", label: "نظرات کاربران", icon: FiMessageSquare, count: reviewStats.count }]
+      ? [{
+          id: "reviews",
+          label: "نظرات کاربران",
+          icon: FiMessageSquare,
+          countContent: isMobile ? mobileReviewCount : reviewCount,
+        }]
       : []),
   ];
 
-  const renderContent = (sectionId) => (
+  const renderContent = (sectionId, isActive = true) => (
     <>
       {sectionId === "description" && (
         <div className="prose prose-gray max-w-none leading-8">
@@ -132,35 +137,27 @@ const ProductTabs = ({
         <div className="rounded-[6px] border border-gray-100 bg-gray-50/50 p-1">
           <ProductAttributesTable
             attributes={attributes}
+            active={isActive}
             technicalStats={technicalStats}
             targetAudience={targetAudience}
           />
         </div>
       )}
       {sectionId === "customTab" && (
-        <div className="grid grid-cols-1 gap-4 px-2 md:grid-cols-2">
+        <div className="grid min-w-0 grid-cols-1 divide-y divide-stone-200/80">
           {matchingCustomItems.map((item) => (
             <CustomTabItemCard key={item._id || item.title} item={item} />
           ))}
         </div>
       )}
-      {sectionId === "reviews" && (
-        <div className="space-y-6 px-2">
-          <ReviewForm productId={productId} />
-          <ProductReviews
-            reviews={reviews}
-            stats={reviewStats}
-            productId={productId}
-          />
-        </div>
-      )}
+      {sectionId === "reviews" && reviewsPanel}
     </>
   );
 
   if (isMobile) {
     return (
       <div className="mt-24 w-full rtl text-right" dir="rtl">
-        <MobileProductTabs tabs={tabs} renderContent={renderContent} />
+        <MobileProductTabs tabs={tabs} renderContent={renderContent} keepMounted={["description", "attributes", "customTab"]} />
       </div>
     );
   }
@@ -177,7 +174,7 @@ const ProductTabs = ({
               onClick={() => setActiveTab(tab.id)}
               className={`
                 relative min-w-0 flex-1 basis-0 px-0.5 py-2.5 text-[11px] leading-tight outline-none transition-all duration-300 sm:px-1.5 sm:py-3.5 sm:text-[13px] lg:shrink lg:grow-0 lg:basis-auto lg:px-2 lg:py-4 lg:text-sm
-                ${isActive ? "font-bold text-[var(--color-dark)]" : "font-bold text-gray-400 hover:text-gray-600"}
+                ${isActive ? "font-bold text-[var(--color-dark)]" : "font-bold text-gray-500 hover:text-gray-600"}
               `}
             >
               <div className="flex flex-col items-center justify-center gap-1 sm:flex-row sm:gap-1.5 lg:gap-2">
@@ -194,7 +191,7 @@ const ProductTabs = ({
                 </span>
                 <span className="flex min-w-0 items-center justify-center gap-1 sm:gap-1.5 lg:justify-start lg:gap-2">
                   <span className="break-words">{tab.label}</span>
-                  {tab.count > 0 && (
+                  {tab.countContent ? <span className="inline-flex w-10 shrink-0 justify-center">{tab.countContent}</span> : tab.count > 0 && (
                     <span className="shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-gray-500">
                       {tab.count.toLocaleString("fa-IR")}
                     </span>
@@ -215,6 +212,12 @@ const ProductTabs = ({
       </div>
 
       <div className="relative min-h-[300px] py-10">
+        {/* Keep searchable text in the document; expensive interactive panels
+            still mount only when selected. The visible tab animation is unchanged. */}
+        {tabs.filter(tab => tab.id !== activeTab && tab.id !== "reviews").map(tab => (
+          <div key={tab.id} hidden>{renderContent(tab.id, false)}</div>
+        ))}
+
         {/* initial={false} فقط رندر اول را بدون انیمیشن نشان می‌دهد تا تبِ توضیحات
             در HTML سرور مرئی باشد؛ initial خودِ فرزند برای تعویض تب فعال می‌ماند. */}
         <AnimatePresence mode="wait" initial={false}>

@@ -56,6 +56,12 @@ export const ADMIN_API_PERMISSIONS = {
 
   // ── داشبورد و اعلان‌های خودِ ادمین ──────────────────────────────────
   "/admin/stats": { GET: "dashboard.view" },
+
+  // ── تنظیمات پرامپت تولید محصول ──────────────────────────────────────
+  "/admin/product-prompts": { GET: "productPrompts.view", PUT: "productPrompts.edit" },
+  "/admin/product-prompts/preview": { GET: "productPrompts.view" },
+  "/admin/product-prompts/final-prompt": { GET: "productPrompts.view" },
+  "/admin/product-prompts/category-rule": { PATCH: "productPrompts.edit" },
   "/admin/notifications/summary": { GET: ANY_ADMIN },
   "/admin/market-rates": { GET: ANY_ADMIN },
   "/admin/notifications/read": { POST: ANY_ADMIN },
@@ -315,6 +321,9 @@ export const PUBLIC_ADMIN_API_PERMISSIONS = {
   "/product/create": { POST: "products.create" },
   "/product/reorder": { PUT: "products.edit" },
   "/product/[productId]": { PUT: "products.edit", DELETE: "products.delete" },
+  "/product/[productId]/regenerate": { POST: "products.edit" },
+  // فقط پیش‌نمایش می‌سازد و چیزی نمی‌نویسد؛ اعمال از روتِ بالا با products.edit می‌گذرد
+  "/product/[productId]/regenerate/generate": { POST: "ai.productDraft" },
   // ⚠️ DELETE اینجا قیمت را پاک نمی‌کند؛ کلِ محصول و واریانت‌هایش را حذف
   // می‌کند (کپیِ DELETE /product/[productId]). کلید بر اساس اثرِ واقعی.
   "/product/[productId]/price": { DELETE: "products.delete" },

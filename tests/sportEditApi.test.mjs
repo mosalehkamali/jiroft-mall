@@ -51,7 +51,7 @@ test('updates both names and invalidates sport/navigation caches', async () => {
   assert.equal(result.status, 200);
   assert.equal(sport.name, 'basketball');
   assert.equal(sport.title, 'بسکتبال');
-  assert.deepEqual(calls, ['connect', 'save', ['navbar', 'sports']]);
+  assert.deepEqual(calls, ['connect', 'save', ['navbar', 'sports', 'products']]);
   assert.equal(sport.description, 'description');
   assert.equal(sport.icon, 'icon.svg');
   assert.equal(sport.image, 'image.jpg');

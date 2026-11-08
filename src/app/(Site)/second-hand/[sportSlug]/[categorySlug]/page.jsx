@@ -66,7 +66,7 @@ export async function generateMetadata({ params }) {
   ];
 
   const pageUrl = `${SITE_URL}/second-hand/${sportSlug}/${categorySlug}`;
-  const title = `${category.title} دست دوم | خرید و فروش ${category.title} کارکرده`;
+  const title = `${category.title} ${sport.title} دست دوم | خرید و فروش ${category.title} ${sport.title} کارکرده`;
   const description =
     productCount > 0
       ? `خرید ${category.title} دست دوم با کارت سلامت معتبر — ${productCount} کالای موجود${
@@ -239,7 +239,7 @@ export default async function UsedProductsByCategoryPage({ params }) {
   const absUrl = (u) =>
     u ? (u.startsWith("http") ? u : `${SITE_URL}${u}`) : null;
   const pageUrl = `${SITE_URL}/second-hand/${sportSlug}/${categorySlug}`;
-  const pageTitle = `${category.title} دست دوم`;
+  const pageTitle = `${category.title} ${sport.title} دست دوم`;
 
   const itemListElement = products.slice(0, 30).map((p, i) => {
     const img = absUrl(p.images?.[0] || p.baseProduct?.mainImage);

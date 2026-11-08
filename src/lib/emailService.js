@@ -35,6 +35,16 @@ function siteHost() {
   }
 }
 
+// Vazirmatn from this site's own /fonts (the same files the storefront and PDF
+// invoices use). Without an absolute site URL there is nothing to point at.
+function emailFontCss() {
+  const site = (process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_BASE_URL || '').replace(/\/+$/, '');
+  if (!site) return '';
+  return [[400, 'Regular'], [700, 'Bold']]
+    .map(([weight, file]) => `@font-face{font-family:"Vazirmatn";src:url("${site}/fonts/invoice/Vazirmatn-${file}.woff2") format("woff2");font-weight:${weight};font-style:normal;font-display:swap}`)
+    .join('');
+}
+
 // ─── Transporter ─────────────────────────────────────────────────────────────
 function createTransporter(options = {}) {
   return nodemailer.createTransport({
@@ -309,7 +319,7 @@ function buildEmailHtml(order, isAdmin = false, installment = null) {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700&display=swap');
+    ${emailFontCss()}
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'Vazirmatn', Tahoma, Arial, sans-serif; background: #f5f0eb; direction: rtl; }
   </style>
@@ -501,7 +511,7 @@ function buildSimpleNoticeHtml({ title, emoji, greeting, rows = [], note, ctaPat
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700&display=swap');
+    ${emailFontCss()}
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'Vazirmatn', Tahoma, Arial, sans-serif; background: #f5f0eb; direction: rtl; }
   </style>
@@ -662,7 +672,7 @@ export async function sendTicketReplyEmail(ticket, replyText, attachmentsCount, 
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700&display=swap');
+    ${emailFontCss()}
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'Vazirmatn', Tahoma, Arial, sans-serif; background: #f5f0eb; direction: rtl; }
   </style>
@@ -808,7 +818,7 @@ export async function sendPasswordResetCodeEmail(to, code, expiresInMinutes = 10
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700&display=swap');
+    ${emailFontCss()}
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'Vazirmatn', Tahoma, Arial, sans-serif; background: #f5f0eb; direction: rtl; }
   </style>

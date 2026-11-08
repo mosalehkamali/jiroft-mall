@@ -1,4 +1,5 @@
 import storeConfig from "base/store.config";
+import { listingPage, listingCanonical } from "@/lib/seo/listingPagination";
 import { notFound, permanentRedirect } from "next/navigation";
 import { getListingFilterOptions } from "base/services/listingFilterCatalog.service";
 import { mergeAttributeMeta, parseAttrFiltersFromParams } from "@/lib/attributeFilters";
@@ -130,7 +131,7 @@ async function buildMiniArticleSections(article, label) {
 // کش روت ساخته نشود؛ کوئری‌ها همچنان با unstable_cache کش می‌مانند.
 export const dynamic = "force-dynamic";
 
-export async function generateMetadata({ params }) {
+export async function generateMetadata({ params, searchParams }) {
   const { sportSlug, slug } = await params;
   const slugs = [sportSlug, ...(slug || [])];
 
@@ -165,7 +166,7 @@ export async function generateMetadata({ params }) {
     title,
     description,
     metadataBase: new URL(SITE_URL),
-    alternates: { canonical: pageUrl },
+    alternates: { canonical: listingCanonical(pageUrl, isBrandPage(filters) || isParentSeriePage(filters) ? 1 : (await searchParams)?.page) },
     openGraph: {
       title,
       description,
@@ -193,7 +194,7 @@ export default async function SportDynamicSlugPage({ params, searchParams }) {
   // RULE 4: صفحه‌بندی فقط از طریقِ searchParams (?page=2) خوانده می‌شود، هرگز به‌صورت
   // سگمنتِ مسیر. سگمنتِ اضافیِ مسیر توسطِ validatorِ سخت‌گیر (طول + Mirror) رد می‌شود.
   const sp = (await searchParams) || {};
-  const page = Math.max(1, Number(sp.page) || 1);
+  const page = listingPage(sp.page);
   // مخاطبِ هدف (navbar audience tabs) — مقدارِ نامعتبر/ناشناخته بی‌سروصدا نادیده
   // گرفته می‌شود (بدونِ فیلتر)، نه ۵۰۰، دقیقاً مثلِ رفتارِ سایرِ پارامترهای صفحه.
   const targetAudience = normalizeTargetAudience(sp.targetAudience);
@@ -366,11 +367,11 @@ export default async function SportDynamicSlugPage({ params, searchParams }) {
   }
 
   // ─── سایر صفحات (ورزش، دسته): الگوهای ۲ از این مسیر سرو می‌شوند ───
-  const searchData = await queryBySlugs(slugs, ctx, { targetAudience });
+  const searchData = await queryBySlugs(slugs, ctx, { targetAudience, offset: (page - 1) * 20 });
 
   // محافظِ دوم: اگر بینِ resolve و query وضعیت تغییر کرده باشد (مثلاً حذفِ آخرین
   // محصولِ یک ترکیب)، باز هم ۴۰۴ سخت می‌دهیم — بدونِ fallbackِ خاموش.
-  if (searchData.notFound) {
+  if (searchData.notFound || (page > 1 && (page - 1) * 20 >= searchData.totalResults)) {
     notFound();
   }
 
@@ -400,6 +401,7 @@ export default async function SportDynamicSlugPage({ params, searchParams }) {
     <>
       <TaxonomyStructuredData
         filters={searchData.filters}
+        initialOffset={(page - 1) * 20}
         products={searchData.results}
         canonical={`${SITE_URL}/${slugs.join("/")}`}
       />
@@ -407,6 +409,7 @@ export default async function SportDynamicSlugPage({ params, searchParams }) {
           (مثلاً از نوبار، بدونِ هیچ پارامتری) کامپوننت را از نو می‌سازد، وگرنه
           React وضعیتِ فیلترِ قبلیِ کاربر را در جای خودش نگه می‌داشت. */}
       <SportPageClient
+        initialOffset={(page - 1) * 20}
         key={JSON.stringify([slugs, Object.entries(sp).sort()])}
         filterCategories={searchData.filters.category ? await getListingFilterOptions({ categoryId: String(searchData.filters.category._id), sportId: searchData.filters.sport?._id ? String(searchData.filters.sport._id) : undefined, targetAudience }) : searchData.filters.serie ? await getListingFilterOptions({ serieId: String(searchData.filters.serie._id), sportId: searchData.filters.sport?._id ? String(searchData.filters.sport._id) : undefined, targetAudience, descendants: false }) : []}
         pageInfo={pageInfo}

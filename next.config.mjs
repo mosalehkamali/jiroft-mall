@@ -1,3 +1,19 @@
+import storeConfig from "./store.config.js";
+
+// Fixed above-the-fold assets of the product page, announced in a response
+// header so the browser fetches them while the HTML is still streaming. The
+// font files are the local Vazirmatn of globals.css — only when no external
+// font stylesheet replaces it. Fonts need anonymous CORS to reuse the same
+// request as @font-face.
+const productPagePreload = [
+  ...(storeConfig.theme.fontStylesheet
+    ? []
+    : ["Regular", "Bold"].map(
+        (w) => `</fonts/invoice/Vazirmatn-${w}.woff2>; rel=preload; as=font; type="font/woff2"; crossorigin=anonymous`,
+      )),
+  ...(storeConfig.brand.logo ? [`<${storeConfig.brand.logo}>; rel=preload; as=image`] : []),
+].join(", ");
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactCompiler: true,
@@ -16,6 +32,9 @@ const nextConfig = {
   // The magazine contains no server-rendered user data; Vercel's CDN may cache it.
   async headers() {
     return [
+      ...(productPagePreload
+        ? [{ source: "/products/:productSlug", headers: [{ key: "Link", value: productPagePreload }] }]
+        : []),
       {
         source: "/content/:path*",
         headers: [
@@ -37,7 +56,7 @@ const nextConfig = {
     loaderFile: "./src/lib/imagekitLoader.js",
     // تعداد سایزهای srcset محدود است تا ترنسفورم/بندویدثِ مصرفی کمتر شود.
     deviceSizes: [640, 828, 1200, 1920],
-    imageSizes: [64, 128, 256],
+    imageSizes: [64, 128, 256, 384],
     remotePatterns: [
       {
         protocol: "https",

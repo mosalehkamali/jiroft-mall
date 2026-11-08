@@ -139,6 +139,11 @@ export async function loadActiveRules(product, user = null, cartValueToman = 0) 
 export async function computeProductPrice(product, rate, user = null, cartValueToman = 0) {
   const basePriceToman = eurToToman(product.basePrice || 0, rate);
 
+  // Independent reads overlap. Capture failures immediately, but only surface
+  // a rule failure when no flash sale applies (the existing precedence).
+  const rulesPromise = loadActiveRules(product, user, cartValueToman)
+    .then(rules => ({ rules }), error => ({ error }));
+
   // --- FlashSale (بالاترین اولویت) ---
   const now = new Date();
   const flash = !discountsOn() ? null : await FlashSale.findOne({
@@ -161,7 +166,9 @@ export async function computeProductPrice(product, rate, user = null, cartValueT
   }
 
   // --- DiscountRules ---
-  const rules = await loadActiveRules(product, user, cartValueToman);
+  const rulesResult = await rulesPromise;
+  if (rulesResult.error) throw rulesResult.error;
+  const rules = rulesResult.rules;
 
   if (!rules.length) {
     return {

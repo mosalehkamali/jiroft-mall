@@ -2,6 +2,8 @@
 // چون root layout داخل گروهِ مسیرِ (Site) قرار دارد و app/layout.js نداریم،
 // این فایل باید خودش <html> و <body> و استایل سراسری را فراهم کند.
 import "@/app/globals.css";
+import storeConfig from "base/store.config";
+import StoreHead from "@/components/common/StoreHead";
 import NotFoundContent from "@/components/ui/NotFoundContent";
 
 export const metadata = {
@@ -10,18 +12,13 @@ export const metadata = {
 
 export default function NotFound() {
   return (
-    <html lang="fa-IR" dir="rtl">
+    <html lang={storeConfig.brand.lang} dir={storeConfig.brand.dir}>
       <head>
-        <link
-          href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css"
-          rel="stylesheet"
-          type="text/css"
-        />
-        <meta name="theme-color" content="#ffffff" />
+        <StoreHead />
       </head>
       <body
         className="bg-[var(--color-background)] text-[var(--color-text)]"
-        style={{ fontFamily: "Vazirmatn, system-ui, sans-serif" }}
+        style={{ fontFamily: "var(--font-sans)" }}
       >
         <main className="min-h-screen">
           <NotFoundContent />

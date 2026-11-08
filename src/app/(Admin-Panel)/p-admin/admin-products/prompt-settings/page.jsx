@@ -1,0 +1,212 @@
+'use client';
+
+/**
+ * «تنظیمات پرامپت» — نمای کلی: کارتِ پرامپت پایه، فهرستِ گروه‌های پرامپت دسته و
+ * پیوند به پیش‌نمایشِ پرامپتِ نهایی. ویرایشِ قواعد در صفحه‌ی خودِ هر کدام است:
+ *   ./base             پرامپت پایه
+ *   ./groups/[groupId] یک گروه («new» برای ساخت)
+ *   ./preview          پیش‌نمایشِ قاعده‌به‌قاعده با منبع و ویرایشِ مستقیم
+ * جابه‌جایی و حذفِ گروه همین‌جا و فوراً ذخیره می‌شود (فقط `groups` فرستاده می‌شود).
+ */
+
+import { useState } from 'react';
+import Link from 'next/link';
+import Swal from 'sweetalert2';
+import {
+  FiArrowDown, FiArrowLeft, FiArrowRight, FiArrowUp, FiEye, FiLayers, FiLock, FiPlus, FiSliders, FiTrash2,
+} from 'react-icons/fi';
+import PageHeader from '@/components/admin/PageHeader';
+import AdminLoader from '@/components/admin/AdminLoader';
+import { useAdminPermissions } from '@/components/admin/AdminPermissionProvider';
+import {
+  PROMPTS_HOME, categoryName, storedGroupPayload, swalTheme, usePromptConfig,
+} from '@/components/admin/productPrompts/promptSettingsUi';
+import { fieldTitle } from '@/lib/productPromptConfig';
+
+export default function PromptSettingsPage() {
+  const { can } = useAdminPermissions();
+  const canEdit = can('productPrompts.edit');
+  const ctx = usePromptConfig();
+  const [busy, setBusy] = useState(false);
+
+  if (ctx.loadError) return <div className="a-card p-8 text-center text-sm font-bold text-red-500">{ctx.loadError}</div>;
+  if (!ctx.config) return <AdminLoader />;
+
+  const { config, categoryById, save } = ctx;
+  const textSections = config.document.filter((s) => s.kind === 'text');
+  const totalBaseRules =
+    textSections.reduce((n, s) => n + s.rules.length, 0) + config.fieldRules.reduce((n, f) => n + f.rules.length, 0);
+
+  const saveGroups = async (groups, message) => {
+    setBusy(true);
+    await save({ groups: groups.map(storedGroupPayload) }, message);
+    setBusy(false);
+  };
+  const move = (i, dir) => {
+    const next = [...config.groups];
+    [next[i], next[i + dir]] = [next[i + dir], next[i]];
+    saveGroups(next, 'ترتیبِ گروه‌ها ذخیره شد');
+  };
+  const remove = async (group, label) => {
+    const { isConfirmed } = await Swal.fire({
+      ...swalTheme,
+      icon: 'warning',
+      title: 'حذف گروه؟',
+      text: `گروه «${label}» و ${group.rules.length} قاعده‌ی آن حذف می‌شوند.`,
+      showCancelButton: true,
+      confirmButtonText: 'حذف گروه',
+      cancelButtonText: 'لغو',
+    });
+    if (isConfirmed) saveGroups(config.groups.filter((g) => g._id !== group._id), 'گروه حذف شد');
+  };
+
+  return (
+    <div dir="rtl" className="space-y-6 pb-10">
+      <PageHeader
+        title="تنظیمات پرامپت محصول"
+        subtitle="پرامپت پایه و گروه‌های پرامپت دسته برای ساخت پیش‌نویس محصول با AI"
+        icon={<FiSliders size={18} />}
+        actions={
+          <>
+            <Link href="/p-admin/admin-products" className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-gray-500 hover:text-[var(--color-primary)]">
+              <FiArrowRight size={14} /> محصولات
+            </Link>
+            {canEdit && (
+              <Link
+                href={`${PROMPTS_HOME}/groups/new`}
+                className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-bold text-white rounded-[var(--admin-radius)] bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] transition-colors"
+              >
+                <FiPlus size={15} /> ایجاد گروه جدید
+              </Link>
+            )}
+          </>
+        }
+      />
+
+      {/* پرامپت پایه */}
+      <section className="a-card p-5 flex flex-col md:flex-row md:items-center gap-4">
+        <span className="w-11 h-11 shrink-0 inline-flex items-center justify-center rounded-xl bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
+          <FiSliders size={20} />
+        </span>
+        <div className="flex-1 min-w-0">
+          <h2 className="text-base font-bold text-gray-900">پرامپت پایه</h2>
+          <p className="text-xs font-bold text-gray-500 mt-1 leading-6">
+            کلِ متنِ پرامپت: سربرگ‌ها، قواعدِ هر بخش و هر فیلد و قالبِ سطرهای داده — {textSections.length} بخش قواعد، {totalBaseRules} قاعده.
+          </p>
+        </div>
+        <Link
+          href={`${PROMPTS_HOME}/base`}
+          className="inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-bold rounded-[var(--admin-radius)] border border-[var(--admin-border)] bg-white text-gray-800 hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-colors"
+        >
+          {canEdit ? 'ویرایش پرامپت پایه' : 'مشاهده‌ی پرامپت پایه'} <FiArrowLeft size={14} />
+        </Link>
+      </section>
+
+      {/* گروه‌ها */}
+      <section className="space-y-3">
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <div>
+            <h2 className="text-base font-bold text-gray-900">گروه‌های پرامپت دسته ({config.groups.length})</h2>
+            <p className="text-xs font-bold text-gray-500 mt-1 leading-6">
+              قاعده‌ی گروه روی یک بخش یا فیلد، بعد از قواعدِ پایه‌ی آن و پیش از پرامپتِ خودِ دسته می‌آید و بخش‌های خودِ گروه درست بالای قواعدِ فیلدها؛ یک دسته می‌تواند عضوِ چند گروه باشد و ترتیبِ گروه‌ها ترتیبِ قواعدشان در پرامپت است.
+            </p>
+          </div>
+        </div>
+
+        {config.groups.map((group, i) => {
+          const label = group.title || group.categories.map((id) => categoryName(categoryById, id)).join('، ');
+          const deleted = group.categories.filter((id) => !categoryById.has(id)).length;
+          const disabled = group.rules.filter((r) => r.categories.length && r.categories.every((id) => !categoryById.has(id))).length;
+          const perField = Object.entries(
+            group.rules.reduce((acc, r) => ({ ...acc, [r.field]: (acc[r.field] || 0) + 1 }), {}),
+          );
+          return (
+            <article key={group._id} className="a-card p-4 flex flex-col md:flex-row md:items-center gap-3">
+              <span className="w-8 h-8 shrink-0 inline-flex items-center justify-center rounded-lg bg-[var(--color-primary-soft)] text-[var(--color-primary)] text-xs font-bold">{i + 1}</span>
+              <div className="flex-1 min-w-0 space-y-1.5">
+                <Link href={`${PROMPTS_HOME}/groups/${group._id}`} className="block truncate text-sm font-bold text-gray-900 hover:text-[var(--color-primary)]">
+                  {label}
+                </Link>
+                <div className="flex flex-wrap gap-1">
+                  {group.categories.slice(0, 6).map((id) => (
+                    <span key={id} className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${categoryById.has(id) ? 'bg-gray-100 text-gray-600' : 'bg-red-50 text-red-600'}`}>
+                      {categoryName(categoryById, id)}
+                    </span>
+                  ))}
+                  {group.categories.length > 6 && <span className="px-2 py-0.5 text-[11px] font-bold text-gray-400">+{group.categories.length - 6}</span>}
+                </div>
+                <p className="text-[11px] font-bold text-gray-400">
+                  {group.rules.length || group.sections.length
+                    ? [
+                        group.sections.length > 0 && `${group.sections.length} بخش خودِ گروه`,
+                        group.rules.length > 0 && `${group.rules.length} قاعده — ${perField.map(([f, n]) => `${fieldTitle(f, config.document)}: ${n}`).join('، ')}`,
+                      ].filter(Boolean).join(' · ')
+                    : 'هنوز قاعده‌ای ندارد'}
+                </p>
+                {(deleted > 0 || disabled > 0) && (
+                  <p className="text-[11px] font-bold text-amber-600">
+                    {[deleted && `${deleted} دسته‌ی حذف‌شده`, disabled && `${disabled} قاعده‌ی غیرفعال`].filter(Boolean).join(' · ')}
+                  </p>
+                )}
+              </div>
+              <div className="flex items-center gap-1 self-end md:self-center">
+                {canEdit && (
+                  <>
+                    <button type="button" disabled={busy || i === 0} onClick={() => move(i, -1)} title="بالاتر (زودتر در پرامپت)" aria-label="بالاتر" className="p-2 rounded-lg text-gray-400 hover:bg-gray-50 disabled:opacity-30"><FiArrowUp size={14} /></button>
+                    <button type="button" disabled={busy || i === config.groups.length - 1} onClick={() => move(i, 1)} title="پایین‌تر" aria-label="پایین‌تر" className="p-2 rounded-lg text-gray-400 hover:bg-gray-50 disabled:opacity-30"><FiArrowDown size={14} /></button>
+                    <button type="button" disabled={busy} onClick={() => remove(group, label)} title="حذف گروه" aria-label="حذف گروه" className="p-2 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 disabled:opacity-30"><FiTrash2 size={14} /></button>
+                  </>
+                )}
+                <Link
+                  href={`${PROMPTS_HOME}/groups/${group._id}`}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-[var(--admin-radius)] border border-[var(--admin-border)] text-gray-700 hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
+                >
+                  {canEdit ? 'ویرایش قواعد' : 'مشاهده'} <FiArrowLeft size={13} />
+                </Link>
+              </div>
+            </article>
+          );
+        })}
+
+        {!config.groups.length && (
+          <div className="a-card py-12 text-center space-y-3">
+            <FiLayers className="mx-auto text-gray-300" size={26} />
+            <p className="text-sm font-bold text-gray-400">هنوز گروهی ساخته نشده است.</p>
+            {canEdit && (
+              <Link href={`${PROMPTS_HOME}/groups/new`} className="inline-flex items-center gap-1.5 text-xs font-bold text-[var(--color-primary)]">
+                <FiPlus size={13} /> ایجاد گروه جدید
+              </Link>
+            )}
+          </div>
+        )}
+      </section>
+
+      {/* پیش‌نمایش */}
+      <section className="a-card p-5 flex flex-col md:flex-row md:items-center gap-4">
+        <span className="w-11 h-11 shrink-0 inline-flex items-center justify-center rounded-xl bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
+          <FiEye size={20} />
+        </span>
+        <div className="flex-1 min-w-0">
+          <h2 className="text-base font-bold text-gray-900">پیش‌نمایش پرامپت نهایی</h2>
+          <p className="text-xs font-bold text-gray-500 mt-1 leading-6">
+            قواعدِ پرامپتِ یک دسته، فیلد به فیلد؛ با کلیک روی هر قاعده منبعش (پرامپت پایه، کدام گروه یا کدام تنظیمِ دسته) دیده و همان‌جا ویرایش می‌شود.
+          </p>
+        </div>
+        <Link
+          href={`${PROMPTS_HOME}/preview`}
+          className="inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-bold rounded-[var(--admin-radius)] border border-[var(--admin-border)] bg-white text-gray-800 hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-colors"
+        >
+          باز کردن پیش‌نمایش <FiArrowLeft size={14} />
+        </Link>
+      </section>
+
+      <div className="flex gap-2 items-start p-3 rounded-xl bg-white border border-gray-200 text-xs font-bold text-gray-500 leading-6">
+        <FiLock className="mt-1 shrink-0" size={13} />
+        <span>
+          ترتیبِ هر فیلد در پرامپتِ نهایی: پرامپت پایه ← گروه‌ها (به ترتیبِ بالا) ← پرامپتِ خودِ دسته؛ در تعارض، قاعده‌ی خاص‌تر برنده است.
+          سربرگ‌ها و قواعد را خودتان می‌نویسید و همان‌طور چاپ می‌شوند؛ داده‌ها (برندها، متن خام، ویژگی‌ها…) را برنامه زیرِ سربرگِ بخشِ خودشان درج می‌کند.
+        </span>
+      </div>
+    </div>
+  );
+}

@@ -1,4 +1,4 @@
-import { rankBySearch, withSearch } from "@/lib/search";
+import { matchesSearch, rankBySearch, withSearch } from "@/lib/search";
 import { NextResponse } from "next/server";
 import connectToDB from "base/configs/db";
 import "base/models/registerModels";
@@ -12,6 +12,10 @@ import UsedProduct from "base/models/UsedProduct";
 import requireAdminPermission from "@/lib/requireAdminPermission";
 import { articleApiError } from "@/lib/articleApi";
 import { rankProducts, withProductSearch } from "@/lib/productSearch";
+import { getSportSeriesOptions } from "base/services/series.service";
+import { getReviewCardsByIds, searchReviewCards } from "base/services/comment.service";
+import { getTickerBrands } from "base/services/brandTicker.service";
+import { ENTITY_IMAGE_SOURCES, ENTITY_IMAGE_TYPES, entityImageOptions, parseImageSource } from "@/lib/entityImages";
 
 export const runtime = "nodejs";
 
@@ -38,7 +42,9 @@ export async function GET(req) {
     const rank = (docs, fn) => (idFilter ? docs : fn(docs));
     let items = [];
 
-    if (type === "product") {
+    if (type === "imageSource" || type === "entityImages") {
+      items = await imageSourceItems(type, params, q);
+    } else if (type === "product") {
       const docs = await Product.find(idFilter || (await withProductSearch({}, q)))
         .select("name sku tag color serie mainImage brand").populate("brand", "title name").limit(CANDIDATE_LIMIT).lean();
       items = rank(docs, (d) => rankProducts(q, d).slice(0, RESULT_LIMIT))
@@ -49,6 +55,26 @@ export async function GET(req) {
     } else if (type === "collection") {
       const docs = await Serie.find(idFilter || byTitle(q)).select("title name logo brand").populate("brand", "title").limit(CANDIDATE_LIMIT).lean();
       items = rank(docs, (d) => rankByTitle(q, d)).map((x) => ({ _id: x._id, label: x.title || x.name, sub: x.brand?.title || "", image: x.logo || null }));
+    } else if (type === "sportSerie") {
+      // بلوکِ «اسلایدر سری‌های ورزش»: جستجو فقط میانِ سری‌هایی که در ورزشِ
+      // انتخاب‌شده محصول دارند (همان pipeline ـِ اسلایدرِ صفحه‌ی ورزش). بدونِ ورزش
+      // چیزی برنمی‌گردد. resolve با ids فقط برچسبِ چیپ‌هاست و به ورزش نیازی ندارد.
+      const label = (x) => [x.brand?.title, x.title || x.name].filter(Boolean).join(" ");
+      if (idFilter) {
+        const docs = await Serie.find(idFilter).select("title name logo image brand").populate("brand", "title").lean();
+        items = docs.map((x) => ({ _id: x._id, label: label(x), image: x.logo || x.image || null }));
+      } else {
+        const options = await getSportSeriesOptions(params.get("sport"));
+        const ranked = q
+          ? rankBySearch(q, options.filter((d) => matchesSearch(q, `${d.title} ${d.name} ${d.brand?.title || ""}`)), (d) => [[d.title, 2], [d.name, 1], [d.brand?.title, 1]])
+          : options;
+        items = ranked.slice(0, 50).map((x) => ({
+          _id: x._id,
+          label: label(x),
+          sub: `${x.productCount.toLocaleString("fa-IR")} محصول در این ورزش`,
+          image: x.logo || x.image || null,
+        }));
+      }
     } else if (type === "sport") {
       const docs = await Sport.find(idFilter || byTitle(q)).select("title name image icon").limit(CANDIDATE_LIMIT).lean();
       items = rank(docs, (d) => rankByTitle(q, d)).map((x) => ({ _id: x._id, label: x.title || x.name, image: x.image || x.icon || null }));
@@ -60,6 +86,25 @@ export async function GET(req) {
         .select("title slug cover status").limit(CANDIDATE_LIMIT).lean();
       items = rank(docs, (d) => rankBySearch(q, d, (x) => [[x.title, 2], [x.slug, 1]]).slice(0, RESULT_LIMIT))
         .map((x) => ({ _id: x._id, label: x.title, sub: x.status, image: x.cover?.url || null }));
+    } else if (type === "tickerBrand") {
+      // بلوکِ «نوار برندها»: همان برندهای نوارِ صفحه‌ی اصلی (لوگودار، به ترتیبِ order).
+      // all=1 کلِ فهرست را می‌دهد — بلوکِ دست‌نخورده یعنی «همه»؛ q میانِ همان‌ها جستجو.
+      const all = await getTickerBrands();
+      const wanted = idFilter ? new Set(ids) : null;
+      const list = wanted ? all.filter((brand) => wanted.has(brand.id))
+        : params.get("all") === "1" ? all
+        : rankBySearch(q, all.filter((brand) => matchesSearch(q, `${brand.name} ${brand.slug}`)), (brand) => [[brand.name, 2], [brand.slug, 1]]).slice(0, 50);
+      items = list.map((brand) => ({ _id: brand.id, label: brand.name || brand.slug, image: brand.logo || null }));
+    } else if (type === "review") {
+      // بلوکِ «اسلایدر نظرات»: فقط نظرهای سطح‌بالای تأییدشده (نو و دست‌دوم). برچسب
+      // نویسنده و محصول است و زیرش ابتدای متن، تا نظرهای یک محصول از هم جدا شوند.
+      const cards = idFilter ? await getReviewCardsByIds(ids) : await searchReviewCards(q);
+      items = cards.map((card) => ({
+        _id: card.id,
+        label: `${card.author} — ${card.product.name}`,
+        sub: `${card.rating ? `${"★".repeat(card.rating)} · ` : ""}${card.product.href ? "" : "دست‌دوم · "}${card.text.slice(0, 80)}`,
+        image: card.product.image || null,
+      }));
     } else if (type === "usedProduct") {
       const docs = await UsedProduct.find(idFilter || withSearch({}, q, ["name"])).select("name images status").limit(CANDIDATE_LIMIT).lean();
       items = rank(docs, (d) => rankBySearch(q, d, (x) => [[x.name, 1]]).slice(0, RESULT_LIMIT))
@@ -71,6 +116,64 @@ export async function GET(req) {
   } catch (error) {
     return articleApiError(error, "[GET /api/admin/article-cms/entities]");
   }
+}
+
+// ——— بلوکِ «آیکن و لوگو» ———————————————————————————————————————————————
+// منبع یک ورزش، برند، سری یا دسته است با شناسه‌ی «type:id». imageSource یک جستجو
+// در هر چهار نوع است (و با ids برچسبِ منبعِ انتخاب‌شده را برمی‌گرداند)؛ entityImages
+// تصاویرِ واقعیِ همان منبع است — entityImageOptions، نه فهرستی ثابت.
+const IMAGE_SOURCE_MODELS = {
+  sport: { model: Sport, select: "title name icon image" },
+  brand: { model: Brand, select: "title name logo icon monochromeLogo image" },
+  serie: { model: Serie, select: "title name logo headImage image sportImages brand", populate: [["brand", "title name"], ["sportImages.sport", "title name"]] },
+  category: { model: Category, select: "title name icon image customTab sport", populate: [["sport", "title name"]] },
+};
+
+const sourceLabel = (type, doc) => {
+  const name = doc.title || doc.name || "";
+  if (type === "serie" && doc.brand) return `${doc.brand.title || doc.brand.name} ${name}`.trim();
+  if (type === "category" && doc.sport) return `${name} — ${doc.sport.title || doc.sport.name}`;
+  return name;
+};
+
+async function findSources(type, filter, limit) {
+  const { model, select, populate = [] } = IMAGE_SOURCE_MODELS[type];
+  let query = model.find(filter).select(select).limit(limit);
+  for (const [path, fields] of populate) query = query.populate(path, fields);
+  return query.lean();
+}
+
+const sourceItem = (type, doc) => {
+  const images = entityImageOptions(type, doc);
+  return {
+    _id: `${type}:${doc._id}`,
+    label: sourceLabel(type, doc),
+    sub: `${ENTITY_IMAGE_SOURCES[type].label} · ${images.length ? `${images.length.toLocaleString("fa-IR")} تصویر` : "بدونِ تصویر"}`,
+    image: images[0]?.url || null,
+  };
+};
+
+async function imageSourceItems(type, params, q) {
+  if (type === "entityImages") {
+    const source = parseImageSource(params.get("source"));
+    if (!source) return [];
+    const [doc] = await findSources(source.type, { _id: source.id }, 1);
+    if (!doc) return [];
+    return entityImageOptions(source.type, doc).map((option) => ({ _id: option.key, label: option.label, url: option.url, image: option.url, entity: sourceLabel(source.type, doc) }));
+  }
+  // برچسبِ منبعِ ذخیره‌شده (چیپِ انتخابگر)
+  const wanted = (params.get("ids") || "").split(",").map(parseImageSource).filter(Boolean);
+  if (wanted.length) {
+    const docs = await Promise.all(wanted.map(async ({ type: kind, id }) => (await findSources(kind, { _id: id }, 1)).map((doc) => sourceItem(kind, doc))));
+    return docs.flat();
+  }
+  if (!q) return [];
+  const groups = await Promise.all(ENTITY_IMAGE_TYPES.map(async (kind) => {
+    const docs = await findSources(kind, byTitle(q), CANDIDATE_LIMIT);
+    return rankByTitle(q, docs).map((doc) => sourceItem(kind, doc));
+  }));
+  // نتایجِ هر نوع به ترتیبِ خودش، و انواع پشتِ‌سرِ هم — سقفِ کل همان سقفِ همیشگی.
+  return groups.flat().slice(0, RESULT_LIMIT * 2);
 }
 
 function mongooseId(value) {

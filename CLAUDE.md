@@ -125,6 +125,37 @@ After any admin mutation, call `revalidateContent(tags)` from `src/lib/revalidat
 
 **Do not use `fetch()` inside server components to call your own API routes.** Call service functions or DB queries directly — this avoids a double round-trip (HTTP + DB) and was a deliberate performance fix.
 
+**Persian URLs need Next 16.3.1 or newer** (pinned at 16.3.8). Before that, Next put the decoded Persian path into a
+cache-tag header, and on Vercel every Data Cache read/write of that page failed silently — product pages rebuilt the
+navbar, product and rate from the database on every view. Local builds use the file-system cache and cannot show it.
+`tsconfig.json` sets `ignoreDeprecations: "6.0"` because TypeScript 6 reports `baseUrl` during the build.
+
+- **Whatever `getProductBySlug` populates must purge `products`** (brand, serie, limited edition, sport, athlete,
+  category are cached inside the product). `tests/productPageLoading.test.mjs` fails if a route drops the tag.
+- **The product page reads the product once per request** (`src/lib/productPageData.js`: `React.cache` over a
+  decoded slug — metadata and page get the slug in different encodings). Its price comes from
+  `services/productDisplayPrice.service.js` (the same function as `GET /api/product/[id]/price`), computed before
+  render, so the buy box never waits for a client fetch; reviews stream in through `DeferredProductReviews`
+  (`features.reviews` off → empty list, no query). Structured data uses the public price even for a logged-in role
+  with its own price (`publicProductPrice.service.js`).
+- **`resolvePageContext` is cached** (`services/query.service.js`) under every tag it resolves, but only on a hit:
+  a miss is thrown inside the cache and turned into `notFound` outside it, so arbitrary root URLs leave no entry.
+
+### Public product payload
+
+Whatever a storefront service returns is serialized into the page's HTML, so a bare `.populate("category")` costs
+page weight **and publishes the admin's AI prompts** (`prompts`, `technicalStatsPrompt`, `*.prompt`).
+`src/lib/publicProductFields.js` holds the projections: `CARD_*` (cards, quick view, sliders, wishlist, article
+blocks), `LISTING_CATEGORY_FIELDS` (listing `POPULATES`), `WITHOUT_AI_PROMPTS` (whole document minus prompts:
+product page, page data, `query.service`). Both category projections carry `attributes.name attributes.isPublic`
+so `toPublicProduct` can still drop internal (`isPublic: false`) attribute values. A field a card starts reading
+must be added to `CARD_*`, and a new `AttributeSchema` key to `ATTRIBUTE_KEYS` (the test compares with the schema).
+Admin reads (`/api/categories`, `/api/product/[id]`, the prompt builder…) keep their prompts and never use this file.
+
+```bash
+npm run test:public-product-fields
+```
+
 ### Pricing
 
 `services/priceEngine.js` computes prices server-side at request time: stored price × rate (rate is 1 in
@@ -235,10 +266,10 @@ npm run test:product-creation   # create + edit, real replica set, real schemas 
 Two things hang off it here.
 
 **1. `targetAudience` is a prompt-able field like any other.**
-`buildProductTemplate.js` always read `getPromptContext(category.prompts, "targetAudience")`;
-what was missing was the field in the `productFields` list of both category admin pages, so
-no admin could ever fill it. It is there now (with a default context in the add page), and
-`tests/categoryFormCopy.test.mjs` keeps the two lists in sync with the copy helper.
+`buildProductTemplate.js` always read the category's `targetAudience` prompt; what was missing
+was the field in the `productFields` list of both category admin pages, so no admin could ever
+fill it. It is there now (its default rules live in the base prompt — see «AI product prompt
+settings»), and `tests/categoryFormCopy.test.mjs` keeps the two lists in sync with the copy helper.
 
 **2. A fixed attribute can be scoped to target audiences.**
 `Category.attributes[].targetAudiences` (an array on the shared `AttributeSchema`) says which
@@ -308,6 +339,53 @@ npm run test:product-page-audience # product-page wiring: server-side filter, ra
 npm run test:ai-product-draft      # the category prompt and the per-attribute rule in the draft
 npm run test:product-creation      # required-check relaxation, through the real create/edit routes
 ```
+
+### AI product prompt settings and regeneration (`features.aiProductDraft`)
+
+`aiProductDraft` **requires `departments`**: the prompt is built per department (`{{sport_id}}`, the sport-lock
+rule, athletes of that department), so a root category cannot produce one. With the feature off, the pages, APIs and
+the `productPrompts` permission module disappear (`src/lib/features.js`), and the category forms hide their AI fields.
+
+**Prompt settings** — `/p-admin/admin-products/prompt-settings` («تنظیمات پرامپت AI» on the products list).
+No prompt wording lives in application code: headings, rules and data-line formats are data
+(`models/ProductPromptConfig.js`, one document `key: "product"`, behind `GET/PUT /api/admin/product-prompts`,
+`productPrompts.view/edit`). `tests/productPromptConfig.test.mjs` fails if wording creeps back into the modules.
+
+| file | role |
+|---|---|
+| `src/lib/productPromptConfig.js` | pure: field/data-section keys, placeholders, `TEMPLATE_DEFS`, `validatePromptConfig`, `resolveFieldRules` |
+| `src/lib/productPromptSeed.json` | the starting text; used until the first save and by «بازگردانی پیش‌فرض» |
+| `src/lib/productPromptResolve.js` | stored document → full config (upgrades older stored shapes) |
+| `src/lib/buildProductTemplate.js` | `composeProductPrompt` (model) + render (string) — the preview and the prompt are one model |
+| `src/lib/productDraftPrompt.js` | the **only** prompt builder: product creation and both regeneration modes |
+
+Each field's rules come from three sources in order: base prompt → category prompt groups (admin order; a group rule
+may only target its own categories) → the category's own prompts (incl. `customTab.prompt` / item prompts).
+Duplicates are dropped at assembly. Data sections (`brands`, `athletes`, `source_text`, …) belong to the app: only
+their heading and position are editable. Each settings page saves only its own part; `updatedAt` makes a stale save
+a 409. A new key must be declared in the schema too (mongoose strict mode drops it silently).
+
+**Regeneration** — «بازتولید محصول» on the edit page → `/p-admin/admin-products/[productId]/regenerate`:
+automatic (`POST …/regenerate/generate`, `ai.productDraft`, writes nothing) or manual (paste JSON). Both apply only
+through `POST /api/product/[productId]/regenerate` (`products.edit`) with the preview's `updatedAt`. Images and
+variants are never written; `undefined ≠ empty` like PUT; all-or-nothing.
+
+**AI provider layer** — `src/lib/ai/` (`generate`/`generateJson`); `AI_PROVIDER` = `gemini` (default) | `openai`.
+Providers normalize output and throw `AiError` with a safe Persian message; the admin assistant uses it too.
+
+```bash
+npm run test:product-prompts && npm run test:ai-product-draft
+npm run test:product-regeneration && npm run test:ai-providers
+```
+
+### Order PDF invoices
+
+«دانلود فاکتور PDF» on the admin order screen, the customer's order list and the payment-success page
+(`DownloadInvoiceButton`). Built in the browser (`src/lib/downloadOrderInvoice.js`, jsPDF + canvas so Persian shaping
+is native) from the order's own snapshot (`src/lib/orderInvoiceData.js` — catalogue prices are never recalculated).
+Brand name, logo, primary colour and currency label come from `store.config.js`; the font is the local Vazirmatn in
+`public/fonts/invoice/`. EUR columns appear only for a `store`-role customer **and** `features.orderEur`. SKUs are
+never printed. `npm test -- orderInvoice`.
 
 ### Order EUR pricing (independent of Toman)
 
@@ -1243,6 +1321,37 @@ button, the image slider's button and the floating bar are unchanged.
 
 ```bash
 npm run test:block-layout   # includes tests/richTextBlocks.test.mjs
+```
+
+### Store blocks: the homepage's own components
+
+These blocks render the storefront's real components, not look-alikes, so a change to the component reaches the block:
+
+| block | component | data | needs |
+|---|---|---|---|
+| «اسلایدر محصولات» `productSlider` | `BestSellers` (`ProductSliderContent`) | products, used listings, title/subtitle/cta | — (used listings: `secondHand`) |
+| «نوار برندها» `brandBar` | `BrandsTicker` | `brands` absent = all | `brands` |
+| «اسلایدر سری‌ها» `sportSeriesSlider` | `SeriesSlider` in `SliderShowcase` | sport + series | `series`, `departments` |
+| «اسلایدر نظرات» `reviewSlider` | `ReviewSlider` + `UsedProductReviewCard` | approved top-level reviews | `reviews` |
+| «بنر ابزار مقایسه» / «بنر انتخاب هوشمند» | `ComparisonBanner` / `MatchBanner` (texts in `homeBannerTexts.js`) | four texts | `compare` / `racketFinder` |
+| «آیکن و لوگو» `iconLogo` | — | one image from a brand/serie/category/sport (`entityImages.js`), box size, text, link | — |
+
+- **Feature gating is one map**, `BLOCK_FEATURES` / `isBlockTypeEnabled` in `articleBlockTypes.js`: a block whose
+  feature is off is hidden from the editor's library and renders nothing; stored data is untouched.
+- Full-width blocks (`FULL_BLEED_BLOCK_TYPES`) wrap themselves in `FullBleed` at the top level (it measures the
+  column — the article column is not centred, so `calc(50% - 50vw)` would be wrong); inside a merged cell or on an
+  image they stay in their slot. Swiper nav classes are per instance (`useId`), or two sliders drive each other.
+- **Block consolidation.** `gallery`, `usedProducts`, `brandSlider`, `latestProducts`, `bestSellers`,
+  `amazingOffers` → `image`/`productSlider`/`brandBar`; `collectionSlider`/`categorySlider`/`sportSlider` are removed.
+  `upgradeLegacyBlocks` (`legacyArticleBlocks.js`) converts them on save, on render and in the editor, so old content
+  never breaks.
+- **No nesting depth limit** any more (merged in merged, blocks on an image on a slide…). Only a self-containing or
+  stack-exhausting structure is refused (400, nothing written); MongoDB's BSON depth caps it at ~57 levels.
+- Editor dropdowns render in a portal (`FloatingPanel` in `blockUi.jsx`) so a scrolling modal cannot clip them.
+- The admin preview canvas is full width; `previewFrames.js` gives each document the live page's container.
+
+```bash
+npm test -- sportSeriesSlider reviewSlider homeBanners blockConsolidation iconLogo blockNesting
 ```
 
 ### Slug System

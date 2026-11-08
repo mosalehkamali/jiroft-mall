@@ -83,31 +83,12 @@ const ProductInfo = ({ product, selectedVariant, onVariantChange, onSelectionCha
     }
   }
 
-  // ── قیمت پایه (یورو) ────────────────────────────────────────────────────────
-  const basePrice = (selectedVariant && selectedVariant.price) || product.basePrice;
-
-  // ── دریافت تخفیف واقعی از price API ─────────────────────────────────────────
-  const [priceApiData, setPriceApiData] = useState(null);
-
-  useEffect(() => {
-    if (!product?._id) return;
-    let cancelled = false;
-    fetch(`/api/product/${product._id}/price`)
-      .then((r) => r.json())
-      .then((data) => { if (!cancelled && !data.error) setPriceApiData(data); })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [product?._id]);
+  // Complete, request-specific pricing is ready before this component renders.
+  const priceApiData = product.displayPrice;
+  if (!priceApiData) throw new Error("قیمت محصول آماده نیست");
 
   // ── قیمت نهایی با توجه به واریانت و تخفیف ──────────────────────────────────
   const { basePriceToman, finalPriceToman, discountPercent, hasDiscount } = useMemo(() => {
-    if (!priceApiData) {
-      // قبل از load: قیمت پایه از سرور همین حالا تومان است؛ بدون تخفیف نمایش بده
-      // (تخفیف/حراج پس از پاسخ price API روی همین مقدار اعمال می‌شود)
-      const raw = Math.floor(basePrice / 1000) * 1000;
-      return { basePriceToman: raw, finalPriceToman: raw, discountPercent: 0, hasDiscount: false };
-    }
-
     if (selectedVariant) {
       const vData = priceApiData.variants?.find((v) => String(v._id) === String(selectedVariant._id));
       if (vData) {
@@ -119,7 +100,7 @@ const ProductInfo = ({ product, selectedVariant, onVariantChange, onSelectionCha
 
     const hasD = priceApiData.finalPriceToman < priceApiData.basePriceToman;
     return { basePriceToman: priceApiData.basePriceToman, finalPriceToman: priceApiData.finalPriceToman, discountPercent: priceApiData.discountPercent || 0, hasDiscount: hasD };
-  }, [priceApiData, selectedVariant, basePrice]);
+  }, [priceApiData, selectedVariant]);
 
   const finalUnitPrice = hasDiscount ? finalPriceToman : basePriceToman;
 
@@ -333,6 +314,7 @@ const ProductInfo = ({ product, selectedVariant, onVariantChange, onSelectionCha
           <div className="flex items-center border-2 border-gray-200 rounded-xl overflow-hidden shadow-sm">
             <button
               type="button"
+              aria-label="کاهش تعداد"
               onClick={() => handleQuantityChange(quantity - 1)}
               disabled={quantity <= 1}
               className="px-4 py-3 bg-gray-50 hover:bg-gray-100 disabled:bg-gray-50 disabled:text-gray-300 transition-colors"
@@ -344,14 +326,16 @@ const ProductInfo = ({ product, selectedVariant, onVariantChange, onSelectionCha
             
             <input
               type="number"
+              aria-label="تعداد محصول"
               value={quantity}
               onChange={(e) => handleQuantityChange(parseInt(e.target.value) || 1)}
-              className="w-20 text-center font-bold text-lg text-gray-800 focus:outline-none"
+              className="w-20 text-center font-bold text-lg text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-primary)]"
               min="1"
             />
             
             <button
               type="button"
+              aria-label="افزایش تعداد"
               onClick={() => handleQuantityChange(quantity + 1)}
               className="px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors"
             >

@@ -9,7 +9,7 @@ import storeConfig from "base/store.config";
  *
  * رفتار (مطابق Step 5):
  *  - ابتدا پشتیبانی مرورگر و وضعیت اجازه را بررسی می‌کند.
- *  - به‌جای پاپ‌آپِ خام مرورگر، یک کارتِ توضیحیِ درون‌صفحه نشان می‌دهد.
+ *  - پس از تعامل با صفحه، یک کارت توضیحی نشان می‌دهد؛ اجازه فقط با کلیک درخواست می‌شود.
  *  - با کلیک روی «بله، اطلاع بده» → درخواست اجازهٔ مرورگر → در صورت تأیید،
  *    اشتراک را با POST /api/push/subscribe ذخیره می‌کند.
  *  - با رد/بستن → تا پایان این نشست دیگر نمایش داده نمی‌شود (sessionStorage).
@@ -18,6 +18,7 @@ import storeConfig from "base/store.config";
 
 import { useEffect, useState } from 'react';
 import { FiBell, FiX } from 'react-icons/fi';
+import { waitForPushEngagement } from '@/lib/pushEngagement';
 
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
 const DISMISS_KEY = 'store_push_dismissed';
@@ -40,6 +41,12 @@ export default function PushOptInBanner() {
 
   useEffect(() => {
     let cancelled = false;
+    let eligible = false;
+    let engaged = false;
+    let stopWaiting = () => {};
+    const showWhenReady = () => {
+      if (!cancelled && eligible && engaged && Notification.permission !== 'denied') setVisible(true);
+    };
 
     async function init() {
       // ۱) پشتیبانی مرورگر
@@ -57,10 +64,17 @@ export default function PushOptInBanner() {
       }
 
       // ۲) اگر در این نشست رد کرده → بی‌خیال
-      if (sessionStorage.getItem(DISMISS_KEY)) return;
+      try {
+        if (sessionStorage.getItem(DISMISS_KEY)) return;
+      } catch { /* Private browsing may disable storage; keep push usable. */ }
 
       // ۳) اگر اجازه قبلاً رد شده → دیگر نپرس
       if (Notification.permission === 'denied') return;
+
+      stopWaiting = waitForPushEngagement(() => {
+        engaged = true;
+        showWhenReady();
+      });
 
       try {
         // ثبتِ Service Worker (در ریشهٔ سایت تا scope کامل داشته باشد)
@@ -71,7 +85,9 @@ export default function PushOptInBanner() {
         //    وقتش userId نداشت)، رکورد به حساب فعلی لینک شود — وگرنه
         //    sendPushToUser هیچ‌وقت این اشتراک را پیدا نمی‌کند.
         const existing = await registration.pushManager.getSubscription();
+        if (cancelled) return;
         if (existing) {
+          stopWaiting();
           fetch('/api/push/subscribe', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -80,8 +96,10 @@ export default function PushOptInBanner() {
           return;
         }
 
-        if (!cancelled) setVisible(true);
+        eligible = true;
+        showWhenReady();
       } catch (err) {
+        stopWaiting();
         console.error('[push] service worker registration failed:', err);
       }
     }
@@ -89,6 +107,7 @@ export default function PushOptInBanner() {
     init();
     return () => {
       cancelled = true;
+      stopWaiting();
     };
   }, []);
 

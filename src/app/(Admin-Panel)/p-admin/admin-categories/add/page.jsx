@@ -1,6 +1,7 @@
 'use client';
 
 import { getCategoryLabel } from "base/utils/categoryLabel";
+import { CATEGORY_PROMPT_FIELDS } from "@/lib/productPromptConfig";
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
@@ -48,6 +49,7 @@ import AttributeAudienceField from '@/components/admin/AttributeAudienceField';
 import AttributeRuleFields, { attributeRulePayload, attributeRuleState } from '@/components/admin/AttributeRuleFields';
 import { isFeatureEnabled } from '@/lib/features';
 import storeConfig from 'base/store.config';
+import CustomTabPromptField from '@/components/admin/CustomTabPromptField';
 import { showToast } from '@/lib/toast';
 import { showError } from '@/lib/swal';
 import { invalidateAdminCache } from '@/lib/adminCache';
@@ -171,86 +173,9 @@ export default function AddCategory() {
   const [showPromptSection, setShowPromptSection] = useState(false);
   const [editingId, setEditingId] = useState(null);
 
-  const productFields = [
-    {
-      field: 'name',
-      context: `- MUST strictly follow this exact pattern:
-  "{Persian product type} {Persian brand name} {Exact model name from raw content}"
-- Persian product type MUST be inferred from category and content (e.g. راکت تنیس)
-- Persian brand name MUST be the Persian transliteration of the brand
-  (e.g. Wilson → ویلسون, Nike → نایکی)
-- Model name MUST be copied EXACTLY from raw content in English
-- Do NOT translate, shorten, reorder, or modify the model name
-- This rule overrides any other naming rule
-Example:
-Raw content: "Wilson Tour Slam Lite Adult Recreational Tennis Racket"
-Correct name output:
-"راکت تنیس ویلسون Tour Slam Lite"
-      `
-    },
-    {
-      field: 'label',
-      context: `- Choose ONE value ONLY from: ["none", "new", "hot", "discount", "limited"]
-- If the text mentions things like "جدید" or "۲۰۲۴/۲۰۲۵" -> "new"
-- If it's a best-seller or "پرفروش" -> "hot"
-- If there is a clear discount mentioned in raw text -> "discount"
-- If it says "تعداد محدود" or "نسخه محدود" -> "limited"
-- DEFAULT is "none" if no specific label is detected.
-      `
-    },
-    {
-      field: 'shortDescription',
-      context: `- Persian
-- 3 line concise sentences
-- Marketing-friendly
-- No emojis
-      `
-    },
-    {
-      field: 'longDescription',
-      context: `- Persian
-- Detailed, structured
-- Explain usage, benefits, materials if possible
-- SEO-friendly but natural
-      `
-    },
-    {
-      field: 'color',
-      context: ` Read the provided product content carefully.
-Detect and extract the product color code.
-The color code may appear in formats like:
-   - Color Code: 1234
-   - Code: ABC-567
-   - SKU variation with color identifier
-   - Hex color format like #FFFFFF
- If multiple codes exist, select the one specifically related to color.
- If no color code exists, return null.`
-    },
-    {
-      field: 'basePrice',
-      context: `- Number ONLY
-- If price is missing, estimate realistically based on product type
-- DO NOT write strings like "نامشخص"
-      `
-    },
-    {
-      field: 'targetAudience',
-      context: `- Decide who this specific product is actually made and marketed for.
-- Prefer explicit signals in the raw content (e.g. "men's", "women's", "junior", "kids",
-  "بزرگسال", "بچگانه", a junior size range, a youth-specific model name).
-- If the product is made for children or juniors, always choose "بچگانه" — never "یونی سکس".
-- Choose "یونی سکس" only for adult products genuinely suitable for both men and women.
-- Never leave this field empty; pick the single best-fitting value.
-      `
-    },
-    {
-      field: 'tag',
-      context: `- Persian keywords
-  - Array of short strings
-  - Useful for search
-      `
-    },
-  ];
+  // قواعدِ پیش‌فرضِ این فیلدها حالا در «تنظیمات پرامپت» (پرامپت پایه) هستند؛ اینجا
+  // فقط قواعدِ اختصاصیِ همین دسته نوشته می‌شود، پس دسته‌ی تازه خالی شروع می‌شود.
+  const productFields = CATEGORY_PROMPT_FIELDS.map((field) => ({ field, context: '' }));
 
   const [productPrompts, setProductPrompts] = useState(
     productFields.map((item) => ({ field: item.field, context: item.context }))
@@ -302,7 +227,8 @@ The color code may appear in formats like:
   const [customTabName, setCustomTabName] = useState('');
   const [customTabIcon, setCustomTabIcon] = useState('');
   const [customTabItems, setCustomTabItems] = useState([]);
-  const [currentTabItem, setCurrentTabItem] = useState({ title: '', description: '', link: '', image: '' });
+  const [currentTabItem, setCurrentTabItem] = useState({ title: '', description: '', link: '', image: '', prompt: '' });
+  const [customTabPrompt, setCustomTabPrompt] = useState('');
   const [editingTabItemIndex, setEditingTabItemIndex] = useState(null);
 
   const sensors = useSensors(
@@ -433,7 +359,7 @@ The color code may appear in formats like:
     } else {
       setCustomTabItems((prev) => [...prev, { ...currentTabItem }]);
     }
-    setCurrentTabItem({ title: '', description: '', link: '', image: '' });
+    setCurrentTabItem({ title: '', description: '', link: '', image: '', prompt: '' });
   };
 
   const handleEditTabItem = (index) => {
@@ -443,6 +369,7 @@ The color code may appear in formats like:
       description: item.description || '',
       link: item.link || '',
       image: item.image || '',
+      prompt: item.prompt || '',
     });
     setEditingTabItemIndex(index);
   };
@@ -451,7 +378,7 @@ The color code may appear in formats like:
     setCustomTabItems((prev) => prev.filter((_, i) => i !== index));
     if (editingTabItemIndex === index) {
       setEditingTabItemIndex(null);
-      setCurrentTabItem({ title: '', description: '', link: '', image: '' });
+      setCurrentTabItem({ title: '', description: '', link: '', image: '', prompt: '' });
     }
   };
 
@@ -483,6 +410,7 @@ The color code may appear in formats like:
     setCustomTabName(copy.customTab.name);
     setCustomTabIcon(copy.customTab.icon);
     setCustomTabItems(copy.customTab.items);
+    setCustomTabPrompt(copy.customTab.prompt);
     setProductPrompts(copy.prompts);
 
     // فرم‌های نیمه‌پرِ ویرایش نباید روی داده‌ی تازه باقی بمانند
@@ -491,7 +419,7 @@ The color code may appear in formats like:
     setEditingStatId(null);
     setCurrentStat({ name: '', label: '', description: '' });
     setEditingTabItemIndex(null);
-    setCurrentTabItem({ title: '', description: '', link: '', image: '' });
+    setCurrentTabItem({ title: '', description: '', link: '', image: '', prompt: '' });
 
     showToast.success(
       `همه‌ی اطلاعات از دسته «${getCategoryLabel(source)}» کپی شد`,
@@ -700,6 +628,7 @@ The color code may appear in formats like:
           enabled: customTabEnabled,
           name: customTabName,
           icon: customTabIcon,
+          prompt: customTabPrompt,
           items: customTabItems,
         },
         prompts: productPrompts.filter((p) => p.context.trim() !== ''),
@@ -896,7 +825,7 @@ The color code may appear in formats like:
             />
 
             {/* AI Prompts Section */}
-            <div className="border rounded-[var(--radius)] p-6 bg-neutral-50/50">
+            {isFeatureEnabled('aiProductDraft') && (<div className="border rounded-[var(--radius)] p-6 bg-neutral-50/50">
               <button
                 type="button"
                 onClick={() => setShowPromptSection((prev) => !prev)}
@@ -912,6 +841,10 @@ The color code may appear in formats like:
               <div
                 className={`overflow-hidden transition-all duration-500 ${showPromptSection ? 'max-h-[2000px] mt-6' : 'max-h-0'}`}
               >
+                <p className="text-xs font-bold text-gray-500 mb-4 leading-6">
+                  فقط قواعدِ اختصاصیِ همین دسته را بنویسید. قواعدِ مشترکِ همه‌ی محصولات (پرامپت پایه) و قواعدِ چند دسته
+                  (گروه‌های پرامپت دسته) در «محصولات ← تنظیمات پرامپت AI» تعریف می‌شوند و پیش از این قواعد در پرامپت می‌آیند.
+                </p>
                 <div className="grid md:grid-cols-2 gap-5">
                   {productPrompts.map((item, index) => (
                     <Textarea
@@ -928,7 +861,7 @@ The color code may appear in formats like:
                   ))}
                 </div>
               </div>
-            </div>
+            </div>)}
 
             {/* Attributes Section */}
             <div id="attribute-form-anchor" className="border-t pt-8 space-y-6">
@@ -1367,6 +1300,8 @@ The color code may appear in formats like:
                     </div>
                   </div>
 
+                  {isFeatureEnabled('aiProductDraft') && <CustomTabPromptField value={customTabPrompt} onChange={setCustomTabPrompt} />}
+
                   <div className={`rounded-[var(--radius)] p-6 space-y-5 border-2 ${editingTabItemIndex !== null ? 'bg-purple-50/30 border-purple-200' : 'bg-neutral-50 border-transparent'}`}>
                     <div>
                       <label className="block text-xs font-bold text-neutral-500 mb-2">عکس آیتم (لوگو)</label>
@@ -1422,6 +1357,12 @@ The color code may appear in formats like:
                       onChange={(e) => setCurrentTabItem((p) => ({ ...p, description: e.target.value }))}
                       placeholder="توضیح کوتاهی درباره این آیتم"
                     />
+                    <Textarea
+                      label="راهنمای انتخاب برای هوش مصنوعی (اختیاری)"
+                      value={currentTabItem.prompt}
+                      onChange={(e) => setCurrentTabItem((p) => ({ ...p, prompt: e.target.value }))}
+                      placeholder="مثال: فقط وقتی انتخاب شود که متن محصول صراحتاً به FortyFive اشاره کند"
+                    />
                     <Input
                       label="لینک (اختیاری)"
                       value={currentTabItem.link}
@@ -1448,6 +1389,9 @@ The color code may appear in formats like:
                             <span className="font-bold text-sm truncate">{item.title}</span>
                             {item.description && (
                               <span className="text-[11px] text-neutral-400 truncate">{item.description}</span>
+                            )}
+                            {item.prompt?.trim() && (
+                              <span className="text-[11px] text-purple-600 truncate" title={item.prompt}>راهنمای AI: {item.prompt}</span>
                             )}
                           </div>
                         </div>

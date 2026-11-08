@@ -7,7 +7,6 @@ import { FaTelegram } from "react-icons/fa";
 import { isFeatureEnabled, isHrefEnabled } from "@/lib/features";
 import Input from "@/components/ui/Input";
 import Button from "@/components/ui/Button";
-import Swal from "sweetalert2";
 import Image from "next/image";
 import Link from "next/link";
 
@@ -24,7 +23,15 @@ const FOOTER_SECTIONS = (navigation?.footer || [])
   .map((section) => ({ ...section, links: (section.links || []).filter((l) => isHrefEnabled(l.href)) }))
   .filter((section) => section.links.length > 0);
 
+const SOCIAL_LABELS = { instagram: "اینستاگرام", telegram: "تلگرام", x: "ایکس (توییتر)" };
+
 const SOCIALS = Object.entries(brand.social || {}).filter(([key, href]) => href && SOCIAL_ICONS[key]);
+
+// فوتر در همه‌ی صفحات است؛ sweetalert2 فقط وقتی لازم می‌شود که فرم خبرنامه نتیجه بدهد.
+const showAlert = (options) =>
+  import("sweetalert2")
+    .then(({ default: Swal }) => Swal.fire(options))
+    .catch(() => window.alert(options.text));
 
 export default function Footer() {
   const newsletter = isFeatureEnabled("newsletter");
@@ -58,7 +65,7 @@ export default function Footer() {
 
       setIsSubscribed(true);
 
-      Swal.fire({
+      showAlert({
         icon: "success",
         title: "عضویت موفق",
         text: "از همراهی شما سپاسگزاریم!",
@@ -69,7 +76,7 @@ export default function Footer() {
 
       setEmail("");
     } catch (err) {
-      Swal.fire({
+      showAlert({
         icon: "error",
         title: "خطا",
         text: err.message,
@@ -95,7 +102,7 @@ export default function Footer() {
                   <h3 className="text-2xl font-bold mb-2 text-white">
                     {isSubscribed ? "شما عضو خبرنامه هستید" : "عضویت در خبرنامه"}
                   </h3>
-                  <p className="text-gray-400">
+                  <p className="text-gray-300">
                     {isSubscribed
                       ? "از اینکه ما را دنبال می‌کنید سپاسگزاریم."
                       : "از جدیدترین محصولات و تخفیف‌های ویژه با خبر شوید"}
@@ -137,7 +144,7 @@ export default function Footer() {
             <div className="mb-6 opacity-90">
               <Image src={brand.logo} alt={brand.name} width={120} height={120} />
             </div>
-            <p className="text-gray-400 mb-8 leading-relaxed text-sm">{brand.description}</p>
+            <p className="text-gray-300 mb-8 leading-relaxed text-sm">{brand.description}</p>
 
             <div className="space-y-4">
               {[
@@ -166,7 +173,7 @@ export default function Footer() {
                     href={href}
                     target="_blank"
                     rel="noopener noreferrer"
-                    aria-label={key}
+                    aria-label={`${SOCIAL_LABELS[key]} ${brand.name}`}
                     className="text-white hover:text-[var(--color-primary)] transition-all duration-300 ease-in-out transform hover:-translate-y-1"
                   >
                     {SOCIAL_ICONS[key]}
@@ -186,7 +193,7 @@ export default function Footer() {
                   <li key={link.href}>
                     <Link
                       href={link.href}
-                      className="text-gray-400 hover:text-[var(--color-primary)] transition-colors block text-sm"
+                      className="text-gray-300 hover:text-white transition-colors block text-sm"
                     >
                       {link.label}
                     </Link>
@@ -200,7 +207,7 @@ export default function Footer() {
 
       <div className="border-t border-white/5">
         <div className="container mx-auto px-4 py-6">
-          <p className="text-xs text-gray-500 text-center md:text-start">
+          <p className="text-xs text-gray-300 text-center md:text-start">
             © {new Date().getFullYear()} — تمامی حقوق برای {brand.name} محفوظ است.
           </p>
         </div>

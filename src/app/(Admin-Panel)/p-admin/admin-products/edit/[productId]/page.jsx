@@ -2,12 +2,14 @@
 
 import { getCategoryLabel } from "base/utils/categoryLabel";
 import AdminInput from "@/components/admin/AdminInput";
-import { disabledFeatureForPath } from "@/lib/features";
+import { disabledFeatureForPath, isFeatureEnabled } from "@/lib/features";
+import styles from './ProductEdit.module.css';
 import ProductSectionJsonModal from '@/components/admin/ProductSectionJsonModal';
 import { BASIC_PRODUCT_FIELDS, productAttributeType } from '@/lib/productSectionJson';
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { FaEdit, FaBox, FaImages, FaTags, FaCogs, FaPalette, FaRunning, FaLayerGroup } from 'react-icons/fa';
+import Link from 'next/link';
+import { FaEdit, FaBox, FaImages, FaTags, FaCogs, FaRunning, FaLayerGroup, FaMagic } from 'react-icons/fa';
 import { FiChevronDown, FiChevronUp } from 'react-icons/fi';
 import { AnimatePresence, motion } from 'framer-motion';
 import Button from '@/components/admin/Button';
@@ -110,8 +112,8 @@ function CollapsibleSection({
   isOpen,
   onToggle,
   children,
-  className = 'bg-white p-8 rounded-[2.5rem] shadow-sm border border-gray-100',
-  titleClassName = 'font-bold text-gray-800',
+  className = 'rounded-[var(--admin-radius)] border border-[var(--admin-border)] bg-[var(--admin-card)]',
+  titleClassName = 'text-sm font-bold text-[var(--admin-text)]',
   headerExtra = null,
   onEditJson,
   bodyClassName = '',
@@ -120,21 +122,21 @@ function CollapsibleSection({
 
   return (
     <div className={className}>
-      <div className={`flex flex-wrap items-center gap-2 border-b pb-4 ${isOpen ? 'mb-6' : 'mb-0'}`}>
+      <div className={`flex flex-wrap items-center gap-2 px-4 py-2 sm:px-5 ${isOpen ? 'border-b border-[var(--admin-border)]' : ''}`}>
       <button
         type="button"
         onClick={onToggle}
         aria-expanded={isOpen}
         aria-controls={contentId}
-        className="flex min-h-11 flex-1 items-center gap-2 text-right transition-colors hover:text-gray-900"
+        className="flex min-h-11 min-w-0 flex-1 items-center gap-3 rounded-[var(--admin-radius)] text-right transition-colors hover:text-[var(--color-primary)] focus-visible:outline-2 focus-visible:outline-[var(--color-primary)]"
       >
-        {icon}
+        {icon && <span className="flex size-8 shrink-0 items-center justify-center rounded-[var(--admin-radius)] bg-[var(--admin-bg)]" aria-hidden="true">{icon}</span>}
         <h2 className={titleClassName}>{title}</h2>
         {headerExtra}
       </button>
       {onEditJson && (
         <button type="button" onClick={onEditJson}
-          className="min-h-11 rounded-xl border border-[var(--admin-border-strong)] bg-[var(--color-primary-soft)] px-3 py-2 text-sm font-medium text-[var(--color-primary)] transition-colors hover:border-[var(--color-primary)] focus-visible:outline-2 focus-visible:outline-[var(--color-primary)]">
+          className="min-h-11 rounded-[var(--admin-radius)] border border-transparent px-3 py-2 text-sm font-medium text-[var(--color-primary)] transition-colors hover:bg-[var(--color-primary-soft)] focus-visible:outline-2 focus-visible:outline-[var(--color-primary)]">
           ویرایش جیسون
         </button>
       )}
@@ -144,7 +146,7 @@ function CollapsibleSection({
         {isOpen ? <FiChevronUp aria-hidden="true" /> : <FiChevronDown aria-hidden="true" />}
       </button>
       </div>
-      <AnimatedCollapse id={contentId} isOpen={isOpen} className={bodyClassName}>
+      <AnimatedCollapse id={contentId} isOpen={isOpen} className={`${styles.fields} p-4 sm:p-5 ${bodyClassName}`}>
         {children}
       </AnimatedCollapse>
     </div>
@@ -155,7 +157,7 @@ function CollapsibleSection({
 // وقتی سرور خطای فیلدی برمی‌گرداند همهٔ بخش‌ها باز می‌شوند؛ وگرنه پیام به فیلدی
 // اشاره می‌کند که داخلِ یک بخشِ جمع‌شده پنهان است.
 const ALL_SECTIONS_OPEN = Object.fromEntries(
-  ['basicInfo', 'color', 'relations', 'athletes', 'fixedAttributes', 'variants',
+  ['basicInfo', 'relations', 'athletes', 'fixedAttributes', 'variants',
     'technicalStats', 'customTab', 'media'].map((key) => [key, true]),
 );
 
@@ -818,7 +820,7 @@ export default function ProductEditPage() {
   // Render
   // ---------------------------
   return (
-    <form onSubmit={handleSubmit} className="max-w-5xl mx-auto space-y-8 pb-20">
+    <form onSubmit={handleSubmit} className="mx-auto w-full max-w-5xl space-y-4 pb-12" dir="rtl">
       {jsonSection && (
         <ProductSectionJsonModal
           section={jsonSection}
@@ -839,24 +841,16 @@ export default function ProductEditPage() {
       )}
 
       {/* Header */}
-      <div className="flex justify-between items-center bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
-        <div className="flex items-center gap-4">
-          <div className="bg-blue-50 p-4 rounded-2xl text-blue-600">
-            <FaEdit size={24} />
+      <div className="rounded-[var(--admin-radius)] border border-[var(--admin-border)] bg-[var(--admin-card)] px-4 py-4 sm:px-5">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-[var(--admin-radius)] bg-black text-[var(--color-primary)]">
+            <FaEdit size={18} aria-hidden="true" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-gray-900">ویرایش محصول</h1>
-            <p className="text-gray-400 text-xs mt-1">شناسه: {id}</p>
+            <h1 className="text-lg font-extrabold text-[var(--admin-text)]">ویرایش محصول</h1>
+            <p className="mt-1 break-all text-xs text-[var(--admin-text-muted)]">شناسه: <bdi>{id}</bdi></p>
           </div>
         </div>
-        <Button
-          type="submit"
-          loading={submitLoading}
-          disabled={uploadsInFlight > 0}
-          className="px-10 rounded-2xl"
-        >
-          {uploadsInFlight > 0 ? 'در حال بارگذاری تصویر…' : 'ذخیره تغییرات'}
-        </Button>
       </div>
 
       {/* General Info */}
@@ -867,15 +861,17 @@ export default function ProductEditPage() {
         icon={<FaBox className="text-gray-400" />}
         isOpen={isSectionOpen('basicInfo')}
         onToggle={() => toggleSection('basicInfo')}
-        bodyClassName="space-y-6"
+        bodyClassName={styles.basicInfo}
       >
         <Input
+          name="product-name"
           label="نام محصول"
           error={fieldErrors.name}
           value={formData.name}
           onChange={e => updateField('name', e.target.value)}
         />
         {show('shortDescription') && <Textarea
+          name="product-shortDescription"
           label={<RuleLabel rule={ruleOf('shortDescription')} />}
           rows={3}
           error={fieldErrors.shortDescription}
@@ -883,6 +879,7 @@ export default function ProductEditPage() {
           onChange={e => updateField('shortDescription', e.target.value)}
         />}
         {show('longDescription') && <Textarea
+          name="product-longDescription"
           label={<RuleLabel rule={ruleOf('longDescription')} />}
           rows={5}
           error={fieldErrors.longDescription}
@@ -896,43 +893,39 @@ export default function ProductEditPage() {
           onChange={(v) => updateField('customFields', v)}
           errors={fieldErrors}
         />
-      </CollapsibleSection>
-
-      {/* Color Picker */}
-      {show('color') && <CollapsibleSection
-        id="product-color"
-        title="رنگ محصول"
-        icon={<FaPalette className="text-gray-400" />}
-        isOpen={isSectionOpen('color')}
-        onToggle={() => toggleSection('color')}
-      >
-        <div className="flex items-center gap-4 flex-wrap">
-          <input
-            type="color"
-            value={formData.color || '#000000'}
-            onChange={e => updateField('color', e.target.value)}
-            className="w-12 h-10 rounded cursor-pointer border border-gray-300 p-0.5"
-            title="انتخاب رنگ"
-          />
-          <div className="w-40">
-            <Input
-              placeholder="#000000"
-              value={formData.color || ''}
+        {show('color') && <div className={styles.colorField}>
+          <label htmlFor="product-color" className="mb-3 block text-sm font-bold text-[var(--admin-text)]">رنگ محصول</label>
+          <div className={styles.colorControls}>
+            <input
+              id="product-color"
+              type="color"
+              value={formData.color || '#000000'}
               onChange={e => updateField('color', e.target.value)}
+              className="w-12 h-10 rounded cursor-pointer border border-gray-300 p-0.5"
+              title="انتخاب رنگ"
             />
-          </div>
-          {formData.color && (
-            <>
-              <span
-                className="inline-block w-10 h-10 rounded-full border-2 border-gray-300 shadow-sm"
-                style={{ backgroundColor: formData.color }}
-                title={formData.color}
+            <div className="w-40 [&>div]:mb-0">
+              <Input
+                aria-label="کد رنگ محصول"
+                dir="ltr"
+                placeholder="#000000"
+                value={formData.color || ''}
+                onChange={e => updateField('color', e.target.value)}
               />
-              <span className="text-sm text-gray-500">{formData.color}</span>
-            </>
-          )}
-        </div>
-      </CollapsibleSection>}
+            </div>
+            {formData.color && (
+              <>
+                <span
+                  className="inline-block w-10 h-10 rounded-full border-2 border-gray-300 shadow-sm"
+                  style={{ backgroundColor: formData.color }}
+                  title={formData.color}
+                />
+                <span className="text-sm text-gray-500">{formData.color}</span>
+              </>
+            )}
+          </div>
+        </div>}
+      </CollapsibleSection>
 
       {/* Relations & Pricing */}
       <CollapsibleSection
@@ -942,8 +935,9 @@ export default function ProductEditPage() {
         isOpen={isSectionOpen('relations')}
         onToggle={() => toggleSection('relations')}
       >
-        <div className="grid md:grid-cols-3 gap-6">
+        <div className={styles.relationsGrid}>
           {show('brand') && <Select
+            name="product-brand"
             label={<RuleLabel rule={ruleOf('brand')} />}
             error={fieldErrors.brand}
             value={formData.brand}
@@ -956,6 +950,7 @@ export default function ProductEditPage() {
           />}
           {formData.brand && show('serie') && (
             <Select
+              name="product-serie"
               label={<RuleLabel rule={ruleOf('serie')} />}
               value={formData.serie}
               onChange={e => updateField('serie', e.target.value)}
@@ -968,6 +963,7 @@ export default function ProductEditPage() {
           )}
           {formData.brand && show('limitedEdition') && (
             <Select
+              name="product-limitedEdition"
               label={<RuleLabel rule={ruleOf('limitedEdition')} />}
               // محصولاتِ قدیمیِ مدلِ سراسریِ Collaboration می‌توانند ادیشنی از
               // برندِ دیگری داشته باشند. آن مقدار در گزینه‌های این برند نیست، پس
@@ -985,6 +981,7 @@ export default function ProductEditPage() {
             />
           )}
           {show('category') && <Select
+            name="product-category"
             label={<RuleLabel rule={ruleOf('category')} />}
             error={fieldErrors.category}
             value={formData.category}
@@ -992,6 +989,7 @@ export default function ProductEditPage() {
             options={[{ value: '', label: 'بدون دسته‌بندی' }, ...categories.map(c => ({ value: c._id, label: getCategoryLabel(c) }))]}
           />}
           {show('basePrice') && <Input
+            name="product-basePrice"
             label={<RuleLabel rule={ruleOf('basePrice')}>{`${ruleOf('basePrice').label} (${PRICE_UNIT})`}</RuleLabel>}
             type="number"
             formatNumber
@@ -1000,6 +998,7 @@ export default function ProductEditPage() {
             onChange={e => updateField('basePrice', e.target.value)}
           />}
           {show('sport') && <Select
+            name="product-sport"
             label={<RuleLabel rule={ruleOf('sport')} />}
             error={fieldErrors.sport}
             value={formData.sport}
@@ -1007,6 +1006,7 @@ export default function ProductEditPage() {
             options={[{ value: '', label: '—' }, ...sports.map(s => ({ value: s._id, label: s.name }))]}
           />}
           {show('label') && <Select
+            name="product-label"
             label={<RuleLabel rule={ruleOf('label')} />}
             value={formData.label}
             onChange={e => updateField('label', e.target.value)}
@@ -1019,6 +1019,7 @@ export default function ProductEditPage() {
             ]}
           />}
           {show('targetAudience') && <Select
+            name="product-targetAudience"
             label={<RuleLabel rule={ruleOf('targetAudience')} />}
             error={fieldErrors.targetAudience}
             value={formData.targetAudience}
@@ -1026,6 +1027,7 @@ export default function ProductEditPage() {
             options={TARGET_AUDIENCE_SELECT_OPTIONS}
           />}
           <Select
+            name="product-isActive"
             label="وضعیت نمایش محصول"
             value={formData.isActive ? 'true' : 'false'}
             onChange={e => updateField('isActive', e.target.value === 'true')}
@@ -1051,7 +1053,7 @@ export default function ProductEditPage() {
             </span>
           ) : null}
         >
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 max-h-52 overflow-y-auto pr-1">
+          <div className={styles.choiceGrid}>
             {athletes.map(a => {
               const selected =
                 Array.isArray(formData.athlete) && formData.athlete.includes(a._id);
@@ -1087,28 +1089,23 @@ export default function ProductEditPage() {
           isOpen={isSectionOpen('fixedAttributes')}
           onToggle={() => toggleSection('fixedAttributes')}
         >
-          <div className="overflow-hidden border rounded-2xl">
-            <table className="w-full">
-              <tbody className="divide-y divide-gray-100">
-                {visibleCategoryAttributes.map(attr => (
-                  <tr key={attr.name}>
-                    <td className="p-4 bg-gray-50/50 font-bold text-gray-600 text-sm w-1/3">
-                      {attr.label}
-                      {attr.required && <span className="text-red-500 mr-1">*</span>}
-                    </td>
-                    <td className="p-2">
-                      <Input
-                        type={productAttributeType(attr) === 'number' ? 'number' : 'text'}
-                        error={fieldErrors[attr.name]}
-                        value={formData.attributes?.[attr.name] ?? ''}
-                        onChange={e => updateAttribute(attr.name, e.target.value)}
-                        placeholder={productAttributeType(attr) === 'select' ? 'مقادیر با کاما جدا شوند' : ''}
-                      />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className={styles.attributeGrid}>
+            {visibleCategoryAttributes.map(attr => (
+              <div key={attr.name} className={styles.attributeField}>
+                <label htmlFor={`fixed-${attr.name}`} className={styles.fieldLabel}>
+                  {attr.label}
+                  {attr.required && <span className="text-red-500 mr-1">*</span>}
+                </label>
+                <Input
+                  name={`fixed-${attr.name}`}
+                  type={productAttributeType(attr) === 'number' ? 'number' : 'text'}
+                  error={fieldErrors[attr.name]}
+                  value={formData.attributes?.[attr.name] ?? ''}
+                  onChange={e => updateAttribute(attr.name, e.target.value)}
+                  placeholder={productAttributeType(attr) === 'select' ? 'مقادیر با کاما جدا شوند' : ''}
+                />
+              </div>
+            ))}
           </div>
         </CollapsibleSection>
       )}
@@ -1122,13 +1119,13 @@ export default function ProductEditPage() {
           isOpen={isSectionOpen('variants')}
           onToggle={() => toggleSection('variants')}
         >
-          <p className="text-xs text-gray-400 mb-6">
+          <p className={styles.sectionHint}>
             برای هر ویژگی مقادیر موجود را اضافه یا حذف کنید. تصاویر در بخش «تصاویر هر مقدار» بارگذاری می‌شوند؛ تعیین قیمت برای هر ترکیب اختیاری است (خالی = قیمت پایه).
           </p>
 
-          <div className="space-y-4 mb-8">
+          <div className={styles.variantGrid}>
             {categoryVariantAttributes.map(attr => (
-              <div key={attr.name} className="border rounded-2xl p-4 bg-purple-50/30">
+              <div key={attr.name} className={styles.variantCard}>
                 <label className="block font-medium text-gray-700 mb-2">
                   {attr.label}
                   {attr.prompt && (
@@ -1144,7 +1141,7 @@ export default function ProductEditPage() {
                           type="text"
                           dir="ltr"
                           style={{ direction: 'ltr', unicodeBidi: 'isolate' }}
-                          className="border rounded-[var(--radius)] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400"
+                          className="border rounded-[var(--radius)] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
                           placeholder={`${attr.label} — ${unit}${ui === 0 ? ' (اصلی)' : ''}`}
                           value={variantInputBuffer[attr.name]?.[unit] || ''}
                           onChange={e =>
@@ -1165,7 +1162,7 @@ export default function ProductEditPage() {
                     <button
                       type="button"
                       onClick={() => addVariantValue(attr)}
-                      className="px-4 py-2 bg-purple-600 text-white rounded-[var(--radius)] text-sm hover:bg-purple-700 transition-colors"
+                      className="px-4 py-2 bg-[var(--color-primary)] text-white rounded-[var(--radius)] text-sm hover:bg-[var(--color-primary-hover)] transition-colors"
                     >
                       + افزودن مقدار
                     </button>
@@ -1176,7 +1173,7 @@ export default function ProductEditPage() {
                       type="text"
                       dir="ltr"
                       style={{ direction: 'ltr', unicodeBidi: 'isolate' }}
-                      className="flex-1 border rounded-[var(--radius)] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400"
+                      className="min-w-0 flex-1 border rounded-[var(--radius)] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
                       placeholder={`مقدار جدید برای ${attr.label}...`}
                       value={variantInputBuffer[attr.name] || ''}
                       onChange={e =>
@@ -1192,7 +1189,7 @@ export default function ProductEditPage() {
                     <button
                       type="button"
                       onClick={() => addVariantValue(attr)}
-                      className="px-4 py-2 bg-purple-600 text-white rounded-[var(--radius)] text-sm hover:bg-purple-700 transition-colors"
+                      className="px-4 py-2 bg-[var(--color-primary)] text-white rounded-[var(--radius)] text-sm hover:bg-[var(--color-primary-hover)] transition-colors"
                     >
                       + افزودن
                     </button>
@@ -1218,8 +1215,8 @@ export default function ProductEditPage() {
           {categoryVariantAttributes.some(
             (attr) => (variantOptions[attr.name] || []).length > 0
           ) && (
-            <div className="mb-8 border rounded-2xl p-4 bg-blue-50/30">
-              <h4 className="font-semibold mb-1 text-blue-800">تصاویر هر مقدار</h4>
+            <div className={styles.valueMedia}>
+              <h4 className="text-sm font-semibold mb-1 text-[var(--admin-text)]">تصاویر هر مقدار</h4>
               <p className="text-xs text-gray-500 mb-4">
                 تصاویری که برای هر مقدار (مثلا هر رنگ) بارگذاری می‌کنید بین همه واریانت‌هایی که آن مقدار را دارند مشترک است؛ لازم نیست برای هر سایز جدا آپلود کنید.
               </p>
@@ -1237,7 +1234,7 @@ export default function ProductEditPage() {
                           const contentId = `variant-value-image-${makeSafeDomId(attr.name)}-${valueIndex}`;
 
                           return (
-                            <div key={val} className="border rounded-2xl p-3 bg-white">
+                            <div key={val} className={styles.valueMediaCard}>
                               <button
                                 type="button"
                                 onClick={() => toggleValueImagePanel(attr.name, val)}
@@ -1287,7 +1284,7 @@ export default function ProductEditPage() {
                   <button
                     type="button"
                     onClick={() => setAllCombos(true)}
-                    className="px-3 py-1.5 text-xs font-bold rounded-lg border border-purple-200 text-purple-700 hover:bg-purple-50 transition-colors"
+                    className="px-3 py-1.5 text-xs font-bold rounded-lg border border-[var(--admin-border-strong)] text-[var(--color-primary)] hover:bg-[var(--color-primary-soft)] transition-colors"
                   >
                     انتخاب همه
                   </button>
@@ -1305,7 +1302,7 @@ export default function ProductEditPage() {
                 فقط ترکیب‌هایی که تیک دارند ساخته می‌شوند؛ برداشتن تیک یک ترکیب موجود باعث حذف آن واریانت هنگام ذخیره می‌شود.
               </p>
 
-              <div className="space-y-4">
+              <div className={styles.combinationGrid}>
                 {combinations.map(combo => {
                   const key = makeComboKey(combo);
                   const detail = variantDetails[key] || { price: '', images: [] };
@@ -1314,9 +1311,7 @@ export default function ProductEditPage() {
                   return (
                     <div
                       key={key}
-                      className={`border rounded-2xl p-5 bg-white shadow-sm transition-opacity ${
-                        isSelected ? 'border-purple-200' : 'border-gray-200 opacity-60'
-                      }`}
+                      className={styles.combinationCard}
                     >
                       <div className="flex flex-wrap items-center gap-2 mb-4">
                         <label className="flex items-center cursor-pointer select-none">
@@ -1324,7 +1319,7 @@ export default function ProductEditPage() {
                             type="checkbox"
                             checked={isSelected}
                             onChange={() => toggleCombo(key)}
-                            className="w-5 h-5 rounded accent-purple-600 shrink-0"
+                            className="w-5 h-5 rounded accent-[var(--color-primary)] shrink-0"
                           />
                           <span className="sr-only">ساخت این ترکیب</span>
                         </label>
@@ -1334,11 +1329,11 @@ export default function ProductEditPage() {
                             className="px-2 py-0.5 bg-gray-100 rounded text-sm font-medium text-gray-700"
                           >
                             {k}:{' '}
-                            <span className="text-purple-700 font-semibold">{v}</span>
+                            <span className="text-[var(--color-primary)] font-semibold">{v}</span>
                           </span>
                         ))}
                         {!isSelected && (
-                          <span className="text-[11px] font-bold text-gray-400 bg-gray-100 border border-gray-200 px-2 py-0.5 rounded-full mr-auto">
+                          <span className="mr-auto text-xs font-medium text-[var(--admin-text-muted)]">
                             ساخته نمی‌شود
                           </span>
                         )}
@@ -1405,27 +1400,24 @@ export default function ProductEditPage() {
           id="technical-stats"
           title="تحلیل فنی (نمودار رادار)"
           onEditJson={() => setJsonSection('technicalStats')}
-          icon={(
-            <div className="bg-orange-50 p-2 rounded-lg text-orange-500">
-              <FaCogs size={20} />
-            </div>
-          )}
+          icon={<FaCogs className="text-gray-400" />}
           isOpen={isSectionOpen('technicalStats')}
           onToggle={() => toggleSection('technicalStats')}
         >
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className={styles.statsGrid}>
             {categoryTechnicalStats.map(stat => (
               <div
                 key={stat.name}
-                className="space-y-2 p-4 bg-gray-50 rounded-2xl border border-gray-100"
+                className={styles.statCard}
               >
                 <label className="text-sm font-bold text-gray-600 flex justify-between">
                   {stat.label}
-                  <span className="text-blue-600">
+                  <span className={styles.statValue}>
                     {formData.technicalStats?.[stat.name] || 0}%
                   </span>
                 </label>
                 <Input
+                  aria-label={stat.label}
                   type="number"
                   min="0"
                   max="100"
@@ -1436,7 +1428,7 @@ export default function ProductEditPage() {
                   placeholder="نمره از ۱۰۰"
                 />
                 {stat.prompt && (
-                  <p className="text-[10px] text-gray-400 italic leading-tight">
+                  <p className={styles.statHint}>
                     {stat.prompt}
                   </p>
                 )}
@@ -1453,10 +1445,8 @@ export default function ProductEditPage() {
           icon={null}
           isOpen={isSectionOpen('customTab')}
           onToggle={() => toggleSection('customTab')}
-          className="space-y-3 border-t pt-6 bg-white p-8 rounded-[2.5rem] shadow-sm border border-gray-100"
-          titleClassName="text-sm font-bold text-neutral-700"
         >
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          <div className={styles.choiceGrid}>
             {categoryCustomTab.items.map((item) => {
               const checked = (formData.customTabItems || []).includes(item.title);
               return (
@@ -1492,8 +1482,8 @@ export default function ProductEditPage() {
         isOpen={isSectionOpen('media')}
         onToggle={() => toggleSection('media')}
       >
-        <div className="grid md:grid-cols-2 gap-8">
-          {show('mainImage') && <div>
+        <div className={styles.mediaGrid}>
+          {show('mainImage') && <div className={styles.mediaCard}>
             <ImageUpload
               label={ruleOf('mainImage').label}
               required={Boolean(ruleOf('mainImage').required)}
@@ -1507,6 +1497,7 @@ export default function ProductEditPage() {
             )}
           </div>}
           {show('gallery') && <ImageUpload
+            className={styles.mediaCard}
             label={ruleOf('gallery').label}
             multiple
             value={formData.gallery}
@@ -1515,8 +1506,9 @@ export default function ProductEditPage() {
             folder="product"
           />}
         </div>
-        {show('tag') && <div className="mt-8">
+        {show('tag') && <div className={styles.tagsField}>
           <Input
+            name="product-tag"
             label={<RuleLabel rule={ruleOf('tag')}>{`${ruleOf('tag').label} (با کاما جدا کنید)`}</RuleLabel>}
             value={formData.tag}
             onChange={e => updateField('tag', e.target.value)}
@@ -1524,6 +1516,23 @@ export default function ProductEditPage() {
         </div>}
       </CollapsibleSection>
 
+      <div className="flex flex-wrap items-center gap-3 border-t border-[var(--admin-border)] pt-5">
+        <Button
+          type="submit"
+          loading={submitLoading}
+          disabled={uploadsInFlight > 0}
+          className="px-10 rounded-2xl"
+        >
+          {uploadsInFlight > 0 ? 'در حال بارگذاری تصویر…' : 'ذخیره تغییرات'}
+        </Button>
+        {isFeatureEnabled('aiProductDraft') && <Link
+          href={`/p-admin/admin-products/${id}/regenerate`}
+          className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[var(--admin-radius)] border border-purple-100 bg-purple-50 px-5 py-2.5 text-sm font-bold text-purple-600 transition-colors hover:border-purple-200 hover:bg-purple-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-600"
+        >
+          <FaMagic size={20} aria-hidden="true" />
+          بازتولید محصول
+        </Link>}
+      </div>
     </form>
   );
 }

@@ -61,3 +61,24 @@ test("full access never includes a disabled feature's keys, but the keys stay va
   assert.deepEqual(role, ["products.view"]);
   assert.equal(isPermissionKeyEnabled("products.edit"), true);
 });
+
+test("AI product tools need departments; their pages and APIs close with the feature", async () => {
+  assert.ok(!resolveFlags({ features: { aiProductDraft: true } }).has("aiProductDraft"), "needs departments");
+  assert.ok(resolveFlags({ features: { aiProductDraft: true, departments: true } }).has("aiProductDraft"));
+  // the shipped config has aiProductDraft off
+  for (const path of ["/api/admin/product-prompts/preview", "/api/product/abc/regenerate/generate",
+    "/p-admin/admin-products/prompt-settings/base", "/p-admin/admin-products/abc/regenerate"]) {
+    assert.equal(disabledFeatureForPath(path), "aiProductDraft", path);
+  }
+  assert.equal(disabledFeatureForPath("/api/product/abc"), null, "the product API itself stays");
+  assert.ok(!isPermissionKeyEnabled("productPrompts.view"));
+});
+
+test("article blocks follow their feature (shipped config)", async () => {
+  const { isBlockTypeEnabled } = await import("../src/lib/articleBlockTypes.js");
+  assert.equal(isBlockTypeEnabled("brandBar"), isFeatureEnabled("brands"));
+  assert.equal(isBlockTypeEnabled("sportSeriesSlider"), isFeatureEnabled("series") && isFeatureEnabled("departments"));
+  assert.equal(isBlockTypeEnabled("reviewSlider"), isFeatureEnabled("reviews"));
+  assert.equal(isBlockTypeEnabled("matchBanner"), isFeatureEnabled("racketFinder"));
+  assert.ok(isBlockTypeEnabled("paragraph"), "ungated blocks are always on");
+});

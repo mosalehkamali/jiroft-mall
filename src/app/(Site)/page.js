@@ -31,7 +31,14 @@ export const metadata = {
   // same segment as the root layout, so its title template does not apply here
   title: { absolute: `${storeConfig.home?.title || storeConfig.brand.tagline} | ${storeConfig.brand.name}` },
   description: storeConfig.brand.description,
-  alternates: { canonical: "/" },
+  alternates: {
+    canonical: "/",
+    // Homepage alternates only; other pages must reference their own URLs.
+    languages: {
+      [storeConfig.brand.lang]: "/",
+      "x-default": "/",
+    },
+  },
 };
 
 /**

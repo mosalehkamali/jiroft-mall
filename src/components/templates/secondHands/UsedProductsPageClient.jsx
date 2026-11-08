@@ -1,5 +1,7 @@
 'use client';
 
+import ResponsiveImage from "@/components/common/ResponsiveImage";
+
 import { matchesSearch } from "@/lib/search";
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { FiSearch, FiShoppingBag, FiTag } from 'react-icons/fi';
@@ -135,7 +137,8 @@ export default function UsedProductsPageClient({
 
       {/* ─── Hero ─── */}
       <div className="relative h-[120px] md:h-[220px] w-full overflow-hidden">
-        <img
+        <ResponsiveImage
+          fetchPriority="high"
           src={headerImage || storeConfig.brand.imageFallback}
           alt="بازار دست دوم"
           className="w-full h-full object-cover scale-105"

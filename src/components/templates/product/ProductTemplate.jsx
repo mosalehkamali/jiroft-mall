@@ -1,3 +1,4 @@
+import { ProductReviewCount, ProductReviewsContent, ReviewsLoading } from "./DeferredProductReviews";
 import { Suspense } from "react";
 import ProductClientSection from "./ProductClientSection";
 import ProductTabs from "./ProductTabs";
@@ -6,6 +7,7 @@ import ProductExploreNav from "./ProductExploreNav";
 import RelatedProducts from "./RelatedProducts";
 import ProductAssurance from "./ProductAssurance";
 import { isFeatureEnabled } from "@/lib/features";
+import mobileTabStyles from "./MobileProductTabs.module.css";
 
 // فیلدهای سفارشیِ عمومی (store.config.js) کنارِ ویژگی‌های دسته در جدولِ مشخصات
 const customFieldRows = (fields = []) =>
@@ -15,7 +17,7 @@ const customFieldRows = (fields = []) =>
     value: f.type === "boolean" ? (f.value ? "بله" : "خیر") : f.value,
   }));
 
-const ProductTemplate = ({ product, reviews = [], reviewStats, rate }) => {
+const ProductTemplate = ({ product, reviewsPromise, rate }) => {
   const technicalStats = isFeatureEnabled("technicalStats")
     ? {
         productStats: product.technicalStats || [],
@@ -40,9 +42,9 @@ const ProductTemplate = ({ product, reviews = [], reviewStats, rate }) => {
               targetAudience={product.targetAudience}
               customTab={product.category?.customTab}
               customTabItemIds={product.customTabItems || []}
-              productId={product._id}
-              reviews={reviews}
-              reviewStats={reviewStats}
+              reviewCount={<Suspense fallback={null}><ProductReviewCount reviewsPromise={reviewsPromise} /></Suspense>}
+              mobileReviewCount={<Suspense fallback={null}><ProductReviewCount reviewsPromise={reviewsPromise} className={mobileTabStyles.count} /></Suspense>}
+              reviewsPanel={<Suspense fallback={<ReviewsLoading />}><ProductReviewsContent productId={product._id} reviewsPromise={reviewsPromise} /></Suspense>}
             />
           </div>
           <div className="mt-10 flex flex-col gap-4 pb-8 sm:mt-12 sm:gap-6 md:mt-16 md:pb-10">

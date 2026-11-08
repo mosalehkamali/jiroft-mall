@@ -24,7 +24,7 @@ const storeConfig = {
     ogImage: "/brand/og.svg",
     // Fallback for any <img> that fails to load (see the (Site) layout).
     imageFallback: "/brand/placeholder.svg",
-    lang: "fa-IR",
+    lang: "fa", // <html lang> and the homepage hreflang
     ogLocale: "fa_IR",
     dir: "rtl",
     contact: {
@@ -57,9 +57,8 @@ const storeConfig = {
     },
     radius: "8px",
     fontFamily: '"Vazirmatn", system-ui, -apple-system, sans-serif',
-    // Any stylesheet that declares the font above; "" to rely on system fonts.
-    fontStylesheet:
-      "https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css",
+    // Any stylesheet that declares the font above (Google Fonts, a CDN…).
+    fontStylesheet: "", // "" = the local Vazirmatn in globals.css
     // Browser UI colour (mobile address bar).
     browserThemeColor: "#ffffff",
   },
@@ -165,7 +164,7 @@ const storeConfig = {
     // operations
     warehouse: false, // barcode tracking in a separate warehouse DB
     aiAssistant: false, // admin data assistant (needs GEMINI_API_KEY)
-    aiProductDraft: false, // AI-drafted product data (needs GEMINI_API_KEY)
+    aiProductDraft: false, // AI-drafted product data + prompt settings (needs departments, GEMINI_API_KEY)
   },
 
   /* ── Catalog data rules ───────────────────────────────────────────────── */

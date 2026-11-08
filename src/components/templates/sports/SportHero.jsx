@@ -1,4 +1,5 @@
 import storeConfig from "base/store.config";
+import ResponsiveImage from "@/components/common/ResponsiveImage";
 /**
  * هدر (Hero) مشترکِ صفحه‌ی ورزش — تصویر تمام‌عرض + گرادیان + عنوان وسط‌چین.
  * این کامپوننت دقیقاً همان مارک‌آپِ قبلیِ inline در SportPageClient است که
@@ -13,7 +14,8 @@ import storeConfig from "base/store.config";
 export default function SportHero({ image, title, alt = title, headerExtra = null }) {
   return (
     <div className="relative h-[100px] md:h-[220px] w-full overflow-hidden">
-      <img
+      <ResponsiveImage
+        fetchPriority="high"
         src={image || storeConfig.brand.imageFallback}
         alt={alt}
         className="w-full h-full object-cover scale-105"

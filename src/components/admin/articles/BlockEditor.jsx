@@ -6,8 +6,9 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { FiArrowDown, FiArrowLeft, FiArrowRight, FiArrowUp, FiChevronDown, FiChevronUp, FiClipboard, FiColumns, FiCopy, FiDroplet, FiGrid, FiMenu, FiMoreHorizontal, FiMove, FiPlus, FiScissors, FiSearch, FiShare2, FiSliders, FiTrash2, FiX } from "react-icons/fi";
+import { FiArrowDown, FiArrowLeft, FiArrowRight, FiArrowUp, FiCheck, FiChevronDown, FiChevronUp, FiClipboard, FiColumns, FiCopy, FiDroplet, FiGrid, FiMenu, FiMoreHorizontal, FiMove, FiPlus, FiScissors, FiSearch, FiShare2, FiSliders, FiTrash2, FiX } from "react-icons/fi";
 import ImageUpload from "@/components/admin/ImageUpload";
+import { LEGACY_BLOCK_TYPES, hasConvertibleLegacyBlocks, upgradeLegacyBlocks } from "@/lib/legacyArticleBlocks";
 import ArticleEntityPicker from "./ArticleEntityPicker";
 import BlockLayoutModal from "./BlockLayoutModal";
 import { AdminPortal, inputClass } from "./blockUi";
@@ -18,8 +19,9 @@ import { toast } from "react-toastify";
 import { confirmDelete } from "@/lib/swal";
 import { BLOCK_CLIPBOARD_EVENT, copyBlockToClipboard, readBlockClipboard, takeBlockFromClipboard } from "@/lib/articleBlockClipboard";
 import { IMAGE_DISPLAY_HEIGHT, IMAGE_SHADE, MAX_IMAGE_BLOCK_ITEMS, imageBlockItems, imageShadeLayer, imageShadeSettings, mirrorFirstImage, normalizeHexColor, normalizeImageHref } from "@/lib/articleImageBlock";
-import { FAQ_ANSWER_ALIGNS, IMAGE_SLIDER_CHILD_TYPES, IMAGE_SLIDER_DELAY, IMAGE_SLIDER_HEIGHT, MAX_MERGED_CHILDREN, MAX_MERGE_DEPTH, MERGED_GRID_GAP_STEP, normalizeHeaderPosition, MERGED_GRID_LIMITS, MERGED_GRID_REFERENCE, defaultMergedGrid, imageOverlayChildren, isMergedBlock, mergedChildren, mergedGridColumnsAt, sanitizeMergedGrid } from "@/lib/articleBlockTypes";
+import { FAQ_ANSWER_ALIGNS, IMAGE_SLIDER_CHILD_TYPES, IMAGE_SLIDER_DELAY, IMAGE_SLIDER_HEIGHT, MAX_MERGED_CHILDREN, MERGED_GRID_GAP_STEP, normalizeHeaderPosition, MERGED_GRID_LIMITS, MERGED_GRID_REFERENCE, defaultMergedGrid, imageOverlayChildren, isMergedBlock, mergedChildren, mergedGridColumnsAt, sanitizeMergedGrid } from "@/lib/articleBlockTypes";
 import { cloneWithFreshIds, mergeBlocker, mergeBlocks, unmergeBlock } from "@/lib/articleBlockMerge";
+import { ICON_LOGO_SIZE, parseImageSource } from "@/lib/entityImages";
 
 
 // <button> عنصری «برچسب‌پذیر» است، پس <label> بدونِ for اولین دکمه‌ی داخلش را
@@ -262,31 +264,124 @@ const SHADE_DIRECTIONS = [["to-bottom", "بالا به پایین", FiArrowDown]
  * هر کلید را جدا می‌نویسد؛ پاک‌سازیِ سرور پیش‌فرض‌ها را ذخیره نمی‌کند، پس تصویرِ
  * قدیمی تا ادمین به این بخش دست نزند همان داده را دارد.
  */
-function ImageShadeField({ block, onUpdate }) {
+function ImageShadeField({ block, onUpdate, background = false }) {
   const settings = imageShadeSettings(block.data);
   const gradient = settings.mode === "gradient";
   const position = block.data?.contentPosition || "center";
   const group = (label, control) => <div className="min-w-0"><span className="be-label">{label}</span>{control}</div>;
+  // background: همین کنترل‌ها به‌عنوانِ *زمینه‌ی* یک قاب (بلوکِ «آیکن و لوگو») — جای
+  // لایه همیشه پشتِ تصویر است و بلوکِ رویی‌ای در کار نیست، پس آن دو کنترل نیستند.
   return <div className="space-y-2.5">
     <div className="flex flex-wrap items-end gap-x-4 gap-y-2.5">
-      {group("لایه‌ی رنگ", <Segmented label="نوعِ لایه" value={settings.mode} options={SHADE_MODES} onChange={(shadeMode) => onUpdate({ shadeMode })} />)}
-      {group("جای لایه", <Segmented label="جای لایه" value={settings.layer} options={SHADE_LAYERS} onChange={(shadeLayer) => onUpdate({ shadeLayer })} />)}
-      {group("شدت", <PercentField label="شدتِ لایه (درصد)" value={settings.shade} onChange={(shade) => onUpdate({ shade })} />)}
-      <div className="ms-auto"><ShadePreview data={block.data} /></div>
+      {group(background ? "نوعِ زمینه" : "لایه‌ی رنگ", <Segmented label={background ? "نوعِ زمینه" : "نوعِ لایه"} value={settings.mode} options={SHADE_MODES} onChange={(shadeMode) => onUpdate({ shadeMode })} />)}
+      {background ? null : group("جای لایه", <Segmented label="جای لایه" value={settings.layer} options={SHADE_LAYERS} onChange={(shadeLayer) => onUpdate({ shadeLayer })} />)}
+      {group(background ? "شدتِ رنگ" : "شدت", <PercentField label={background ? "شدتِ رنگِ زمینه (درصد) — ۰ یعنی بی‌زمینه" : "شدتِ لایه (درصد)"} value={settings.shade} onChange={(shade) => onUpdate({ shade })} />)}
+      <div className="ms-auto"><ShadePreview data={background ? { ...block.data, shadeLayer: "below" } : block.data} /></div>
     </div>
     <div className="flex flex-wrap items-end gap-x-4 gap-y-2.5">
       {group(gradient ? "رنگِ اول" : "رنگ", <ColorField label={gradient ? "رنگِ اول" : "رنگ"} value={settings.color} onChange={(shadeColor) => onUpdate({ shadeColor })} />)}
       {gradient ? group("رنگِ دوم", <ColorField label="رنگِ دوم" value={settings.color2} onChange={(shadeColor2) => onUpdate({ shadeColor2 })} />) : null}
       {gradient ? group("جهت", <Segmented label="جهتِ گرادیان" value={settings.direction} options={SHADE_DIRECTIONS} onChange={(shadeDirection) => onUpdate({ shadeDirection })} />) : null}
-      <label className="block min-w-0 grow basis-40 max-w-56" title="جای افقی، عرض و فاصله‌ی هر بلوک از «ظاهر و چیدمان» خودِ آن بلوک می‌آید.">
+      {background ? null : <label className="block min-w-0 grow basis-40 max-w-56" title="جای افقی، عرض و فاصله‌ی هر بلوک از «ظاهر و چیدمان» خودِ آن بلوک می‌آید.">
         <span className="be-label">جای عمودیِ بلوک‌های رویی</span>
         <select value={position} onChange={(e) => onUpdate({ contentPosition: e.target.value })} className={inputClass}>
           {Object.entries(IMAGE_POSITION_LABELS).map(([option, text]) => <option key={option} value={option}>{text}</option>)}
         </select>
-      </label>
+      </label>}
     </div>
   </div>;
 }
+
+/**
+ * تصاویرِ واقعیِ منبعِ انتخاب‌شده (ورزش، برند، سری، دسته) — entityImages در API، از
+ * روی فیلدهای خودِ سند. انتخاب آدرس و برچسب را در بلوک می‌نویسد؛ alt نامِ منبع است.
+ * حالت‌ها: بی‌منبع (راهنما)، در حالِ بارگذاری، بی‌تصویر، و فهرست.
+ */
+function EntityImageGrid({ block, onUpdate }) {
+  const source = block.data?.source || "";
+  const [state, setState] = useState({ source: null, items: [], loading: false, failed: false });
+  useEffect(() => {
+    if (!parseImageSource(source)) return undefined;
+    const controller = new AbortController();
+    Promise.resolve().then(() => setState({ source, items: [], loading: true, failed: false }));
+    fetch(`/api/admin/article-cms/entities?type=entityImages&source=${encodeURIComponent(source)}`, { signal: controller.signal })
+      .then((res) => res.json())
+      .then((data) => setState({ source, items: data.items || [], loading: false, failed: false }))
+      .catch((error) => { if (error.name !== "AbortError") setState({ source, items: [], loading: false, failed: true }); });
+    return () => controller.abort();
+  }, [source]);
+
+  const current = block.data?.url || "";
+  const selected = current ? <div className="be-well flex items-center gap-3 p-2">
+    <span className="be-swatch-grid grid size-12 shrink-0 place-items-center overflow-hidden rounded-[var(--admin-radius)] border bg-white" style={{ borderColor: "var(--admin-border)" }}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={current} alt="" className="max-h-full max-w-full object-contain" />
+    </span>
+    <span className="min-w-0 text-xs"><strong className="block truncate">{block.data?.imageLabel || "تصویرِ انتخاب‌شده"}</strong><span className="text-gray-500">{block.data?.alt || ""}</span></span>
+  </div> : null;
+
+  if (!parseImageSource(source)) return <div className="space-y-2">{selected}<p className="text-xs text-gray-400">ابتدا یک ورزش، برند، سری یا دسته را جستجو و انتخاب کنید؛ تصاویرِ ثبت‌شده‌ی آن اینجا می‌آیند.</p></div>;
+  const ready = state.source === source && !state.loading;
+  return <div className="space-y-2">
+    {selected}
+    {!ready ? <p className="text-xs text-gray-400">در حالِ بارگذاریِ تصاویر…</p>
+      : state.failed ? <p className="text-xs text-red-600">بارگذاریِ تصاویر انجام نشد.</p>
+      : !state.items.length ? <p className="text-xs text-gray-400">برای این مورد هنوز هیچ تصویری (آیکن، لوگو، تصویر…) ثبت نشده است.</p>
+      : <div role="listbox" aria-label="تصاویرِ این منبع" className="grid grid-cols-[repeat(auto-fill,minmax(6.5rem,1fr))] gap-2">
+        {state.items.map((item) => {
+          const active = item.url === current;
+          return <button
+            key={item._id}
+            type="button"
+            role="option"
+            aria-selected={active}
+            onClick={() => onUpdate({ url: item.url, imageLabel: item.label, alt: item.entity || "" })}
+            className={`group relative flex flex-col overflow-hidden rounded-[var(--admin-radius)] border bg-white text-right transition-shadow hover:shadow-md ${active ? "ring-2 ring-[var(--color-primary)]" : ""}`}
+            style={{ borderColor: active ? "var(--color-primary)" : "var(--admin-border)" }}
+          >
+            <span className="be-swatch-grid grid aspect-square w-full place-items-center p-2">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={item.url} alt="" loading="lazy" className="max-h-full max-w-full object-contain" />
+            </span>
+            <span className="truncate border-t px-2 py-1 text-[11px] font-bold text-gray-600" style={{ borderColor: "var(--admin-border)" }}>{item.label}</span>
+            {active ? <FiCheck aria-hidden="true" className="absolute left-1.5 top-1.5 rounded-full bg-[var(--color-primary)] p-0.5 text-lg text-white" /> : null}
+          </button>;
+        })}
+      </div>}
+  </div>;
+}
+
+const ICON_SIZE_PRESETS = [["کوچک", 64], ["متوسط", 120], ["بزرگ", 200]];
+
+/**
+ * عرض و ارتفاعِ تصویرِ «آیکن و لوگو». پیش‌فرض «حفظِ نسبت» است: فقط عرض ذخیره می‌شود و
+ * ارتفاع از خودِ تصویر می‌آید. با برداشتنِ آن، ارتفاع از نسبتِ واقعیِ تصویر شروع
+ * می‌شود؛ تصویر در قابِ عرض×ارتفاع contain می‌ماند، پس هرگز کشیده نمی‌شود.
+ */
+function IconSizeField({ block, onUpdate }) {
+  const width = block.data?.width ?? ICON_SIZE_DEFAULT;
+  const height = block.data?.height ?? null;
+  const keepRatio = height === null;
+  const clamp = (value) => Math.min(ICON_LOGO_SIZE.max, Math.max(ICON_LOGO_SIZE.min, Math.round(Number(value) || ICON_LOGO_SIZE.min)));
+  // ارتفاع از تنظیمات شروع می‌شود (همان مربعی که تا الان دیده می‌شد)، نه از ابعادِ
+  // فایل — وگرنه دو بلوک با «همان تنظیم» به‌خاطرِ تصویرشان اندازه‌ی متفاوت می‌گرفتند.
+  const unlock = () => onUpdate({ height: width });
+  const number = (label, value, onChange, disabled = false) => <label className="block min-w-0 basis-28">
+    <span className="be-label">{label}</span>
+    <span className="flex items-center gap-1.5"><input type="number" min={ICON_LOGO_SIZE.min} max={ICON_LOGO_SIZE.max} value={value} disabled={disabled} onChange={(e) => e.target.value !== "" && onChange(clamp(e.target.value))} onKeyDown={keepEnter} className="be-input w-24 disabled:opacity-50" /><span className="be-unit">px</span></span>
+  </label>;
+  return <div className="flex flex-wrap items-end gap-x-4 gap-y-2.5">
+    {number("عرض", width, (next) => onUpdate({ width: next }))}
+    <label className="be-check" title="کادرِ مربع (ارتفاع = عرض). تصویر در هر حالت بی‌کشیدگی داخلِ کادر می‌نشیند؛ ابعادِ خودِ فایل اندازه‌ی بلوک را عوض نمی‌کند">
+      <input type="checkbox" checked={keepRatio} onChange={(e) => (e.target.checked ? onUpdate({ height: null }) : unlock())} className="be-select" />حفظِ نسبت
+    </label>
+    {number("ارتفاع", keepRatio ? "" : height, (next) => onUpdate({ height: next }), keepRatio)}
+    <div role="group" aria-label="اندازه‌های آماده" className="flex gap-1">
+      {ICON_SIZE_PRESETS.map(([label, size]) => <button key={size} type="button" onClick={() => onUpdate({ width: size, ...(keepRatio ? {} : { height: size }) })} aria-pressed={width === size} className={`be-act ${width === size ? "text-[var(--color-primary)]" : ""}`}>{label}</button>)}
+    </div>
+  </div>;
+}
+const ICON_SIZE_DEFAULT = ICON_LOGO_SIZE.default;
 
 /** رنگ سه‌حالته: تنظیم‌نشده (پیش‌فرضِ قالب) یا یک هگزِ مشخص. */
 function ColorControl({ label, hint, value, onChange }) {
@@ -346,6 +441,9 @@ export function BlockFields({ block, onUpdate, onStyle }) {
     if (align) next.align = align; else delete next.align;
     onStyle(Object.keys(next).length ? next : undefined);
   };
+  // نوعِ حذف‌شده‌ای که جانشین ندارد (بلوک‌های پویا، اسلایدرِ کالکشن/دسته/ورزش): دیده
+  // می‌شود تا ادمین بداند، و با ذخیره‌ی بعدی برداشته می‌شود — legacyArticleBlocks.js.
+  if (LEGACY_BLOCK_TYPES.has(block.type)) return <p className="text-xs text-amber-700 text-center py-1">این نوع بلوک حذف شده است و با ذخیره‌ی بعدی از این سند برداشته می‌شود.</p>;
   if (!definition?.fields.length) return <p className="text-xs text-gray-400 text-center py-1">این بلوک تنظیمات دیگری ندارد.</p>;
   // برچسبِ تنها فیلدِ یک بلوک («متن پاراگراف»، «پرسش‌ها»، «کد HTML») همان عنوانِ
   // سربرگ را تکرار می‌کند، پس فقط برای صفحه‌خوان می‌ماند. برچسبِ بلوکِ ادغام‌شده
@@ -360,6 +458,12 @@ export function BlockFields({ block, onUpdate, onStyle }) {
   };
   const changeOf = (field) => (next) => {
     if (field.kind === "rich") return onUpdate({ [field.key]: next.text, [field.htmlKey || "html"]: next.html });
+    // clears: فیلدهایی که به این یکی وابسته‌اند (سری‌های یک ورزش) با عوض‌شدنش خالی
+    // می‌شوند — فقط وقتی مقدار واقعاً عوض شده، تا انتخابِ دوباره‌ی همان چیزی را نریزد.
+    if (field.clears && String(next ?? "") !== String(block.data?.[field.key] ?? "")) {
+      // فهرست → [] و انتخابِ تکی → null (null است که validator برای «هیچ» می‌پذیرد).
+      return onUpdate({ [field.key]: next, ...Object.fromEntries(field.clears.map((key) => [key, Array.isArray(block.data?.[key]) ? [] : null])) });
+    }
     return onUpdate(PATCH_KINDS.includes(field.kind) ? next : { [field.key]: next });
   };
   const rows = (fields) => fieldRows(fields).map(({ fields: row }) => <div key={row[0].key}>
@@ -417,6 +521,9 @@ function BlockField({ field, value, onChange, align, onAlign, block, onUpdate })
   if (field.kind === "imageList") return <ImageListEditor data={value} onChange={onChange} />;
   if (field.kind === "imageHeight") return <ImageHeightField value={value} onChange={onChange} />;
   if (field.kind === "imageShade") return <ImageShadeField block={block} onUpdate={onUpdate} />;
+  if (field.kind === "iconBackground") return <ImageShadeField block={block} onUpdate={onUpdate} background />;
+  if (field.kind === "entityImages") return <EntityImageGrid block={block} onUpdate={onUpdate} />;
+  if (field.kind === "iconSize") return <IconSizeField block={block} onUpdate={onUpdate} />;
   // فرزندانِ بلوکِ ادغام‌شده با همین ویرایشگر ویرایش می‌شوند — ادغامِ دوباره هم داخلش کار می‌کند.
   // برچسب و رنگِ دکمه‌ی افزودن از تعریفِ فیلد می‌آید («بلوک روی تصویر»، «افزودن
   // بلوک به ترکیب»)؛ کارِ دکمه همان است. ویرایشگرِ کلِ مقاله این‌ها را نمی‌گیرد.
@@ -425,9 +532,14 @@ function BlockField({ field, value, onChange, align, onAlign, block, onUpdate })
   // تصویرهای اسلایدر همه‌ی توانایی‌های همیشگیِ بلوکِ تصویر را دارند.
   if (field.kind === "imageSliderBlocks") return <BlockEditor value={Array.isArray(value) ? value : []} onChange={onChange} allow={IMAGE_SLIDER_CHILD_TYPES} itemLabel="اسلاید" addLabel="افزودن اسلاید" />;
   if (field.kind === "imageSliderSettings") return <ImageSliderSettings block={block} onUpdate={onUpdate} />;
-  if (field.kind === "gallery") return <ImageUpload value={value || []} onChange={onChange} folder="articles" multiple compact />;
   // برچسبِ فیلد دیگر <label>ِ دورِ آن نیست، پس نامِ کادرِ جستجو را صریح می‌گیرد.
-  if (field.kind === "entity" || field.kind === "entities") return <ArticleEntityPicker type={field.entityType} value={value} onChange={onChange} multiple={field.kind === "entities"} label={field.label} />;
+  // scope: جستجو به مقدارِ فیلدِ دیگری از همین بلوک محدود است (سری‌ها ← ورزش)؛ تا آن
+  // خالی است، جستجو غیرفعال است و scopeHint می‌گوید چرا.
+  if (field.kind === "entity" || field.kind === "entities") {
+    const scope = field.scope ? block.data?.[field.scope] : undefined;
+    return <ArticleEntityPicker type={field.entityType} value={value} onChange={onChange} multiple={field.kind === "entities"} label={field.label}
+      params={field.scope ? { [field.scope]: scope || "" } : undefined} browse={field.browse} allByDefault={field.allByDefault} disabledHint={field.scope && !scope ? field.scopeHint : undefined} />;
+  }
   if (field.kind === "faq") return <FaqEditor value={value} onChange={onChange} />;
   if (field.kind === "table") return <TableEditor value={value} onChange={onChange} />;
   return <input type={field.kind === "number" ? "number" : field.kind === "url" ? "url" : "text"} value={value ?? ""} onChange={(e) => onChange(field.kind === "number" ? Number(e.target.value) : e.target.value)} className={inputClass} />;
@@ -557,7 +669,7 @@ function blockSummary(block) {
   const text = plainText(data.text || data.title || data.label || data.caption || data.question || data.author || data.html);
   if (text) return text.length > 80 ? `${text.slice(0, 80)}…` : text;
   const list = Object.values(data).find((item) => Array.isArray(item) && item.length);
-  if (list) return `${list.length.toLocaleString("fa-IR")} ${block.type === "image" || block.type === "gallery" ? "تصویر" : "مورد"}`;
+  if (list) return `${list.length.toLocaleString("fa-IR")} ${block.type === "image" ? "تصویر" : "مورد"}`;
   if (data.url) return data.url.split("/").pop();
   return "";
 }
@@ -731,6 +843,13 @@ export default function BlockEditor({ value = [], onChange, libraryOpen: openPro
   // آخرین آرایه را دارد تا ویرایشِ هم‌زمانِ فیلدهای دیگر بازنویسی نشود.
   const latest = useRef(value);
   useEffect(() => { latest.current = value; });
+  // محتوای قدیمی همان لحظه به جانشینش تبدیل می‌شود (گالری → تصویر، محصولاتِ دست‌دوم
+  // → اسلایدرِ محصولات، اسلایدرِ برند → نوارِ برندها)، تا ادمین بلوکِ واقعی را ویرایش
+  // کند. بی‌جانشین‌ها (keepRemoved) می‌مانند و پیامِ حذف را نشان می‌دهند؛ چون پس از
+  // تبدیل دیگر «قابلِ تبدیل» ای نمی‌ماند، این effect دوباره اجرا نمی‌شود.
+  useEffect(() => {
+    if (hasConvertibleLegacyBlocks(value)) onChange(upgradeLegacyBlocks(value, { keepRemoved: true }));
+  }, [value, onChange]);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
   // مقدارِ خالی کلید را کاملاً حذف می‌کند (نه اینکه شیءِ خالی بگذارد) تا بلوک
   // واقعاً به حالتِ «بدونِ استایل/چیدمان» برگردد و مثل قبل رندر شود.
@@ -809,7 +928,6 @@ export default function BlockEditor({ value = [], onChange, libraryOpen: openPro
     few: "دست‌کم دو بلوکِ کنارِ هم را انتخاب کنید.",
     gap: "فقط بلوک‌های پشتِ‌سرِ‌هم (بدونِ فاصله) ادغام می‌شوند.",
     many: `حداکثر ${MAX_MERGED_CHILDREN.toLocaleString("fa-IR")} بلوک در یک ادغام.`,
-    deep: `ادغامِ تودرتو حداکثر ${MAX_MERGE_DEPTH.toLocaleString("fa-IR")} سطح.`,
   };
   // فاصله‌ی بینِ کارت‌ها ۱۰px: کارتِ سفید روی زمینه‌ی خاکستری و حلقه‌ی کارتِ فعال
   // مرز را معلوم می‌کنند؛ فاصله‌ی بیشتر فقط اسکرول اضافه می‌کرد.

@@ -215,7 +215,17 @@ export const FEATURES = {
   },
   aiProductDraft: {
     label: "پیش‌نویس محصول با AI",
-    paths: ["/api/ai/product-draft"],
+    // The prompt is built per department (sport_id/sport_lock, athletes of that
+    // department): a category without one cannot produce a prompt.
+    requires: ["departments"],
+    paths: [
+      "/api/ai/product-draft",
+      "/api/admin/product-prompts",
+      "/api/product/*/regenerate",
+      "/p-admin/admin-products/prompt-settings",
+      "/p-admin/admin-products/*/regenerate",
+    ],
+    modules: ["productPrompts"],
     permissions: ["ai.productDraft"],
   },
 };

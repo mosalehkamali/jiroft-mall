@@ -7,8 +7,9 @@ import Link from "next/link";
 import { FaEye, FaRegHeart, FaHeart, FaArrowLeft } from "react-icons/fa";
 import { valueImageSwatches } from "@/lib/variantImages";
 import useWishlist from "@/hooks/useWishlist";
+import ProductCardTitle from "./ProductCardTitle";
 
-export default function ProductCard({ product, rate, onQuickView, overlay = null, campaignBadge = null }) {
+export default function ProductCard({ product, rate, onQuickView, onQuickViewIntent, overlay = null, campaignBadge = null }) {
   const { mainImage, name, slug, basePrice, label } = product;
   const { isWishlisted, toggle: toggleWishlist, isLoading: wishlistLoading } = useWishlist(product);
 
@@ -46,13 +47,13 @@ export default function ProductCard({ product, rate, onQuickView, overlay = null
 
   // بج «تخفیف» (label === "discount") حذف شد — جای آن بج «ویژه» برای محصولاتی
   // که تخفیف تعدادی فعال دارند نمایش داده می‌شود
-  const labelMap = { new: { text: "جدید", color: "bg-[#01a281]" }, limited: { text: "محدود", color: "bg-purple-500" }, hot: { text: "پرفروش", color: "bg-amber-500" } };
+  const labelMap = { new: { text: "جدید", color: "bg-[#008368]" }, limited: { text: "محدود", color: "bg-purple-500" }, hot: { text: "پرفروش", color: "bg-amber-500" } };
 
   const badgeShape = { clipPath: "polygon(0 0, 100% 0, 100% 100%, 0 100%, 20% 50%)" };
 
   return (
     <div className="group relative bg-white border border-gray-200 rounded-[6px] transition-all duration-500 hover:shadow-[0_20px_40px_rgba(0,0,0,0.1)] hover:-translate-y-1 overflow-hidden h-full flex flex-col">
-      <Link href={`/products/${slug}`} className="absolute inset-0 z-0" />
+      <Link href={`/products/${slug}`} aria-label={name} className="absolute inset-0 z-0" />
 
       {/* اسلات اختیاری روکش (ربان/استیکر/بج رویداد) — صفحات معمولی چیزی پاس نمی‌دهند */}
       {overlay}
@@ -110,7 +111,7 @@ export default function ProductCard({ product, rate, onQuickView, overlay = null
       </Link>
 
       {/* سوآچ‌های واریانت */}
-      <div className="relative z-20 flex items-center justify-center gap-1.5 h-[56px] bg-white">
+      <div className="relative z-20 flex shrink-0 items-center justify-center gap-1.5 h-[56px] bg-white">
         {swatches.length > 0 ? swatches.map((swatch) => (
           <button key={swatch.key} type="button"
             title={swatch.value || undefined}
@@ -124,11 +125,7 @@ export default function ProductCard({ product, rate, onQuickView, overlay = null
 
       {/* محتوا */}
       <div className="p-4 pt-0 flex flex-col items-center text-center relative z-10 pointer-events-none flex-1">
-        {/* زیر ۴۰۰px: دو خط فارسی (۴۰) + فاصله (۴) + انگلیسی (۱۶) = همان ۶۰px */}
-        <div className="mb-4 h-[60px] flex flex-col justify-start max-[400px]:w-full max-[400px]:min-w-0 max-[400px]:shrink-0" title={name}>
-          <h3 className="text-[14px] font-bold text-gray-800 leading-6 mb-1 max-[400px]:leading-5 max-[400px]:line-clamp-2 max-[400px]:shrink-0 max-[400px]:[overflow-wrap:anywhere]">{farsi}</h3>
-          <p dir="ltr" className={`text-[12px] text-gray-800 font-medium leading-4 line-clamp-2 max-[400px]:shrink-0 max-[400px]:[overflow-wrap:anywhere] ${farsi ? "max-[400px]:line-clamp-1" : ""}`}>{english}</p>
-        </div>
+        <ProductCardTitle name={name} slug={slug} farsi={farsi} english={english} />
 
         {/* قیمت */}
         <div className="mt-auto flex flex-col items-center">
@@ -149,10 +146,8 @@ export default function ProductCard({ product, rate, onQuickView, overlay = null
         </div>
 
         <div className="flex items-center gap-7 pointer-events-auto border-t border-gray-50 pt-4 w-full justify-center">
-          <ActionButton icon={<FaEye />} label="نمایش سریع" onClick={(e) => { e.preventDefault(); onQuickView(); }} />
-          <Link href={`/products/${slug}`} onClick={(e) => e.stopPropagation()}>
-            <ActionButton icon={<FaArrowLeft />} label="صفحه محصول" />
-          </Link>
+          <ActionButton icon={<FaEye />} label="نمایش سریع" onIntent={onQuickViewIntent} onClick={(e) => { e.preventDefault(); onQuickView(); }} />
+          <ActionButton href={`/products/${slug}`} icon={<FaArrowLeft />} label="صفحه محصول" onClick={(e) => e.stopPropagation()} />
           <ActionButton
             icon={isWishlisted ? <FaHeart className="text-red-500" /> : <FaRegHeart />}
             label={isWishlisted ? "حذف از لیست" : "افزودن به علاقه مندی"}
@@ -165,14 +160,15 @@ export default function ProductCard({ product, rate, onQuickView, overlay = null
   );
 }
 
-function ActionButton({ icon, label, onClick, disabled = false }) {
+function ActionButton({ icon, label, onClick, onIntent, disabled = false, href }) {
+  const Control = href ? Link : "button";
   return (
     <div className="relative group/btn flex flex-col items-center">
       <span className="absolute -top-9 bg-gray-800 text-white text-[9px] px-2 py-1 rounded-[3px] whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-all duration-300 pointer-events-none transform translate-y-1 group-hover/btn:translate-y-0">
         {label}
         <span className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-800" />
       </span>
-      <button type="button" onClick={onClick} disabled={disabled} aria-label={label} className="text-gray-800 hover:text-[var(--color-primary)] transition-colors duration-300 text-[18px] disabled:cursor-wait disabled:opacity-50">{icon}</button>
+      <Control {...(href ? { href } : { type: "button", disabled })} onPointerEnter={onIntent} onFocus={onIntent} onPointerDown={onIntent} onClick={onClick} aria-label={label} className="inline-flex h-6 w-6 -m-[3px] items-center justify-center rounded-sm text-gray-800 hover:text-[var(--color-primary)] transition-colors duration-300 text-[18px] disabled:cursor-wait disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]">{icon}</Control>
     </div>
   );
 }

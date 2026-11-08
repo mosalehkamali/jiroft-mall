@@ -1,5 +1,24 @@
 @import "tailwindcss";
 
+/* Local Vazirmatn (the same files the PDF invoices embed). Used when
+   store.config.js → theme.fontStylesheet is ""; a store that loads another
+   font stylesheet simply never requests these. */
+@font-face {
+  font-family: "Vazirmatn";
+  src: url("/fonts/invoice/Vazirmatn-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Vazirmatn";
+  src: url("/fonts/invoice/Vazirmatn-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* Theme tokens. These are fallbacks: the live values come from store.config.js
    (theme.colors), emitted by src/components/common/StoreHead.jsx in every root
    layout. .site-colors: wherever site content renders inside the admin theme
@@ -465,6 +484,10 @@
    (h-auto، w-full)، و «.a-slide img» از آن‌ها خاص‌تر است — پس بدونِ زور، و
    بدونِ دست‌زدن به خودِ بلوکِ تصویر که بیرونِ اسلایدر باید دست‌نخورده بماند.
 
+   «:not(.a-image-overlay *)» مرزِ این قاعده‌هاست: بلوک‌های *رویِ* تصویر (کارتِ
+   محصول، لوگو، …) لایه‌های خودِ اسلاید نیستند. بی‌این مرز، لوگوی ۳۰ پیکسلیِ برندِ
+   کارت «height/width: 100%» و cover می‌گرفت و کادرِ مربعیِ تصویرِ محصول کش می‌آمد.
+
    نوارِ اسکرول پنهان است چون ناوبری با فلش و کشیدن انجام می‌شود؛ خودِ اسکرول
    (و در نتیجه لمس در موبایل) دست‌نخورده می‌ماند. */
 .a-slider {
@@ -478,20 +501,20 @@
   overflow: hidden;
 }
 .a-slide > *,
-.a-slide figure,
-.a-slide figure > div,
-.a-slide figure > div > div,
-.a-slide .relative {
+.a-slide figure:not(.a-image-overlay *),
+.a-slide figure > div:not(.a-image-overlay *),
+.a-slide figure > div > div:not(.a-image-overlay *),
+.a-slide .relative:not(.a-image-overlay *) {
   height: 100%;
   margin: 0;
 }
-.a-slide img {
+.a-slide img:not(.a-image-overlay *) {
   height: 100%;
   width: 100%;
   object-fit: cover;
 }
 /* زیرنویسِ تصویر داخلِ قاب می‌ماند و ارتفاع را هل نمی‌دهد. */
-.a-slide figcaption {
+.a-slide figcaption:not(.a-image-overlay *) {
   position: absolute;
   inset-inline: 0;
   bottom: 0;
@@ -499,6 +522,35 @@
   background: rgba(0, 0, 0, 0.45);
   padding: 0.5rem;
   color: #fff;
+}
+
+/* ─── اسلایدرِ نظرات ───
+   کارتِ مرکز جلوتر است: دو کارتِ کناری کمی کوچک‌تر و کم‌رنگ‌ترند. مقیاس فقط
+   روی کارت (فرزندِ اسلاید) است، نه خودِ اسلاید که Swiper جابه‌جایش می‌کند، و هر
+   دو کناری یک مقیاس دارند — پس فاصله‌ی دو طرفِ کارتِ مرکز همیشه برابر است.
+   کم‌رنگی یک پرده‌ی سفید روی خودِ کارت است، نه opacity روی اسلاید، تا زمینه‌ی
+   اطرافِ کارت دست نخورد. */
+.review-slider .swiper {
+  --swiper-wrapper-transition-timing-function: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.review-slider .swiper-slide > div {
+  transform: scale(0.92);
+  transition: transform 650ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.review-slider .swiper-slide > div::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 0.75rem;
+  background: rgb(255 255 255 / 0.5);
+  pointer-events: none;
+  transition: opacity 650ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.review-slider .swiper-slide-active > div {
+  transform: none;
+}
+.review-slider .swiper-slide-active > div::after {
+  opacity: 0;
 }
 
 /* ─── ارتفاعِ خطِ متنِ بلوک‌ها ───
@@ -598,3 +650,4 @@
     cursor: auto;
   }
 }
+

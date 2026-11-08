@@ -1,4 +1,5 @@
-import ProductSlider from "@/components/features/bestSellers/BestSellers";
+import ProductSlider from "@/components/features/bestSellers/ProductSliderContent";
+import { productSliderStyles } from "./productSliderStyles";
 import { getRelatedProducts } from "base/services/relatedProducts.service";
 
 export default async function RelatedProducts({ productId, rate }) {
@@ -14,7 +15,11 @@ export default async function RelatedProducts({ productId, rate }) {
   if (!selection.products.length) return null;
 
   return (
+    <>
+    <style>{productSliderStyles}</style>
     <ProductSlider
+      deferActivation
+      isolated
       removeTopPadding
       title="محصولات مرتبط"
       highlight="مرتبط"
@@ -22,5 +27,6 @@ export default async function RelatedProducts({ productId, rate }) {
       products={selection.products}
       rate={rate}
     />
+    </>
   );
 }

@@ -11,6 +11,7 @@ import connectToDB from "base/configs/db";
 import { getPublicArticleSitemap } from "base/services/publicArticle.service";
 import { isReservedArticleRoot } from "base/utils/articleRoutes";
 import { buildArticlePath } from "base/utils/articleSlug";
+import { productLastModified } from "@/lib/seo/productLastModified";
 import {
   getCategorySportIds,
   isSharedCategory,
@@ -268,7 +269,7 @@ export default async function sitemap() {
   });
 
   const productUrls = products.map((product) =>
-    entry(`/products/${product.slug}`, product.updatedAt, "weekly", 0.9),
+    entry(`/products/${product.slug}`, productLastModified(product.updatedAt), "weekly", 0.9),
   );
 
   const collectionUrls = (on("collections") ? events : []).map((event) =>

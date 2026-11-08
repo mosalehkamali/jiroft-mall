@@ -1,9 +1,12 @@
+import { Suspense } from "react";
+import { getProductForPage, getProductPageData } from "@/lib/productPageData";
+import { ProductSchemaWithReviews } from "@/components/templates/product/DeferredProductReviews";
+import ResponsiveImage from "@/components/common/ResponsiveImage";
+import TaxonomyBreadcrumbs from "@/components/seo/TaxonomyBreadcrumbs";
+import { getPublicProductPrice } from "base/services/publicProductPrice.service";
 import ProductTemplate from "@/components/templates/product/ProductTemplate";
-import { getProductBySlug } from "base/services/product.service";
-import { getApprovedReviews } from "base/services/comment.service";
-import { getCachedRate, eurToToman } from "@/lib/Exchangerate";
+import { eurToToman } from "@/lib/currency";
 import { generateProductMetadata } from "@/lib/seo/productSeo";
-import { generateProductSchema } from "@/lib/seo/productSchema";
 import { generateBreadcrumbSchema } from "@/lib/seo/breadcrumbSchema";
 import { resolveSerieSportContent } from "@/lib/serieSportContent";
 import { notFound } from "next/navigation";
@@ -24,7 +27,7 @@ export async function generateMetadata({ params }) {
   const { productSlug } = await params;
 
   // از همان سرویس کش‌شده استفاده می‌شود تا کوئری دوباره به دیتابیس نخورد
-  const product = await getProductBySlug(productSlug);
+  const product = await getProductForPage(productSlug);
 
   if (!product || product.error) {
     return { title: "محصول پیدا نشد" };
@@ -40,18 +43,8 @@ export default async function ProductPage({ params }) {
     notFound();
   }
 
-  const fetchProduct = await getProductBySlug(productSlug);
-  if (!fetchProduct || fetchProduct.error) {
-    notFound();
-  }
-
-  // نظرهای تأییدشده (کش‌شده با تگ comments) — موازی با نرخ تبدیل
-  const [rate, { reviews, stats: reviewStats }] = await Promise.all([
-    getCachedRate(),
-    isFeatureEnabled("reviews")
-      ? getApprovedReviews(fetchProduct._id)
-      : { reviews: [], stats: { count: 0, average: 0 } },
-  ]);
+  const { product: fetchProduct, rate, pricing, reviewsPromise, personalized } = await getProductPageData(productSlug);
+  if (!fetchProduct || fetchProduct.error) notFound();
 
   // تبدیل قیمت پایه محصول
   const priceInToman = eurToToman(fetchProduct.basePrice, rate);
@@ -67,6 +60,8 @@ export default async function ProductPage({ params }) {
   const product = {
     ...fetchProduct,
     basePrice: priceInToman,
+    finalPriceToman: pricing.finalPriceToman,
+    displayPrice: JSON.parse(JSON.stringify(pricing)),
     variants: convertedVariants,
   };
 
@@ -86,17 +81,15 @@ export default async function ProductPage({ params }) {
     product.category?.name ||
     product.name;
 
-  const productSchema = generateProductSchema(product, reviewStats);
+  // Structured data stays public even when the buy box has a role-specific price.
+  const publicPricePromise = personalized ? getPublicProductPrice(fetchProduct, rate) : Promise.resolve(pricing);
   const breadcrumbSchema = generateBreadcrumbSchema(product);
 
   return (
     <>
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{
-          __html: JSON.stringify(productSchema),
-        }}
-      />
+      <Suspense fallback={null}>
+        <ProductSchemaWithReviews product={product} reviewsPromise={reviewsPromise} publicPricePromise={publicPricePromise} />
+      </Suspense>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
@@ -106,8 +99,10 @@ export default async function ProductPage({ params }) {
 
       {productHeaderImage ? (
         <div className="hidden md:block relative h-[200px] w-full overflow-hidden">
-          <img
+          <ResponsiveImage
             src={productHeaderImage}
+            sizes="(max-width: 767px) 1px, 100vw"
+            loading="lazy"
             alt={productHeaderAlt}
             className="w-full h-full object-cover scale-105"
           />
@@ -115,10 +110,11 @@ export default async function ProductPage({ params }) {
         </div>
       ) : null}
 
+      <TaxonomyBreadcrumbs filters={{ sport: product.sport, category: product.category, brand: product.brand, serie: product.serie }} currentItem={false} includeStructuredData={false} />
+
       <ProductTemplate
         product={product}
-        reviews={reviews}
-        reviewStats={reviewStats}
+        reviewsPromise={reviewsPromise}
         rate={rate}
       />
     </>

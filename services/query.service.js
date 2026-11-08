@@ -6,6 +6,7 @@
  */
 
 import "base/models/registerModels";
+import { unstable_cache } from "next/cache";
 import connectToDB from "base/configs/db";
 import Brand from "base/models/Brand";
 import Sport from "base/models/Sport";
@@ -20,6 +21,7 @@ import { buildCategorySportMatch } from "base/utils/categorySportVisibility";
 import { applyProductSportVisibility } from "base/services/categorySportVisibility.service";
 import { applyCategorySubtree } from "base/services/categorySubtree.service";
 import { isFeatureEnabled } from "@/lib/features";
+import { WITHOUT_AI_PROMPTS } from "@/lib/publicProductFields";
 
 // سنتینل واحد برای ۴۰۴ — صفحه‌ی کنترلر با بررسی res.notFound === true تابع
 // notFound() نکست را صدا می‌زند.
@@ -99,13 +101,13 @@ async function _validatePath(slugs) {
   const findSport = (slug) =>
     isFeatureEnabled("departments") ? Sport.findOne({ slug }).lean() : null;
   const findBrand = (slug) =>
-    isFeatureEnabled("brands") ? Brand.findOne({ slug }).lean() : null;
+    isFeatureEnabled("brands") ? Brand.findOne({ slug }).select(WITHOUT_AI_PROMPTS).lean() : null;
   // دسته‌ی ریشه (بدونِ دپارتمان): /[category] و /[category]/[brand]. با دپارتمان‌های
   // روشن فقط دسته‌ای که دپارتمان ندارد اینجا می‌نشیند؛ با دپارتمان‌های خاموش هر دسته.
   const findRootCategory = (slug) =>
     Category.findOne(
       isFeatureEnabled("departments") ? { slug, sport: null } : { slug },
-    ).lean();
+    ).select(WITHOUT_AI_PROMPTS).lean();
 
   // RULE 2: State-Machine Resolution
   if (slugs.length === 1) {
@@ -142,7 +144,7 @@ async function _validatePath(slugs) {
       const category = await Category.findOne({
         slug: s2,
         ...buildCategorySportMatch(sport._id),
-      }).lean();
+      }).select(WITHOUT_AI_PROMPTS).lean();
       if (category) {
         resolved = { sport, category };
       } else {
@@ -194,7 +196,7 @@ async function _validatePath(slugs) {
       const category = await Category.findOne({
         slug: s2,
         ...buildCategorySportMatch(sport._id),
-      }).lean();
+      }).select(WITHOUT_AI_PROMPTS).lean();
       if (category) {
         // Branch A (الگوی ۵): s3 باید BRAND باشد با محصول در ترکیبِ ورزش+دسته
         const brand = await findBrand(s3);
@@ -344,7 +346,7 @@ async function _queryBySlugs(slugs, resolvedContext = null, extraFilter = {}) {
   // مخاطبِ هدف (navbar audience tabs) — مستقلِ کاملِ فیلترهای موجودیتی بالا
   if (extraFilter.targetAudience) finalFilter.targetAudience = extraFilter.targetAudience;
 
-  const listing = await getProductListingPage({ filter: finalFilter });
+  const listing = await getProductListingPage({ filter: finalFilter, offset: extraFilter.offset || 0 });
 
   return JSON.parse(
     JSON.stringify({
@@ -367,8 +369,25 @@ export async function queryBySlugs(slugs, resolvedContext = null, extraFilter = 
  * برای صفحه‌ی برند (نمای گروه‌بندی‌شده + infinite scroll) استفاده می‌شود تا
  * بارِ اولیه سبک بماند و همه‌ی محصولات یک‌جا لود نشوند.
  */
+// A miss is thrown, not returned, so it is never cached: an arbitrary root URL must not
+// leave an entry behind.
+const PAGE_CONTEXT_MISS = "PAGE_CONTEXT_MISS";
+const readKnownPageContext = unstable_cache(
+  async (slugs, options) => {
+    const ctx = await _resolveContext(slugs, options);
+    if (ctx.notFound) throw Object.assign(new Error(PAGE_CONTEXT_MISS), { code: PAGE_CONTEXT_MISS });
+    return JSON.parse(JSON.stringify({ notFound: false, filters: ctx.filters }));
+  },
+  ["page-context-v1"],
+  // Every entity it resolves, plus products: a category with no visible product is a 404.
+  { revalidate: 10800, tags: ["sports", "brands", "categories", "series", "limited-editions", "products"] },
+);
+
 export async function resolvePageContext(slugs, options = {}) {
-  const ctx = await _resolveContext(slugs, options);
-  if (ctx.notFound) return { notFound: true };
-  return JSON.parse(JSON.stringify({ notFound: false, filters: ctx.filters }));
+  try {
+    return await readKnownPageContext(slugs, options);
+  } catch (err) {
+    if (err?.code === PAGE_CONTEXT_MISS) return { notFound: true };
+    throw err;
+  }
 }

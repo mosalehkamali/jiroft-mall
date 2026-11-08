@@ -24,7 +24,7 @@ by the server, the browser, workers and tests alike. After editing it, restart
 brand: {
   name, nameEn, tagline, description, keywords,
   logo, favicon, ogImage, imageFallback,   // files under public/brand/
-  lang, ogLocale, dir,                     // "fa-IR", "fa_IR", "rtl"
+  lang, ogLocale, dir,                     // "fa", "fa_IR", "rtl" (lang = <html lang> + homepage hreflang)
   contact: { phone, email, address, whatsapp },  // empty = not shown
   social: { instagram, telegram, x },            // empty = not shown
 },
@@ -42,11 +42,15 @@ theme: {
   store content. Emails can't use CSS variables, so `src/lib/emailService.js`
   reads the same values directly.
 - **Fonts**: `fontFamily` is the CSS font stack; `fontStylesheet` any stylesheet
-  that declares it (Google Fonts, a CDN, or `""` for system fonts). Extra
+  that declares it (Google Fonts, a CDN). `""` (the default) uses the Vazirmatn
+  shipped in `public/fonts/invoice/` (declared in `globals.css`, preloaded on
+  product pages — the PDF invoices use the same files); with another family and
+  `""` the browser falls back to system fonts. Extra
   display fonts for banners/collections: add an `@font-face` in
   `src/app/globals.css` and list it in `src/lib/eventFonts.js`.
 - **Logo & images**: replace the placeholders in `public/brand/`. Use a
-  PNG/JPG for `NEXT_PUBLIC_LOGO_URL` (emails) — many mail clients don't show SVG.
+  PNG/JPG for `NEXT_PUBLIC_LOGO_URL` (emails and PDF invoices) — many mail
+  clients don't show SVG.
 - The **admin panel** keeps its own neutral theme (`src/styles/admin-theme.css`);
   it shows the store's name.
 
@@ -95,7 +99,7 @@ on**. When a feature is off:
 | storefront & dashboard pages | 404 (`src/middleware.js`) |
 | API routes | 404 JSON |
 | admin | its sidebar entry, pages and permissions disappear — for every admin, full access included |
-| UI elsewhere | menus, home sections, product-page tabs, checkout options, dashboard links hide |
+| UI elsewhere | menus, home sections, product-page tabs, article blocks, checkout options, dashboard links hide |
 | notifications, push, emails | not sent |
 | crons / workers | do nothing |
 | data | **untouched** — switch it back on and everything is still there |
@@ -127,7 +131,8 @@ on**. When a feature is off:
 | `installments` | cheque instalment payments + reminders | — |
 | `orderEur` | manual EUR bookkeeping on orders | — |
 | `warehouse` | barcode tracking in a separate warehouse DB | — |
-| `aiAssistant`, `aiProductDraft` | Gemini-powered admin tools | — |
+| `aiAssistant` | AI admin data assistant (`AI_PROVIDER`, Gemini by default) | — |
+| `aiProductDraft` | AI product drafts, product regeneration, prompt settings (Admin → محصولات) | departments |
 
 The exchange-rate admin is not a switch: it exists exactly when
 `commerce.pricing.mode` is `"exchange"`.

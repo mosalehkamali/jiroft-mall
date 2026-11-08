@@ -1,3 +1,6 @@
+import storeConfig from "../../store.config.js";
+import { isFeatureEnabled } from "./features.js";
+
 export const ARTICLE_BLOCK_TYPES = [
   "heading",
   "sectionTitle",
@@ -5,7 +8,7 @@ export const ARTICLE_BLOCK_TYPES = [
   "paragraph",
   "image",
   "imageSlider",
-  "gallery",
+  "iconLogo",
   "video",
   "quote",
   "divider",
@@ -15,14 +18,11 @@ export const ARTICLE_BLOCK_TYPES = [
   "faq",
   "productCard",
   "productSlider",
-  "collectionSlider",
-  "brandSlider",
-  "categorySlider",
-  "sportSlider",
-  "latestProducts",
-  "bestSellers",
-  "amazingOffers",
-  "usedProducts",
+  "sportSeriesSlider",
+  "reviewSlider",
+  "brandBar",
+  "comparisonBanner",
+  "matchBanner",
   "relatedArticles",
   "newsletterCta",
   "customHtml",
@@ -32,23 +32,40 @@ export const ARTICLE_BLOCK_TYPES = [
 
 export const ARTICLE_BLOCK_TYPE_SET = new Set(ARTICLE_BLOCK_TYPES);
 
+/**
+ * بلوک‌هایی که مثلِ صفحه‌ی اصلی لبه‌به‌لبه‌اند (FullBleed): هر کدام قابِ تمام‌عرضِ
+ * خودش را دارد و ستونِ مقاله/بروشور فقط آن را باریک می‌کرد. بلوکِ ادغام‌شده‌ای که
+ * *همه‌ی* فرزندانش از این‌ها باشند (مثلاً دو بنرِ کنارِ هم) خودش هم لبه‌به‌لبه است.
+ * داخلِ خانه‌ی ادغام یا روی تصویر، هر کدام در همان خانه می‌ماند.
+ */
+export const FULL_BLEED_BLOCK_TYPES = new Set(["productSlider", "sportSeriesSlider", "reviewSlider", "brandBar", "comparisonBanner", "matchBanner"]);
+
+// بلوک‌هایی که مالِ یک قابلیتِ store.config.js هستند: با قابلیتِ خاموش، نه در فهرستِ
+// افزودنِ ویرایشگر می‌آیند و نه در سایت رندر می‌شوند (داده‌ی ذخیره‌شده دست نمی‌خورد).
+const BLOCK_FEATURES = {
+  brandBar: ["brands"],
+  sportSeriesSlider: ["series", "departments"],
+  reviewSlider: ["reviews"],
+  comparisonBanner: ["compare"],
+  matchBanner: ["racketFinder"],
+};
+export const isBlockTypeEnabled = (type) => (BLOCK_FEATURES[type] || []).every(isFeatureEnabled);
+
 
 // ——— بلوکِ ادغام‌شده ——————————————————————————————————————————————————
 // data.blocks همان بلوک‌های اصلی را عیناً نگه می‌دارد (id، type، data، style،
 // layout)، پس «جداسازی» دقیقاً همان ساختارِ قبلی را برمی‌گرداند. بلوکِ ادغام‌شده
-// خودش یک بلوکِ عادی است و می‌تواند دوباره با بلوک‌های دیگر ادغام شود (تا
-// MAX_MERGE_DEPTH سطح). جداسازی همیشه فقط یک سطح را باز می‌کند.
+// خودش یک بلوکِ عادی است و می‌تواند دوباره با بلوک‌های دیگر ادغام شود — در هر
+// عمقی؛ سقفِ عمق وجود ندارد. جداسازی همیشه فقط یک سطح را باز می‌کند.
 export const MERGED_BLOCK_TYPE = "merged";
+
+// عنوانِ پیش‌فرضِ «اسلایدر نظرات» — هم پیش‌فرضِ بلوکِ تازه در ویرایشگر، هم عنوانِ
+// بلوک‌هایی که پیش از افزوده‌شدنِ عنوان ذخیره شده‌اند (کلیدها را ندارند).
+export const REVIEW_SLIDER_HEADING = { highlight: "تجربه‌ی خرید", title: "واقعی", subtitle: `نظر خریداران ${storeConfig.brand.name}` };
 export const MAX_MERGED_CHILDREN = 12;
-export const MAX_MERGE_DEPTH = 3;
 
 export const isMergedBlock = (block) => block?.type === MERGED_BLOCK_TYPE;
 export const mergedChildren = (block) => (isMergedBlock(block) && Array.isArray(block.data?.blocks) ? block.data.blocks : []);
-
-/** عمقِ تودرتوییِ ادغام: بلوکِ عادی ۰، ادغامِ بلوک‌های عادی ۱، … */
-export function mergeDepth(block) {
-  return isMergedBlock(block) ? 1 + Math.max(0, ...mergedChildren(block).map(mergeDepth)) : 0;
-}
 
 /**
  * همه‌ی بلوک‌ها، با فرزندانِ بلوک‌های ادغام‌شده (در هر عمقی) به‌جای خودشان. هر جا
