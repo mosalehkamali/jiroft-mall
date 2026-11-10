@@ -142,7 +142,7 @@ export default function Footer() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-12">
           <div className="lg:col-span-2">
             <div className="mb-6 opacity-90">
-              <Image src={brand.logo} alt={brand.name} width={120} height={120} />
+              <Image src={brand.logoLight || brand.logo}alt={brand.name} width={120} height={120} />
             </div>
             <p className="text-gray-300 mb-8 leading-relaxed text-sm">{brand.description}</p>
 

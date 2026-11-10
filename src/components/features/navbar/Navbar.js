@@ -715,7 +715,7 @@ useEffect(() => {
               <div className="origin-right flex-shrink-0">
                 <Link href="/" prefetch={false}>
                   <Image
-                    src={storeConfig.brand.logo}
+                    src={storeConfig.brand.logoLight || storeConfig.brand.logo}
                   loading="eager"
                     alt="logo"
                     width={160}
@@ -923,7 +923,7 @@ useEffect(() => {
               </button>
               <Link href="/" prefetch={false} className="flex-shrink-0">
                 <Image
-                  src={storeConfig.brand.logo}
+                  src={storeConfig.brand.logoLight || storeConfig.brand.logo}
                   loading="eager"
                   alt="logo"
                   width={100}

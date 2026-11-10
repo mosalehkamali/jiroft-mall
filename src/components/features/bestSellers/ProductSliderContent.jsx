@@ -97,7 +97,8 @@ export default function ProductSlider({
 
       <div className="absolute top-[-5%] left-[-5%] w-[200px] md:w-[400px] h-[200px] md:h-[400px] bg-[var(--color-primary)]/5 rounded-full blur-[60px] md:blur-[100px] pointer-events-none" />
 
-      <div className="absolute top-10 left-5 text-[10rem] md:text-[15rem] font-black text-gray-200/10 select-none pointer-events-none z-0 tracking-tighter uppercase italic leading-none whitespace-nowrap">{storeConfig.brand.nameEn.toUpperCase()}</div>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={storeConfig.brand.logo} alt="" aria-hidden="true" className="absolute top-10 left-5 h-[10rem] md:h-[15rem] w-auto opacity-[0.05] select-none pointer-events-none z-0" />
 
       <div className="container mx-auto px-4 md:px-12 lg:px-16 xl:px-20 relative z-10">
         {/* هدر */}

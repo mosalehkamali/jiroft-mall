@@ -11,7 +11,10 @@ const productPagePreload = [
     : ["Regular", "Bold"].map(
         (w) => `</fonts/invoice/Vazirmatn-${w}.woff2>; rel=preload; as=font; type="font/woff2"; crossorigin=anonymous`,
       )),
-  ...(storeConfig.brand.logo ? [`<${storeConfig.brand.logo}>; rel=preload; as=image`] : []),
+  // The navbar's logo (the white one when the store has it) is what paints first.
+  ...((storeConfig.brand.logoLight || storeConfig.brand.logo)
+    ? [`<${storeConfig.brand.logoLight || storeConfig.brand.logo}>; rel=preload; as=image`]
+    : []),
 ].join(", ");
 
 /** @type {import('next').NextConfig} */

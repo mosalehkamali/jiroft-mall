@@ -152,7 +152,9 @@ export default function SportPageClient({
     // کتگوری + اسپورت
     // راکت تنیس
     if (categoryTitle && !brandTitle) {
-      return [categoryTitle, sportTitle].filter(Boolean).join(" ");
+      // A root category has no department: sportTitle is then the page's own
+      // (category) title and would only repeat it.
+      return sportTitle && sportTitle !== categoryTitle ? `${categoryTitle} ${sportTitle}` : categoryTitle;
     }
 
     // کتگوری + اسپورت + برند

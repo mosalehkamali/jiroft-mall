@@ -14,12 +14,13 @@
 const storeConfig = {
   /* ── Identity ─────────────────────────────────────────────────────────── */
   brand: {
-    name: "فروشگاه نمونه",
-    nameEn: "Sample Store",
-    tagline: "فروشگاه آنلاین",
-    description: "خرید آنلاین محصولات با ضمانت اصالت و ارسال سریع.",
-    keywords: ["فروشگاه آنلاین", "خرید اینترنتی"],
-    logo: "/brand/logo.svg",
+    name: "جیرفت مال",
+    nameEn: "Jiroft Mall",
+    tagline: "فروشگاه آنلاین پوشاک",
+    description: "خرید آنلاین پوشاک مردانه و زنانه، کیف، کفش و اکسسوری با ضمانت اصالت و ارسال سریع.",
+    keywords: ["جیرفت مال", "فروشگاه پوشاک", "خرید اینترنتی لباس", "پوشاک مردانه", "پوشاک زنانه"],
+    logo: "/brand/logo.svg", // navy — light backgrounds (loaders, invoice, print, emails)
+    logoLight: "/brand/logo-light.svg", // white — dark backgrounds (navbar, footer)
     favicon: "/brand/favicon.svg",
     ogImage: "/brand/og.svg",
     // Fallback for any <img> that fails to load (see the (Site) layout).
@@ -44,9 +45,9 @@ const storeConfig = {
   // Emitted as CSS variables on :root; every storefront component reads these.
   theme: {
     colors: {
-      primary: "#2563eb",
-      primaryDark: "#1d4ed8",
-      secondary: "#f59e0b",
+      primary: "#14213D",
+      primaryDark: "#0D1629",
+      secondary: "#B8893B",
       dark: "#111827",
       text: "#0f172a",
       background: "#ffffff",
@@ -68,7 +69,7 @@ const storeConfig = {
   // Available: hero, banners, departments, compareAndFinder, bestSellers,
   // offers, featuredLimitedEdition, brands, articles, athletes
   home: {
-    title: "فروشگاه آنلاین",
+    title: "فروشگاه آنلاین پوشاک",
     sections: ["hero", "banners", "bestSellers", "offers", "brands", "articles"],
   },
 

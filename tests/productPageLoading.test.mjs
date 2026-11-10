@@ -66,7 +66,7 @@ test("product response hints preload local fonts without enabling shared price c
     assert.ok(rule.headers[0].value.includes(`/fonts/invoice/Vazirmatn-${font}.woff2`));
   }
   assert.equal((rule.headers[0].value.match(/crossorigin=anonymous/g) || []).length, 2);
-  assert.ok(rule.headers[0].value.includes(`<${storeConfig.brand.logo}>`));
+  assert.ok(rule.headers[0].value.includes(`<${storeConfig.brand.logoLight || storeConfig.brand.logo}>`));
 });
 
 test("display pricing preserves API variant fallback, rounding, discounts and tier order", async () => {
