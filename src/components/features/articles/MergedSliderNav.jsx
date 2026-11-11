@@ -87,7 +87,7 @@ export default function MergedSliderNav({ label }) {
   if (!state.scrolls) return <span ref={anchor} hidden />;
   // bottom-full + mb همان فاصله‌ی سرصفحه تا اسلایدر در صفحه‌ی اصلی است؛
   // pointer-events تا ناحیه‌ی شناور جلوی کلیکِ محتوای پشتِ خودش را نگیرد.
-  return <div ref={anchor} className="pointer-events-none absolute bottom-full end-0 mb-10 md:mb-16">
+  return <div ref={anchor} className="pointer-events-none absolute bottom-full end-0 mb-4 md:mb-5">
     <HomeSliderNav
       className="pointer-events-auto hidden md:flex items-center"
       label={label}

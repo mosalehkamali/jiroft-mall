@@ -112,7 +112,7 @@ export default function ToolSeoContent({ type, categoryTitle, canonicalPath }) {
         }}
       />
       <section
-        className="mx-auto w-full max-w-[1440px] px-4 pb-12 pt-6 lg:px-8"
+        className="site-container py-6 md:py-8"
         aria-labelledby={`${type}-seo-heading`}
       >
         <div className="rounded-2xl border border-gray-200 bg-white p-5 md:p-7">

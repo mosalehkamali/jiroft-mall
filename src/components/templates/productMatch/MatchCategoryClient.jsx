@@ -249,7 +249,7 @@ export default function MatchCategoryClient({
 function PageShell({ children }) {
   return (
     <div className="min-h-screen bg-[var(--color-background)] font-sans text-[var(--color-text)]">
-      <div className="max-w-7xl mx-auto px-4 py-10 pb-20">{children}</div>
+      <div className="site-container py-6 md:py-8">{children}</div>
     </div>
   );
 }

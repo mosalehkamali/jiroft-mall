@@ -101,7 +101,7 @@ export default function ProductList({ products = [], rate, loadedOffset = 0, tot
 
   return (
     <>
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-1">
         {visibleProducts.map((product, i) =>
           i < revealed ? (
             <ProductCard

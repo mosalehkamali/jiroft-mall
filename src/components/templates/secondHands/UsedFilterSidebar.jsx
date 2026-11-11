@@ -82,16 +82,7 @@ export default function UsedFilterSidebar({
 
   return (
     <MobileFilterDrawer activeCount={activeCount} onReset={reset}>
-    <div className="bg-white rounded-[var(--radius)] border border-gray-100 shadow-sm p-5">
-      {/* عنوان */}
-      <div className="flex items-center justify-between mb-2">
-        <h2 className="font-black text-gray-800">فیلترها</h2>
-        {activeCount > 0 && (
-          <button onClick={reset} className="text-xs text-[var(--color-primary)] font-bold hover:underline">
-            پاک کردن ({activeCount})
-          </button>
-        )}
-      </div>
+    <div className="filter-columns">
 
       {/* برند */}
       {brands.length > 0 && (
@@ -206,7 +197,7 @@ export default function UsedFilterSidebar({
 
       {/* ویژگی‌ها (رنگ، وزن و ...) — کامپوننتِ مشترکِ دکمه‌ای، با همان منطقِ فروشگاه */}
       {attrMeta.length > 0 && (
-        <div className="-mx-5 mt-1 border-t border-gray-100">
+        <div>
           <AttributeFilters
             attrMeta={attrMeta}
             attrFilters={attrFilters}

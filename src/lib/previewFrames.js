@@ -17,10 +17,10 @@ export const PREVIEW_FRAMES = {
   },
   brochure: {
     page: "bg-white",
-    column: "mx-auto w-full max-w-[1440px] px-4 py-4 md:py-8 lg:px-8",
+    column: "site-container py-6 md:py-8",
   },
   miniArticle: {
     page: "bg-white",
-    column: "mx-auto w-full max-w-[1440px] px-4 py-3 md:py-5 lg:px-8",
+    column: "site-container py-6 md:py-8",
   },
 };

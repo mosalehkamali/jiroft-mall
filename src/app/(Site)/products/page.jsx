@@ -45,8 +45,8 @@ export default async function ProductsPage({ searchParams }) {
         headerExtra={<ActiveFiltersLine filterableAttributes={filterableAttributes} />}
       />
 
-      <div className="max-w-7xl mx-auto px-4 py-8">
-        <h1 className="text-xl font-bold mb-6 text-[var(--color-dark)]">
+      <div className="site-container py-6 md:py-8">
+        <h1 className="text-xl font-bold mb-3 text-[var(--color-dark)]">
           لیست محصولات
         </h1>
 

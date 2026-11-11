@@ -26,7 +26,7 @@ export default function PublicArticlePage({ article, relatedArticles = [], entit
       {schemas.map((schema, index) => <script key={index} type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(schema).replace(/</g, "\\u003c") }} />)}
       {header ? <ArticleHeaderBlock block={header} /> : null}
       <header className="border-b border-black/5 bg-white">
-        <div className="container mx-auto px-4 py-8 md:px-12 md:py-12 lg:px-16 xl:px-20">
+        <div className="site-container py-6 md:py-8">
           <nav className="mb-7 flex flex-wrap items-center gap-2 text-xs text-gray-500" aria-label="مسیر صفحه"><Link href="/" aria-label="خانه"><FiHome /></Link><FiChevronLeft aria-hidden="true" /><Link href={`/${article.category.slug}`} className="hover:text-[var(--color-primary)]">{article.category.name}</Link><FiChevronLeft aria-hidden="true" /><span className="max-w-48 truncate">{article.title}</span></nav>
           <div className="mx-auto max-w-5xl text-center">
             <Link href={`/${article.category.slug}`} className="inline-flex rounded-full bg-[color-mix(in_srgb,var(--color-primary)_10%,white)] px-4 py-2 text-xs font-bold text-[var(--color-primary)]">{article.category.name}</Link>
@@ -43,7 +43,7 @@ export default function PublicArticlePage({ article, relatedArticles = [], entit
         </div>
       </header>
 
-      <div className="container mx-auto grid max-w-7xl gap-10 px-4 pt-10 md:px-12 lg:grid-cols-[240px_minmax(0,820px)] lg:justify-center lg:px-16 xl:px-20">
+      <div className="site-container grid gap-10 lg:grid-cols-[240px_minmax(0,820px)] lg:justify-center pt-6 md:pt-8">
         <div className="order-2 lg:order-1"><ArticleReadingTools headings={headings} title={article.title} url={url} /></div>
         <div id="article-content" tabIndex={-1} data-article-body className="order-1 min-w-0 rounded-[var(--radius)] bg-white px-5 py-3 md:px-10 lg:order-2">
           <ArticleBlockRenderer blocks={blocks} entities={entities} />
@@ -51,7 +51,7 @@ export default function PublicArticlePage({ article, relatedArticles = [], entit
         </div>
       </div>
 
-      {relatedArticles.length ? <section className="container mx-auto mt-16 px-4 md:px-12 lg:px-16 xl:px-20"><div className="mb-6 flex items-end justify-between"><div><span className="text-sm font-bold text-[var(--color-primary)]">پیشنهاد برای مطالعه</span><h2 className="mt-2 text-2xl font-black text-gray-900">مقالات مرتبط</h2></div><Link href={`/${article.category.slug}`} className="text-sm font-bold text-[var(--color-primary)]">مشاهده همه</Link></div><div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">{relatedArticles.map((item) => <ArticleCard key={item._id} article={item} />)}</div></section> : null}
+      {relatedArticles.length ? <section className="site-container mt-16"><div className="mb-6 flex items-end justify-between"><div><span className="text-sm font-bold text-[var(--color-primary)]">پیشنهاد برای مطالعه</span><h2 className="mt-2 text-2xl font-black text-gray-900">مقالات مرتبط</h2></div><Link href={`/${article.category.slug}`} className="text-sm font-bold text-[var(--color-primary)]">مشاهده همه</Link></div><div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">{relatedArticles.map((item) => <ArticleCard key={item._id} article={item} />)}</div></section> : null}
     </article>
   );
 }

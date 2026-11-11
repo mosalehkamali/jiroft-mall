@@ -34,15 +34,15 @@ export default function ProductSlider({
   };
 
   return (
-    <section className="py-12 md:py-24 bg-[#fcfcfc] relative overflow-hidden group/section">
+    <section className="py-6 md:py-8 bg-[#fcfcfc] relative overflow-hidden group/section">
       {/* المان‌های پس‌زمینه بهینه شده */}
       <div className="absolute top-[-5%] left-[-5%] w-[250px] md:w-[400px] h-[250px] md:h-[400px] bg-[var(--color-primary)]/5 rounded-full blur-[80px] md:blur-[100px] pointer-events-none" />
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={storeConfig.brand.logo} alt="" aria-hidden="true" className="absolute top-12 left-6 h-[8rem] md:h-[15rem] w-auto opacity-[0.05] select-none pointer-events-none z-0" />
+      <img src={storeConfig.brand.logo} alt="" aria-hidden="true" className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-[85%] w-auto max-w-none opacity-[0.05] select-none pointer-events-none z-0" />
 
-      <div className="container mx-auto px-4 md:px-12 lg:px-16 xl:px-20 relative z-10">
+      <div className="site-container relative z-10">
         {/* هدر */}
-        <div className="relative flex flex-col md:flex-row md:items-end justify-between mb-10 md:mb-16">
+        <div className="relative flex flex-col md:flex-row md:items-end justify-between mb-4 md:mb-5">
           <HomeSectionHeading title={title} highlight="پیشنهادهای" subtitle={subtitle} />
 
           <div className="hidden md:flex items-center mt-8 md:mt-0">
@@ -59,10 +59,10 @@ export default function ProductSlider({
         </div>
 
         {/* اسلایدر */}
-        <div className="relative overflow-hidden md:px-4 lg:px-8 xl:px-20">
+        <div className="relative overflow-hidden">
           <Swiper
             modules={[Navigation, Autoplay, Pagination]}
-            spaceBetween={12}
+            spaceBetween={4}
             slidesPerView={2.1}
             centeredSlides={false}
             watchOverflow={true}
@@ -79,25 +79,25 @@ export default function ProductSlider({
             breakpoints={{
               640: {
                 slidesPerView: 2.5,
-                spaceBetween: 16,
+                spaceBetween: 6,
               },
               768: {
                 slidesPerView: 3,
-                spaceBetween: 18,
+                spaceBetween: 6,
               },
               1024: {
-                slidesPerView: 4,
-                spaceBetween: 20,
+                slidesPerView: 3,
+                spaceBetween: 6,
               },
               1400: {
                 slidesPerView: 4,
-                spaceBetween: 24,
+                spaceBetween: 8,
               },
             }}
           >
             {products.map((product, index) => (
-              <SwiperSlide key={product._id || index} className="h-auto pb-10">
-                <div className="h-full hover:-translate-y-1.5 transition-transform duration-500">
+              <SwiperSlide key={product._id || index} className="h-auto pb-2">
+                <div className="h-full">
                   <ProductCard
                     product={product}
                     rate={rate}
@@ -111,7 +111,7 @@ export default function ProductSlider({
           </Swiper>
 
         {/* پیجینیشن و لینک پایین */}
-        <div className="flex flex-row items-center justify-between gap-3 md:gap-6 mt-6">
+        <div className="flex flex-row items-center justify-between gap-3 md:gap-6 mt-3">
           <div className="slider-pagination-2 !w-auto flex md:gap-2"></div>
           <Link
             href="/products"

@@ -59,7 +59,7 @@ export default async function AthletePage({ params }) {
 
       <AthleteHero athlete={athlete} />
 
-      <div className="mx-auto max-w-7xl space-y-12 px-4 py-10 sm:space-y-16 sm:py-14">
+      <div className="site-container space-y-12 sm:space-y-16 py-6 md:py-8">
         <AthleteInfo athlete={athlete} />
 
         {athlete.bio ? (

@@ -45,8 +45,8 @@ const listButtonStyle = (isActive) => `
   group w-full flex items-center gap-3 px-4 py-2.5 rounded-[6px] transition-all text-[15px] font-medium
   ${
     isActive
-      ? "bg-[#ffffff1a] text-[var(--color-primary)]"
-      : "text-gray-300 hover:bg-[#ffffff1a] hover:text-[var(--color-primary)]"
+      ? "bg-[#ffffff1a] text-white"
+      : "text-gray-300 hover:bg-[#ffffff1a] hover:text-white"
   }
 `;
 
@@ -56,8 +56,8 @@ const categoryButtonStyle = (isActive) => `
   group w-full flex items-center gap-1.5 px-2 py-2.5 rounded-[6px] transition-all text-[15px] font-medium whitespace-nowrap
   ${
     isActive
-      ? "bg-[#ffffff1a] text-[var(--color-primary)]"
-      : "text-gray-300 hover:bg-[#ffffff1a] hover:text-[var(--color-primary)]"
+      ? "bg-[#ffffff1a] text-white"
+      : "text-gray-300 hover:bg-[#ffffff1a] hover:text-white"
   }
 `;
 
@@ -67,12 +67,16 @@ const childButtonStyle = (isActive) => `
   border-r border-white/10 mr-2
   ${
     isActive
-      ? "bg-[#ffffff14] text-[var(--color-primary)]"
-      : "text-gray-400/80 hover:bg-[#ffffff14] hover:text-[var(--color-primary)]"
+      ? "bg-[#ffffff14] text-white"
+      : "text-gray-400/80 hover:bg-[#ffffff14] hover:text-white"
   }
 `;
 
-export default function MegamenuInteractiveColumns({ sport, onClose, selectedAudience }) {
+/**
+ * rootId: show one top-level category's branch — its children in the first column
+ * (the top level itself lives in the navbar as buttons). Without it, the whole tree.
+ */
+export default function MegamenuInteractiveColumns({ sport, onClose, selectedAudience, rootId = null }) {
   // مقدارِ فعالِ فیلتر — پیش‌فرض null؛ کلیکِ دوباره روی همان تب آن را خاموش می‌کند
   const [activeFilterValue, setActiveFilterValue] = useState(null);
   // دسته‌ی هاورشده که ستون‌های ۳/۴ را هدایت می‌کند
@@ -87,15 +91,17 @@ export default function MegamenuInteractiveColumns({ sport, onClose, selectedAud
   // ── درختِ دسته‌بندی‌ها: والدها + فرزندان (بر اساس فیلدِ parent) ──
   const idSet = new Set(categories.map((c) => c._id));
   // ریشه = بدونِ parent، یا parentی که در همین لیست نیست (یتیم → ریشه نمایش داده شود)
-  const rootCategories = categories.filter(
-    (c) => !c.parent || !idSet.has(c.parent),
-  );
   const childrenOf = (id) =>
     categories.filter((c) => c.parent && c.parent === id);
+  const branchRoot = rootId ? categories.find((c) => c._id === rootId) || null : null;
+  const rootCategories = branchRoot
+    ? childrenOf(branchRoot._id)
+    : categories.filter((c) => !c.parent || !idSet.has(c.parent));
 
   // ── دسته‌ی فعال (هاور): اگر هاورشده معتبر نباشد، اولین دسته تا ستون B خالی نماند ──
   // (با تعویضِ ورزش، hoveredCatId قدیمی نامعتبر می‌شود و این fallback اولین دسته را می‌گیرد)
   const firstWithProducts =
+    (branchRoot && branchRoot.hasProducts !== false ? branchRoot : null) ||
     rootCategories.find((c) => c.hasProducts !== false) ||
     categories.find((c) => c.hasProducts !== false);
   const effectiveCatId = categories.some((c) => c._id === hoveredCatId)
@@ -133,9 +139,21 @@ export default function MegamenuInteractiveColumns({ sport, onClose, selectedAud
     <>
       {/* ستون دوم: درختِ دسته‌بندی‌ها (والد/فرزند) — هاور، ستون‌های ۳/۴ را تعیین می‌کند */}
       <div className="w-[30%] border-l border-white/[0.06] p-3 overflow-y-auto">
-        <p className="text-[11px] font-bold text-gray-500 mb-4 px-2 uppercase tracking-widest">
-          دسته‌بندی‌ها
-        </p>
+        {branchRoot ? (
+          <Link
+            href={withFilter(catalogPath(sportSlug, branchRoot.slug))}
+            prefetch
+            onClick={onClose}
+            className="mb-3 flex items-center gap-1 px-2 text-xs text-gray-400 transition-colors hover:text-white"
+          >
+            مشاهده همه {branchRoot.title}
+            <FiChevronLeft size={14} />
+          </Link>
+        ) : (
+          <p className="text-[11px] font-bold text-gray-500 mb-4 px-2 uppercase tracking-widest">
+            دسته‌بندی‌ها
+          </p>
+        )}
         {rootCategories.length > 0 ? (
           // تک‌ستونی: هر «والد + زیردسته‌هایش» یک <li> با scopeِ هاورِ نام‌گذاری‌شده
           // (group/cat) است تا با هاورِ والد، زیردسته‌ها به‌نرمی باز شوند.
@@ -202,7 +220,7 @@ export default function MegamenuInteractiveColumns({ sport, onClose, selectedAud
               );
             })}
           </ul>
-        ) : (
+        ) : branchRoot ? null : (
           <div className="text-gray-600 text-[13px] p-4 text-center">
             موردی یافت نشد
           </div>
@@ -227,7 +245,7 @@ export default function MegamenuInteractiveColumns({ sport, onClose, selectedAud
                   className={`px-3 py-1.5 rounded-[6px] text-xs font-bold transition-all ${
                     isActive
                       ? "bg-[var(--color-primary)] text-white"
-                      : "bg-white/5 text-gray-300 hover:bg-white/10 hover:text-[var(--color-primary)]"
+                      : "bg-white/5 text-gray-300 hover:bg-white/10 hover:text-white"
                   }`}
                 >
                   {value}

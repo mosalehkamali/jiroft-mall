@@ -18,7 +18,7 @@ export default function BrandBrochure({ blocks = [], entities, brandName = "", b
     <main className="bg-white" data-brand-brochure>
       {header ? <ArticleHeaderBlock block={header} /> : null}
       {breadcrumbs}
-      <div className="mx-auto w-full max-w-[1440px] px-4 py-4 md:py-8 lg:px-8">
+      <div className="site-container py-6 md:py-8">
         <h1 className="sr-only">{brandName}</h1>
         <ArticleBlockRenderer blocks={body} entities={entities} />
       </div>

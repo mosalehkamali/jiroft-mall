@@ -56,7 +56,8 @@ const storeConfig = {
       surfaceSoft: "#f8fafc",
       muted: "#6b7280",
     },
-    radius: "8px",
+    // "0px" = square corners everywhere on the storefront (hard-coded radii included).
+    radius: "0px",
     fontFamily: '"Vazirmatn", system-ui, -apple-system, sans-serif',
     // Any stylesheet that declares the font above (Google Fonts, a CDN…).
     fontStylesheet: "", // "" = the local Vazirmatn in globals.css

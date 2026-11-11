@@ -46,7 +46,14 @@ export function themeCss(theme = storeConfig.theme) {
     .filter(([, v]) => v)
     .map(([k, v]) => `${k}:${v}`)
     .join(";");
-  return `:root,.site-colors{${body}}`;
+  // A zero radius means "no rounded corner anywhere": components also carry
+  // hard-coded radii (rounded-xl, rounded-full, inline styles), so the store-wide
+  // rule is the only way to reach them all. The admin panel keeps its own theme;
+  // spinners stay round because a square one does not read as loading.
+  const square = parseFloat(theme.radius) === 0
+    ? `body:not(:has(.admin-scope)) :not(.animate-spin),body:not(:has(.admin-scope)) ::before,body:not(:has(.admin-scope)) ::after{border-radius:0!important}`
+    : "";
+  return `:root,.site-colors{${body}}${square}`;
 }
 
 export default function StoreHead() {

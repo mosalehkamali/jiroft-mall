@@ -16,6 +16,7 @@ import {
   productMatchesAttrFilters,
 } from '@/lib/attributeFilters';
 import storeConfig from "base/store.config";
+import ListingToolbar from "@/components/features/filters/ListingToolbar";
 
 const DEFAULT_FILTERS = {
   brands:      [],
@@ -166,48 +167,26 @@ export default function UsedProductsPageClient({
       <div
         ref={anchorRef}
         data-filter-scroll-anchor
-        className="max-w-[1440px] mx-auto px-4 lg:px-8 py-12 flex flex-col lg:flex-row gap-8"
+        className="site-container py-6 md:py-8"
       >
 
-        {/* Sidebar */}
-        <aside className="w-full lg:w-1/4">
-          <div className="sticky top-24">
-            <UsedFilterSidebar
-              products={initialProducts}
-              filters={filters}
-              setFilters={setFilters}
-              attrMeta={attrMeta}
-              attrFilters={attrFilters}
-              setAttrFilters={applyAttrFilters}
-            />
-          </div>
-        </aside>
-
         {/* Main */}
-        <main className="w-full lg:w-3/4">
+        <main>
 
-          {/* نوار ابزار */}
-          <div className="mb-8 flex flex-col md:flex-row justify-between items-center gap-4 bg-white p-5 rounded-[var(--radius)] border border-gray-100 shadow-sm">
-            <div className="relative w-full md:w-2/3">
-              <FiSearch className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-              <input
-                type="text"
-                placeholder="جستجو در محصولات دست دوم..."
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-                className="w-full bg-gray-50 border border-gray-100 rounded-[var(--radius)] pr-11 pl-4 py-3 text-sm outline-none focus:ring-2 ring-[var(--color-primary)]/20 transition-all"
+          <ListingToolbar search={searchTerm} onSearchChange={setSearchTerm} count={filteredProducts.length} searchPlaceholder="جستجو در محصولات دست دوم...">
+            <UsedFilterSidebar
+                products={initialProducts}
+                filters={filters}
+                setFilters={setFilters}
+                attrMeta={attrMeta}
+                attrFilters={attrFilters}
+                setAttrFilters={applyAttrFilters}
               />
-            </div>
-            <div className="flex items-center gap-2 text-gray-500 whitespace-nowrap">
-              <FiShoppingBag className="text-[var(--color-primary)]" />
-              <span className="font-bold">تعداد کالا:</span>
-              <span className="text-[var(--color-text)] font-bold">{filteredProducts.length}</span>
-            </div>
-          </div>
+          </ListingToolbar>
 
           {/* گرید */}
           {filteredProducts.length > 0 ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-1">
               {filteredProducts.map(product => (
                 <UsedProductCard
                   key={product._id}

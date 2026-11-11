@@ -15,7 +15,7 @@ export default function ContactSection({ block, accent }) {
 
   return (
     <section className="py-16 sm:py-24">
-      <div className="max-w-6xl mx-auto px-5 sm:px-8">
+      <div className="site-container">
         <div className="grid lg:grid-cols-2 gap-8 lg:gap-12 items-stretch">
           {/* اطلاعات تماس */}
           <Reveal y={28}>

@@ -28,7 +28,7 @@ export default function SecondHandCategoryGrid({ categories = [] }) {
 
   return (
     <section className="py-20 bg-white text-black">
-      <div className="container mx-auto px-4 md:px-12 lg:px-16 xl:px-20">
+      <div className="site-container">
         {/* هدر بخش */}
         <div className="relative mb-12">
           <h2 className="text-2xl md:text-4xl font-black text-gray-900 leading-tight">

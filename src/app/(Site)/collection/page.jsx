@@ -34,7 +34,7 @@ export default async function EventsPage() {
           aria-hidden="true"
         />
 
-        <div className="max-w-7xl mx-auto relative z-10 text-center">
+        <div className="site-container relative z-10 text-center">
           <p className="text-[10px] font-black uppercase tracking-[0.4em] text-[var(--color-primary)] mb-4">
             {storeConfig.brand.nameEn.toUpperCase()} Collection
           </p>
@@ -51,7 +51,7 @@ export default async function EventsPage() {
       </section>
 
       {/* Events grid */}
-      <section className="max-w-7xl mx-auto px-6 pb-24">
+      <section className="site-container pb-6 md:pb-8">
         {events.length === 0 ? (
           <div className="text-center py-24">
             <div className="text-5xl mb-4" aria-hidden="true">🎪</div>

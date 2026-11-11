@@ -34,9 +34,9 @@ export default function FeaturedArticles({ articles = [] }) {
   if (articles.length !== LAYOUT.length) return null;
 
   return (
-    <section className="relative bg-white py-12 md:py-24" aria-labelledby="featured-articles-title">
-      <div className="container relative mx-auto px-4 md:px-12 lg:px-16 xl:px-20">
-        <div className="mb-10 md:mb-16">
+    <section className="relative bg-white py-6 md:py-8" aria-labelledby="featured-articles-title">
+      <div className="site-container relative">
+        <div className="mb-4 md:mb-5">
           <HomeSectionHeading
             id="featured-articles-title"
             title={`مقالات منتخب ${storeConfig.brand.name}`}
@@ -45,7 +45,7 @@ export default function FeaturedArticles({ articles = [] }) {
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 md:auto-rows-[220px] lg:grid-cols-4 lg:auto-rows-[240px]">
+        <div className="grid grid-cols-2 gap-1.5 md:grid-cols-3 md:auto-rows-[220px] lg:grid-cols-4 lg:auto-rows-[240px]">
           {articles.map((article, index) => (
             <Link
               key={article._id}

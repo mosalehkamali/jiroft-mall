@@ -12,7 +12,7 @@ export default function BrandMiniArticleSection({ blocks = [], entities, brandNa
       className="border-b border-gray-100 bg-white"
       data-brand-mini-article
     >
-      <div className="mx-auto w-full max-w-[1440px] px-4 py-3 md:py-5 lg:px-8">
+      <div className="site-container py-6 md:py-8">
         <ArticleBlockRenderer blocks={blocks} entities={entities} />
       </div>
     </section>

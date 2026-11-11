@@ -229,7 +229,7 @@ export default async function UsedProductPage({ params }) {
           },
         ]}
       />
-      <div className="max-w-7xl mx-auto px-4 py-8">
+      <div className="site-container py-6 md:py-8">
         <UsedProductTemplate product={product} />
       </div>
     </>

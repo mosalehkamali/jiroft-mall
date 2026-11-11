@@ -92,18 +92,18 @@ export default function ProductSlider({
   };
 
   return (
-    <section className={`${removeTopPadding ? "pt-0 pb-12 md:pb-24" : "py-12 md:py-24"} bg-[#fcfcfc] relative overflow-hidden group/section`}>
+    <section className={`${removeTopPadding ? "pt-0 pb-6 md:pb-8" : "py-6 md:py-8"} bg-[#fcfcfc] relative overflow-hidden group/section`}>
       {/* --- المان‌های پس‌زمینه (بهینه‌سازی شده برای موبایل) --- */}
 
       <div className="absolute top-[-5%] left-[-5%] w-[200px] md:w-[400px] h-[200px] md:h-[400px] bg-[var(--color-primary)]/5 rounded-full blur-[60px] md:blur-[100px] pointer-events-none" />
 
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={storeConfig.brand.logo} alt="" aria-hidden="true" className="absolute top-10 left-5 h-[10rem] md:h-[15rem] w-auto opacity-[0.05] select-none pointer-events-none z-0" />
+      <img src={storeConfig.brand.logo} alt="" aria-hidden="true" className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-[85%] w-auto max-w-none opacity-[0.05] select-none pointer-events-none z-0" />
 
-      <div className="container mx-auto px-4 md:px-12 lg:px-16 xl:px-20 relative z-10">
+      <div className="site-container relative z-10">
         {/* هدر */}
 
-        <div className="relative flex flex-col md:flex-row md:items-end justify-between mb-10 md:mb-16">
+        <div className="relative flex flex-col md:flex-row md:items-end justify-between mb-4 md:mb-5">
           {title || subtitle ? <HomeSectionHeading title={title} highlight={highlight} subtitle={subtitle} /> : <div />}
 
           {/* کنترلرهای ناوبری (مخفی در موبایل برای تمیزی بیشتر، نمایش در تبلت به بالا) */}
@@ -113,9 +113,9 @@ export default function ProductSlider({
 
         {/* اسلایدر */}
 
-        <div className="relative md:px-4 lg:px-8 xl:px-20">
+        <div className="relative">
           <Swiper
-            spaceBetween={12}
+            spaceBetween={4}
             slidesPerView={2}
             centeredSlides={false}
             watchOverflow={true}
@@ -137,32 +137,32 @@ export default function ProductSlider({
               640: {
                 slidesPerView: 2.5,
 
-                spaceBetween: 16,
+                spaceBetween: 6,
               },
 
               768: {
                 slidesPerView: 3,
 
-                spaceBetween: 18,
+                spaceBetween: 6,
               },
 
               1024: {
-                slidesPerView: 4,
+                slidesPerView: 3,
 
-                spaceBetween: 20,
+                spaceBetween: 6,
               },
 
               1400: {
                 slidesPerView: 4,
 
-                spaceBetween: 24,
+                spaceBetween: 8,
               },
             }}
             className="overflow-hidden"
           >
             {products.map((product, index) => (
-              <SwiperSlide key={product._id || index} className="h-auto pb-12">
-                <div className="h-full hover:-translate-y-1.5 transition-transform duration-500">
+              <SwiperSlide key={product._id || index} className="h-auto pb-2">
+                <div className="h-full">
                   <ProductCard
                     product={product}
                     rate={rate}
@@ -175,8 +175,8 @@ export default function ProductSlider({
               </SwiperSlide>
             ))}
             {usedProducts.map((product, index) => (
-              <SwiperSlide key={`used-${product._id || index}`} className="h-auto pb-12">
-                <div className="h-full hover:-translate-y-1.5 transition-transform duration-500">
+              <SwiperSlide key={`used-${product._id || index}`} className="h-auto pb-2">
+                <div className="h-full">
                   <UsedProductCard product={product} onQuickView={() => setSelectedUsed(product)} />
                 </div>
               </SwiperSlide>
@@ -185,7 +185,7 @@ export default function ProductSlider({
 
           {/* بخش زیر اسلایدر: پیجینیشن و دکمه کاتالوگ */}
 
-          <div className="flex flex-row items-center justify-between gap-3 md:gap-6 mt-6">
+          <div className="flex flex-row items-center justify-between gap-3 md:gap-6 mt-3">
             <div className={`${scope("slider-pagination")} !w-auto flex md:gap-2`} />
 
             {ctaLabel && ctaHref ? <Link

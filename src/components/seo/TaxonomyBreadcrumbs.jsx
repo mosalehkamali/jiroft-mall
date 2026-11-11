@@ -33,7 +33,7 @@ export default function TaxonomyBreadcrumbs({
       )}
       <nav
         aria-label="مسیر صفحه"
-        className="mx-auto w-full max-w-[1440px] px-4 py-4 text-sm text-neutral-500 lg:px-8 md:text-base"
+        className="site-container py-3 text-sm text-neutral-500 md:text-base"
       >
         <ol className="flex flex-wrap items-center gap-2.5">
           {items.map((item, index) => {

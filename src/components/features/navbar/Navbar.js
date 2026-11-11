@@ -3,7 +3,7 @@
 import storeConfig from "base/store.config";
 import { getUserFullName } from "base/utils/userName";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import {
   FiSearch,
@@ -237,6 +237,92 @@ function CategoryMenu({
           selectedAudience={selectedAudience}
         />
       </div>
+    </div>
+  );
+}
+
+// ---- Desktop panels (catalog without departments) ----
+// The top-level categories are buttons in the navbar; each opens its own branch
+// here, and «دسته‌بندی محصولات» opens every category grouped by top level.
+const PANEL_FRAME =
+  "absolute top-full inset-x-0 z-[100] border border-white/10 bg-[#20232af2] text-right shadow-2xl backdrop-blur";
+
+function RootCategoryPanel({ sport, rootId, onClose, selectedAudience, onSelectAudience, availableAudiences }) {
+  return (
+    <div dir="rtl" className={PANEL_FRAME}>
+      <div className="flex h-[420px]">
+        {AUDIENCE_ON && (
+          <AudienceColumn selected={selectedAudience} onSelect={onSelectAudience} availableAudiences={availableAudiences} />
+        )}
+        <MegamenuInteractiveColumns key={rootId} sport={sport} rootId={rootId} onClose={onClose} selectedAudience={selectedAudience} />
+      </div>
+    </div>
+  );
+}
+
+function AllCategoriesPanel({ sport, roots, onClose, selectedAudience, inline = false }) {
+  const categories = sport?.categories || [];
+  const link = (cat) => withQueryParams(catalogPath(sport.slug, cat.slug), { targetAudience: selectedAudience });
+  return (
+    <div dir="rtl" className={inline ? "" : PANEL_FRAME}>
+      <div className="all-categories gap-x-6 gap-y-6 p-4 lg:gap-8 lg:p-6" style={{ "--cols": Math.min(Math.max(roots.length, 1), 6) }}>
+        {roots.map((root) => (
+          <div key={root._id} className="min-w-0">
+            <Link href={link(root)} prefetch onClick={onClose} className="mb-3 block border-b border-white/10 pb-2 text-sm font-bold text-white transition-colors hover:text-[var(--color-secondary)]">
+              {root.title}
+            </Link>
+            <ul className="space-y-2">
+              {categories.filter((c) => c.parent === root._id).map((c) => (
+                <li key={c._id}>
+                  <Link href={link(c)} prefetch onClick={onClose} className="text-[13px] text-gray-300 transition-colors hover:text-white">
+                    {c.title}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Phone version of RootCategoryPanel: no hover, so the branch is a plain list
+// (children, then the brands found anywhere in the branch).
+function MobileRootPanel({ sport, rootId, onClose, selectedAudience }) {
+  const categories = sport?.categories || [];
+  const root = categories.find((c) => c._id === rootId);
+  if (!root) return null;
+  const link = (...slugs) => withQueryParams(catalogPath(sport.slug, ...slugs), { targetAudience: selectedAudience });
+  const kids = categories.filter((c) => c.parent === root._id);
+  const brands = [...new Map([root, ...kids].flatMap((c) => c.brands || []).map((b) => [b._id, b])).values()];
+  return (
+    <div className="space-y-5 p-4">
+      <Link href={link(root.slug)} onClick={onClose} className="flex items-center gap-1 text-sm text-white">
+        مشاهده همه {root.title}
+        <FiChevronLeft size={16} />
+      </Link>
+      {kids.length > 0 && (
+        <ul className="grid grid-cols-2 gap-x-4 gap-y-3">
+          {kids.map((c) => (
+            <li key={c._id}>
+              <Link href={link(c.slug)} onClick={onClose} className="text-[13px] text-gray-300">{c.title}</Link>
+            </li>
+          ))}
+        </ul>
+      )}
+      {brands.length > 0 && (
+        <div>
+          <p className="mb-2 text-[11px] text-gray-500">برندها</p>
+          <div className="flex flex-wrap gap-1.5">
+            {brands.map((b) => (
+              <Link key={b._id} href={link(root.slug, b.slug)} onClick={onClose} className="border border-white/15 px-2.5 py-1 text-xs text-gray-300">
+                {b.title}
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -592,6 +678,12 @@ export default function Navbar({ navData: initialNavData = [] }) {
   const [cartCount, setCartCount] = useState(0);
   const [openCart, setOpenCart] = useState(false);
   const [isCategoryOpen, setIsCategoryOpen] = useState(false);
+  // desktop: which panel is open — null, "all", or a top-level category id
+  const [openMenu, setOpenMenu] = useState(null);
+  const [isDesktopSearchOpen, setIsDesktopSearchOpen] = useState(false);
+  const desktopMenuRef = useRef(null);
+  const mobileMenuRef = useRef(null);
+  const desktopSearchInputRef = useRef(null);
   const navData = Array.isArray(initialNavData) ? initialNavData : [];
   // انتخابِ مخاطبِ هدف — کاملاً کلاینتی، روی navData ی از پیش کش‌شده فیلتر می‌کند
   // (بدونِ round-trip یا کلیدِ کشِ تازه). null = «همه محصولات» (بدونِ فیلتر).
@@ -602,6 +694,13 @@ export default function Navbar({ navData: initialNavData = [] }) {
   // خالی در ستونِ دسکتاپ. عمداً از navData ی خام (نه فیلترشده) ساخته می‌شود تا با
   // انتخابِ یک مخاطب، گزینه‌های خواهر پنهان نشوند.
   const availableAudiences = collectAvailableAudiences(navData);
+  // Without departments the catalog is one virtual root: its top-level categories
+  // become navbar buttons (structural ones only while they still have children).
+  const catalogRoot = DEPARTMENTS_ON ? null : filteredNavData[0] || null;
+  const rootCategories = (catalogRoot?.categories || []).filter(
+    (c) => !c.parent && (c.hasProducts !== false || catalogRoot.categories.some((k) => k.parent === c._id)),
+  );
+  const toggleMenu = (key) => setOpenMenu((open) => (open === key ? null : key));
 
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
@@ -651,8 +750,10 @@ useEffect(() => {
         desktopSearchRef.current?.contains(e.target) ||
         mobileSearchRef.current?.contains(e.target);
 
+      if (!desktopMenuRef.current?.contains(e.target) && !mobileMenuRef.current?.contains(e.target)) setOpenMenu(null);
       if (!isInsideSearch) {
         setShowSearchDropdown(false);
+        setIsDesktopSearchOpen(false);
         // کلیک بیرون از سرچ‌بار/دراپ‌داون → بستن سرچ‌بارِ موبایل هم
         setIsMobileSearchOpen(false);
       }
@@ -661,7 +762,8 @@ useEffect(() => {
     return () => document.removeEventListener("pointerdown", handler, true);
   }, []);
 
-  const handleSearch = useCallback((value) => {
+  // React Compiler memoizes this; a manual useCallback made it bail out.
+  const handleSearch = (value) => {
     setSearchQuery(value);
     clearTimeout(debounceRef.current);
 
@@ -687,7 +789,7 @@ useEffect(() => {
         setIsSearching(false);
       }
     }, 350);
-  }, []);
+  };
 
   const closeSearch = () => {
     setShowSearchDropdown(false);
@@ -697,7 +799,29 @@ useEffect(() => {
 
   useEffect(() => {
     setIsCategoryOpen(false);
+    setOpenMenu(null);
   }, [pathname]);
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== "Escape") return;
+      setOpenMenu(null);
+      setIsDesktopSearchOpen(false);
+      setShowSearchDropdown(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const openDesktopSearch = () => {
+    setIsDesktopSearchOpen(true);
+    setOpenMenu(null);
+    requestAnimationFrame(() => desktopSearchInputRef.current?.focus());
+  };
+  const closeDesktopSearch = () => {
+    setIsDesktopSearchOpen(false);
+    closeSearch();
+  };
 
   const mobileActionButtonClass =
     "flex h-9 w-9 items-center justify-center rounded-[6px] text-white transition-colors hover:bg-white/10 hover:text-[var(--color-primary)]";
@@ -706,17 +830,18 @@ useEffect(() => {
     <>
       <nav
         onMouseLeave={() => setIsCategoryOpen(false)}
-        className="fixed top-0 right-0 left-0 z-50 bg-[#20232ae6] border-b border-white/10 h-[64px] lg:h-[75px]"
+        className={`fixed top-0 right-0 left-0 z-50 bg-[#20232ae6] border-b border-white/10 lg:h-[75px] ${DEPARTMENTS_ON ? "h-[64px]" : "h-[104px]"}`}
       >
         {/* ===== DESKTOP ===== */}
-        <div className="hidden lg:block container mx-auto px-4 h-full">
-          <div className="relative flex items-center justify-between h-full gap-6">
-            <div className="flex items-center gap-5 flex-shrink-0">
+        <div className="site-container hidden lg:block h-full">
+          {/* Leaving the bar + its open panel (one area) closes the panel; the buttons still open it on click. */}
+          <div ref={desktopMenuRef} onMouseLeave={() => setOpenMenu(null)} className="relative flex items-center justify-between h-full gap-6">
+            <div className="flex items-center gap-5 h-full flex-shrink-0">
               <div className="origin-right flex-shrink-0">
                 <Link href="/" prefetch={false}>
                   <Image
                     src={storeConfig.brand.logoLight || storeConfig.brand.logo}
-                  loading="eager"
+                    loading="eager"
                     alt="logo"
                     width={160}
                     height={65}
@@ -725,19 +850,21 @@ useEffect(() => {
                 </Link>
               </div>
 
-              <div className="relative">
+              <div className={DEPARTMENTS_ON ? "relative" : ""}>
                 <button
-                  onMouseEnter={() => setIsCategoryOpen(true)}
+                  type="button"
+                  aria-expanded={openMenu === "all"}
+                  onClick={() => toggleMenu("all")}
                   className="flex items-center gap-2 px-4 py-2 bg-[var(--color-primary)] text-white rounded-[var(--radius)] whitespace-nowrap text-sm hover:bg-[var(--color-primary)]/90 transition-all"
                 >
                   <HiOutlineViewGrid size={18} />
                   <span>دسته‌بندی محصولات</span>
                 </button>
 
-                {isCategoryOpen && navData.length > 0 && (
+                {DEPARTMENTS_ON && openMenu === "all" && navData.length > 0 && (
                   <CategoryMenu
                     navData={filteredNavData}
-                    onClose={() => setIsCategoryOpen(false)}
+                    onClose={() => setOpenMenu(null)}
                     selectedAudience={selectedAudience}
                     onSelectAudience={setSelectedAudience}
                     availableAudiences={availableAudiences}
@@ -745,60 +872,32 @@ useEffect(() => {
                 )}
               </div>
 
+              {/* top-level categories: each opens its own mega menu below the bar */}
+              {rootCategories.map((cat) => (
+                <button
+                  key={cat._id}
+                  type="button"
+                  aria-expanded={openMenu === cat._id}
+                  onClick={() => toggleMenu(cat._id)}
+                  className={`relative h-full flex items-center px-1 text-sm whitespace-nowrap transition-colors after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-[var(--color-secondary)] after:transition-transform after:duration-300 ${openMenu === cat._id ? "text-white after:scale-x-100" : "text-gray-300 hover:text-white after:scale-x-0"}`}
+                >
+                  {cat.title}
+                </button>
+              ))}
+
               {NAVIGATION_ITEMS.map((item) => (
                 <Link
                   key={item.href}
                   href={item.href}
                   prefetch
-                  className="text-white hover:text-[var(--color-primary)] transition-colors font-medium text-sm whitespace-nowrap"
+                  className="text-gray-300 hover:text-white transition-colors text-sm whitespace-nowrap"
                 >
                   {item.label}
                 </Link>
               ))}
             </div>
 
-            {/* Search */}
-            <div className="flex-grow max-w-xl" ref={desktopSearchRef}>
-              <div className="relative">
-                <Input
-                  className="rounded-[var(--radius)] bg-white/10 border-white/20 text-white placeholder:text-gray-400"
-                  type="search"
-                  placeholder="جستجو در محصولات..."
-                  value={searchQuery}
-                  onChange={(e) => handleSearch(e.target.value)}
-                  onFocus={() =>
-                    searchQuery.length >= 2 && setShowSearchDropdown(true)
-                  }
-                  icon={<FiSearch size={18} className="text-white" />}
-                />
-
-                {showSearchDropdown && (
-                  <div className="absolute top-full right-0 left-0 mt-2 bg-[#20232ae6] border border-white/10 rounded-[var(--radius)] shadow-2xl z-[200]">
-                    {isSearching ? (
-                      <p className="text-center text-gray-400 text-sm py-6">
-                        در حال جستجو...
-                      </p>
-                    ) : searchResults.length > 0 ? (
-                      <div className="p-2 space-y-0.5">
-                        {searchResults.map((p) => (
-                          <SearchResultItem
-                            key={p._id}
-                            product={p}
-                            onClick={closeSearch}
-                          />
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-center text-gray-400 text-sm py-6">
-                        محصولی یافت نشد
-                      </p>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* User + Cart */}
+            {/* User + Search + Cart */}
             <div className="flex items-center gap-3 flex-shrink-0">
               {user ? (
                 <Link href="/p-user">
@@ -825,6 +924,57 @@ useEffect(() => {
 
               {user && BROADCASTS_ON && <UserNotificationBell />}
 
+              {/* Search: an icon next to the cart that slides a field open */}
+              <div ref={desktopSearchRef} className="relative flex items-center">
+                <div
+                  className={`overflow-hidden transition-all duration-500 ease-out ${isDesktopSearchOpen ? "w-72 opacity-100 ml-2" : "w-0 opacity-0"}`}
+                >
+                  <input
+                    ref={desktopSearchInputRef}
+                    type="search"
+                    tabIndex={isDesktopSearchOpen ? 0 : -1}
+                    placeholder="جستجو در محصولات..."
+                    aria-label="جستجو در محصولات"
+                    value={searchQuery}
+                    onChange={(e) => handleSearch(e.target.value)}
+                    onFocus={() => searchQuery.length >= 2 && setShowSearchDropdown(true)}
+                    className="h-10 w-72 border border-white/20 bg-white/10 px-3 text-sm text-white outline-none placeholder:text-gray-400 focus:border-white/60"
+                  />
+                </div>
+                <IconButton
+                  ariaLabel={isDesktopSearchOpen ? "بستن جستجو" : "جستجو"}
+                  className="bg-transparent border-white hover:bg-white text-white hover:text-black transition-all"
+                  variant="outline"
+                  onClick={isDesktopSearchOpen ? closeDesktopSearch : openDesktopSearch}
+                >
+                  {isDesktopSearchOpen ? <FiX size={20} /> : <FiSearch size={20} />}
+                </IconButton>
+
+                {isDesktopSearchOpen && showSearchDropdown && (
+                  <div className="absolute top-full left-0 mt-2 w-[22rem] bg-[#20232af2] border border-white/10 rounded-[var(--radius)] shadow-2xl z-[200]">
+                    {isSearching ? (
+                      <p className="text-center text-gray-400 text-sm py-6">
+                        در حال جستجو...
+                      </p>
+                    ) : searchResults.length > 0 ? (
+                      <div className="p-2 space-y-0.5">
+                        {searchResults.map((p) => (
+                          <SearchResultItem
+                            key={p._id}
+                            product={p}
+                            onClick={closeDesktopSearch}
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-center text-gray-400 text-sm py-6">
+                        محصولی یافت نشد
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+
               {CART_ON && <div
                 id="cart-nav-icon"
                 className="relative cursor-pointer"
@@ -844,14 +994,41 @@ useEffect(() => {
                 </IconButton>
               </div>}
             </div>
+
+            {!DEPARTMENTS_ON && catalogRoot && openMenu === "all" && (
+              <AllCategoriesPanel
+                sport={catalogRoot}
+                roots={rootCategories}
+                onClose={() => setOpenMenu(null)}
+                selectedAudience={selectedAudience}
+              />
+            )}
+            {!DEPARTMENTS_ON && catalogRoot && openMenu && openMenu !== "all" && (
+              <RootCategoryPanel
+                sport={catalogRoot}
+                rootId={openMenu}
+                onClose={() => setOpenMenu(null)}
+                selectedAudience={selectedAudience}
+                onSelectAudience={setSelectedAudience}
+                availableAudiences={availableAudiences}
+              />
+            )}
           </div>
         </div>
 
         {/* ===== MOBILE ===== */}
-        <div className="lg:hidden flex h-full items-center container mx-auto px-4">
+        <div ref={mobileMenuRef} className="site-container lg:hidden relative flex h-full flex-col">
+          <div className="flex h-[64px] shrink-0 items-center">
           {isMobileSearchOpen ? (
-            /* حالت جستجو: سرچ‌بار درون‌خطی جایگزین کل ردیف نوبار می‌شود */
-            <div className="relative w-full" ref={mobileSearchRef}>
+            /* حالت جستجو: سرچ‌بار درون‌خطی جایگزین کل ردیف نوبار می‌شود — از سمت آیکون باز می‌شود */
+            <motion.div
+              key="mobile-search"
+              ref={mobileSearchRef}
+              initial={{ opacity: 0, clipPath: "inset(0 0 0 100%)" }}
+              animate={{ opacity: 1, clipPath: "inset(0 0 0 0%)" }}
+              transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+              className="relative w-full"
+            >
               <FiSearch
                 size={18}
                 className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-white/55"
@@ -904,11 +1081,12 @@ useEffect(() => {
                   )}
                 </div>
               )}
-            </div>
+            </motion.div>
           ) : (
           <div className="flex min-h-[45px] items-center justify-between w-full">
             {/* سمت راست: دسته‌بندی محصولات و لوگو */}
             <div className="flex items-center gap-2 flex-shrink-0">
+              {DEPARTMENTS_ON && (
               <button
                 type="button"
                 onClick={() => setIsCategoryOpen(!isCategoryOpen)}
@@ -921,6 +1099,7 @@ useEffect(() => {
                   <HiOutlineViewGrid size={24} />
                 )}
               </button>
+              )}
               <Link href="/" prefetch={false} className="flex-shrink-0">
                 <Image
                   src={storeConfig.brand.logoLight || storeConfig.brand.logo}
@@ -935,15 +1114,6 @@ useEffect(() => {
 
             {/* سمت چپ: جستجو، داشبورد کاربر و سبد خرید */}
             <div className="flex items-center justify-start gap-1.5 flex-shrink-0">
-              <button
-                type="button"
-                className={mobileActionButtonClass}
-                onClick={() => setIsMobileSearchOpen(true)}
-                aria-label="جستجو"
-              >
-                <FiSearch size={21} className="text-white" />
-              </button>
-
               {user ? (
                 <Link href="/p-user">
                   <Button
@@ -969,6 +1139,15 @@ useEffect(() => {
                 </Link>
               )}
 
+              <button
+                type="button"
+                className={mobileActionButtonClass}
+                onClick={() => { setIsMobileSearchOpen(true); setOpenMenu(null); }}
+                aria-label="جستجو"
+              >
+                <FiSearch size={21} className="text-white" />
+              </button>
+
               {CART_ON && <button
                 type="button"
                 className={`${mobileActionButtonClass} relative cursor-pointer`}
@@ -984,6 +1163,54 @@ useEffect(() => {
               </button>}
             </div>
           </div>
+          )}
+          </div>
+
+          {/* ردیفِ دوم: دسته‌بندی‌ها و دسته‌های سطحِ اول، با اسکرولِ افقی */}
+          {!DEPARTMENTS_ON && catalogRoot && (
+            <div className="no-scrollbar -mx-3 flex h-10 shrink-0 items-stretch gap-4 overflow-x-auto px-3">
+              <button
+                type="button"
+                aria-expanded={openMenu === "all"}
+                onClick={() => toggleMenu("all")}
+                className={`relative flex shrink-0 items-center gap-1.5 text-[13px] whitespace-nowrap after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-[var(--color-secondary)] after:transition-transform after:duration-300 ${openMenu === "all" ? "text-white after:scale-x-100" : "text-gray-300 after:scale-x-0"}`}
+              >
+                <HiOutlineViewGrid size={16} />
+                دسته‌بندی‌ها
+              </button>
+              {rootCategories.map((cat) => (
+                <button
+                  key={cat._id}
+                  type="button"
+                  aria-expanded={openMenu === cat._id}
+                  onClick={() => toggleMenu(cat._id)}
+                  className={`relative flex shrink-0 items-center text-[13px] whitespace-nowrap after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-[var(--color-secondary)] after:transition-transform after:duration-300 ${openMenu === cat._id ? "text-white after:scale-x-100" : "text-gray-300 after:scale-x-0"}`}
+                >
+                  {cat.title}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {!DEPARTMENTS_ON && catalogRoot && openMenu && (
+            <div dir="rtl" className="absolute top-full inset-x-0 z-[100] max-h-[calc(100vh-104px)] overflow-y-auto border-b border-white/10 bg-[#20232af2] text-right shadow-2xl backdrop-blur">
+              {openMenu === "all" ? (
+                <AllCategoriesPanel
+                  inline
+                  sport={catalogRoot}
+                  roots={rootCategories}
+                  onClose={() => setOpenMenu(null)}
+                  selectedAudience={selectedAudience}
+                />
+              ) : (
+                <MobileRootPanel
+                  sport={catalogRoot}
+                  rootId={openMenu}
+                  onClose={() => setOpenMenu(null)}
+                  selectedAudience={selectedAudience}
+                />
+              )}
+            </div>
           )}
 
           {/* منوی کشویی چندسطحی موبایل (با باز/بسته شدن دوباره، به سطح ۱ ریست می‌شود) */}
@@ -1002,7 +1229,7 @@ useEffect(() => {
         </div>
       </nav>
 
-      {!isHomePage && <div className="h-[64px] lg:h-[75px]" />}
+      {!isHomePage && <div className={`lg:h-[75px] ${DEPARTMENTS_ON ? "h-[64px]" : "h-[104px]"}`} />}
       {CART_ON && <CartDrawer isOpen={openCart} onClose={() => setOpenCart(false)} />}
     </>
   );

@@ -5,7 +5,7 @@ import CategoryGrid from '@/components/templates/productMatch/CategoryGrid';
 export default function MatchPageClient({ categories }) {
   return (
     <div className="min-h-screen bg-[var(--color-background)] font-sans text-[var(--color-text)]">
-      <div className="max-w-5xl lg:max-w-7xl mx-auto px-4 py-10 sm:px-6 sm:py-16">
+      <div className="site-container py-6 md:py-8">
         <div className="text-center mb-10 space-y-3">
           <h1 className="text-2xl leading-relaxed sm:text-4xl sm:leading-normal font-bold text-[var(--color-primary)]">محصولی را پیدا کنید که مناسب شماست</h1>
           <p className="text-neutral-500 max-w-2xl mx-auto leading-7">

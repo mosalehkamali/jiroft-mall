@@ -32,8 +32,8 @@ export default async function BannerSection() {
   const placeholderClasses = "w-full h-full bg-gradient-to-br from-[#f0f0f0] to-[#e8e8e8] border-2 border-dashed border-[#ddd] flex items-center justify-center text-[#aaa] text-[13px] rounded-[var(--radius)]";
 
   return (
-    <section className="container mx-auto py-6 px-4 md:px-12 lg:px-16 xl:px-20 font-sans" dir="rtl">
-      <div className="max-w-screen-xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-4">
+    <section className="site-container py-2 font-sans" dir="rtl">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5">
         
         {/* بنر اصلی (Wide) */}
         <div className={`col-span-2 h-[220px] md:h-[320px] ${cellClasses}`}>
@@ -65,7 +65,7 @@ export default async function BannerSection() {
 
       {/* بنر نواری (Strip) */}
       {banners.strip && (
-        <div className="max-w-screen-xl mx-auto mt-4">
+        <div className="mt-1.5">
           <div className={`h-[60px] md:h-[72px] rounded-[var(--radius)] overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_8px_24px_rgba(0,0,0,0.12)]`}>
             <StripBannerRenderer banner={banners.strip} />
           </div>

@@ -186,7 +186,7 @@ export default async function EventPage({ params, searchParams }) {
         }
         belowHero={
           serialized.description ? (
-            <section className="max-w-[1440px] mx-auto px-4 lg:px-8 pt-8">
+            <section className="site-container pt-6 md:pt-8">
               {/* Themed, glassy description block sitting on the campaign
                   background — uses the event's heading + body text colors. */}
               <div

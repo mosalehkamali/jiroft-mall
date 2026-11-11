@@ -8,6 +8,7 @@ import SearchBar from "./SearchBar";
 import useFilterScrollAnchor from "@/hooks/useFilterScrollAnchor";
 import useDeferredProducts from "@/hooks/useDeferredProducts";
 import { getListingPriceToman } from "@/components/features/filters/PriceRangeFilter";
+import ListingToolbar from "@/components/features/filters/ListingToolbar";
 import {
   buildAttributeMeta,
   parseAttrFiltersFromParams,
@@ -126,33 +127,21 @@ export default function ProductListClient({ products: initialProducts, totalResu
     <div
       ref={anchorRef}
       data-filter-scroll-anchor
-      className="max-w-[1440px] mx-auto px-4 py-8 flex flex-col lg:flex-row gap-8"
       dir="rtl"
     >
 
-      {/* Sidebar: فیلترهای پیشرفته */}
-      <aside className="w-full lg:w-1/4">
-        <FilterSidebar
-          initialProducts={products}
-          filters={filters}
-          setFilters={setFilters}
-          attributeMeta={attrMeta}
-          attrFilters={attrFilters}
-          setAttrFilters={applyAttrFilters}
-        />
-      </aside>
-
       {/* Main Content: سرچ و لیست محصولات */}
-      <main className="w-full lg:w-3/4">
-        <div className="mb-8 flex flex-col md:flex-row justify-between items-center gap-4 bg-white p-4 rounded-[6px] border border-gray-100 shadow-sm">
-          <div className="w-full md:w-1/2">
-            <SearchBar value={searchTerm} onChange={setSearchTerm} />
-          </div>
-          <div className="text-sm font-bold text-gray-500">
-             نمایش <span className="text-[var(--color-primary)]">{filteredProducts.length}</span> محصول
-             {isLoadingMore && <span className="mr-1 text-gray-400">(در حال تکمیل فهرست…)</span>}
-          </div>
-        </div>
+      <main>
+        <ListingToolbar search={searchTerm} onSearchChange={setSearchTerm} count={filteredProducts.length} countNote={isLoadingMore ? <span className="mr-1">(در حال تکمیل…)</span> : null}>
+            <FilterSidebar
+            initialProducts={products}
+            filters={filters}
+            setFilters={setFilters}
+            attributeMeta={attrMeta}
+            attrFilters={attrFilters}
+            setAttrFilters={applyAttrFilters}
+          />
+          </ListingToolbar>
 
         {filteredProducts.length > 0 ? (
           <ProductList

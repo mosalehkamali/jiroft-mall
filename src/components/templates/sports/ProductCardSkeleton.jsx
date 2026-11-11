@@ -1,10 +1,8 @@
 "use client";
 
 /**
- * اسکلتونِ کارت محصول — ابعاد و چیدمانِ آن دقیقاً منطبق بر
- * `@/components/modules/cart/ProductCard` است (تصویرِ مربعی، نوار ۵۶پیکسلیِ
- * سوآچ، بلوکِ نامِ ۶۰پیکسلی، قیمت و ردیفِ اکشن) تا هنگامِ جایگزینیِ اسکلتون با
- * محتوای واقعی هیچ پرش/جابه‌جایی رخ ندهد.
+ * اسکلتونِ کارت محصول — هم‌شکلِ `@/components/modules/cart/ProductCard`
+ * (تصویرِ ۳:۴، سپس نام و قیمت) تا جایگزینی با محتوای واقعی پرشی نداشته باشد.
  *
  * تمِ روشن (کارتِ سفید + بلوک‌های خاکستریِ روشن) — هم‌خوان با تمِ روشنِ صفحه‌ی برند.
  * انیمیشن: همان sweepِ چپ‌به‌راستِ سراسری (@keyframes shimmer) با احترام به
@@ -23,36 +21,11 @@ function Shimmer({ className = "" }) {
 
 export function ProductCardSkeleton() {
   return (
-    <div className="bg-white border border-gray-200 rounded-[6px] overflow-hidden h-full flex flex-col">
-      {/* تصویر — مربعی، دقیقاً مثل کارت واقعی */}
-      <Shimmer className="w-full aspect-square" />
-
-      {/* نوار سوآچ‌ها — ارتفاعِ ۵۶px مثل کارت واقعی */}
-      <div className="flex shrink-0 items-center justify-center gap-1.5 h-[56px] bg-white">
-        <div className="w-8 h-8 rounded-[6px] bg-gray-100" />
-        <div className="w-8 h-8 rounded-[6px] bg-gray-100" />
-        <div className="w-8 h-8 rounded-[6px] bg-gray-100" />
-      </div>
-
-      {/* محتوا */}
-      <div className="p-4 pt-0 flex flex-col items-center text-center flex-1">
-        {/* بلوکِ نام — ارتفاعِ ۶۰px مثل کارت واقعی */}
-        <div className="mb-4 h-[60px] shrink-0 w-full flex flex-col items-center justify-start gap-2 pt-1">
-          <Shimmer className="h-4 w-3/4 rounded" />
-          <Shimmer className="h-3 w-1/2 rounded" />
-        </div>
-
-        {/* قیمت */}
-        <div className="mt-auto flex flex-col items-center">
-          <Shimmer className="h-5 w-24 rounded" />
-        </div>
-
-        {/* ردیفِ اکشن — هم‌تراز با border-t/pt-4 کارت واقعی */}
-        <div className="flex items-center gap-7 border-t border-gray-50 pt-4 w-full justify-center mt-4">
-          <div className="w-5 h-5 rounded-full bg-gray-100" />
-          <div className="w-5 h-5 rounded-full bg-gray-100" />
-          <div className="w-5 h-5 rounded-full bg-gray-100" />
-        </div>
+    <div className="flex h-full flex-col">
+      <Shimmer className="w-full aspect-[3/4]" />
+      <div className="flex flex-col items-start gap-2 pt-3">
+        <Shimmer className="h-3 w-3/4" />
+        <Shimmer className="h-3 w-1/3" />
       </div>
     </div>
   );
@@ -65,7 +38,7 @@ export function ProductCardSkeleton() {
 export default function ProductGridSkeleton({ count = 8 }) {
   return (
     <div
-      className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4"
+      className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-1"
       aria-hidden="true"
     >
       {Array.from({ length: count }).map((_, i) => (

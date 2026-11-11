@@ -24,7 +24,7 @@ export function ShowcaseTitle({ highlight, title, subtitle }) {
   );
 }
 
-export default function SliderShowcase({ watermark, title, prevClass = "", nextClass = "", onPrev, onNext, showNav = true, paddingClass = "px-4 sm:px-8 md:px-16 lg:px-[90px]", children }) {
+export default function SliderShowcase({ watermark, title, prevClass = "", nextClass = "", onPrev, onNext, showNav = true, paddingClass = "", children }) {
   return (
     <section className="py-12 md:py-24 bg-[#fcfcfc] relative overflow-hidden group/section">
       {/* هاله رنگی بک‌گراند */}
@@ -36,10 +36,10 @@ export default function SliderShowcase({ watermark, title, prevClass = "", nextC
       </div>
 
       <div
-        className={`w-full max-w-[1800px] mx-auto relative z-10 ${paddingClass}`}
+        className={`site-container relative z-10 ${paddingClass}`}
       >
         {/* هدر اورجینال به همراه دکمه‌های قبلی */}
-        <div className="relative flex flex-col md:flex-row md:items-end justify-between mb-10 md:mb-16">
+        <div className="relative flex flex-col md:flex-row md:items-end justify-between mb-4 md:mb-5">
           <div className="relative">
             <h2 className="text-2xl md:text-4xl font-black text-gray-900 leading-tight">
               {title}

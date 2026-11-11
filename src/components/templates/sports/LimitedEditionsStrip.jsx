@@ -17,7 +17,7 @@ export default function LimitedEditionsStrip({ limitedEditions = [], brandSlug, 
   if (!limitedEditions?.length || !brandSlug) return null;
 
   return (
-    <section className="max-w-[1440px] mx-auto px-4 lg:px-8 pt-10">
+    <section className="site-container pt-6 md:pt-8">
       <div className="flex items-center gap-3 mb-5">
         <h2 className="text-lg md:text-2xl font-black text-gray-900">
           <span className="text-[var(--color-primary)]">لیمیتد ادیشن‌های</span> این سری

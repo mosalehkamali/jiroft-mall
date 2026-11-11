@@ -28,8 +28,8 @@ const ProductTemplate = ({ product, reviewsPromise, rate }) => {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="max-w-7xl mx-auto px-4 pt-8">
-        <div className="container mx-auto px-4 pt-6 sm:pt-8 md:pt-12 lg:px-8">
+      <div className="site-container pt-6 md:pt-8">
+        <div>
           {/* Gallery + Info — coupled via client state */}
           <ProductClientSection product={product} />
 

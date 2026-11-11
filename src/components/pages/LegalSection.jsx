@@ -38,7 +38,7 @@ export default function LegalSection({ block, accent }) {
 
   return (
     <section className="py-14 sm:py-20">
-      <div className="max-w-6xl mx-auto px-5 sm:px-8">
+      <div className="site-container">
         {block.intro ? (
           <Reveal className="max-w-3xl mb-12">
             <p className="text-lg leading-9 text-gray-500">{block.intro}</p>

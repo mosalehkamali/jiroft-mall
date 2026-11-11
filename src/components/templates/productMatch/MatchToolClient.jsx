@@ -32,7 +32,7 @@ export default function MatchToolClient({ category, priceBounds }) {
 
   return (
     <div className="min-h-screen bg-[var(--color-background)] font-sans text-[var(--color-text)]">
-      <div className="mx-auto max-w-7xl px-4 py-10 pb-24">
+      <div className="site-container py-6 md:py-8">
         <header className="mb-8 space-y-2 text-center">
           <h1 className="text-3xl font-bold text-[var(--color-primary)] md:text-4xl">
             {fullTitle} مناسب خود را پیدا کنید

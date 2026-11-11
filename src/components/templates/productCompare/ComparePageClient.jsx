@@ -134,7 +134,7 @@ export default function ComparePageClient({ initialCategories }) {
 
             {/* ارتفاع طبیعی محتوا، بدون هم‌پوشانی با نوبار در موبایل */}
             <div
-                className={`w-full max-w-5xl lg:max-w-7xl mx-auto px-4 sm:px-6 ${selectedProducts.length === 0 && !lockedCategory
+                className={`site-container ${selectedProducts.length === 0 && !lockedCategory
                     ? 'py-10 sm:py-16 flex flex-col items-center'
                     : 'pt-10 pb-6'
                     }`}
@@ -242,7 +242,7 @@ export default function ComparePageClient({ initialCategories }) {
         فقط زمانی نمایش داده میشود که حداقل یک محصول انتخاب شده باشد
         */}
             {(selectedProducts.length > 0 || lockedCategory) && (
-                <div className="max-w-7xl mx-auto px-4 pb-20 animate-in fade-in slide-in-from-bottom-10 duration-700">
+                <div className="site-container animate-in fade-in slide-in-from-bottom-10 duration-700 pb-6 md:pb-8">
 
                     {/* 1. کارت‌های محصولات انتخاب شده */}
                     {selectedProducts.length > 0 && (

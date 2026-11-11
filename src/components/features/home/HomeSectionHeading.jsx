@@ -20,7 +20,7 @@ export default function HomeSectionHeading({ title, highlight, subtitle, id }) {
           ? <span key={index} className={on ? "text-[var(--color-primary)]" : ""}>{text}</span>
           : null))}
       </h2>
-      <p className="mt-2 max-w-md border-r-2 border-[var(--color-primary)]/20 pr-3 text-sm font-light italic text-gray-500 md:mt-4 md:border-r-4 md:pr-4 md:text-lg">
+      <p className="mt-1 max-w-md border-r-2 border-[var(--color-primary)]/20 pr-3 text-sm font-light italic text-gray-500 md:mt-2 md:border-r-4 md:pr-4 md:text-lg">
         {subtitle}
       </p>
     </div>

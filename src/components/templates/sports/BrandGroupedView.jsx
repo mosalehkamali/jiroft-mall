@@ -49,6 +49,7 @@ import {
   mergeGroupedSections,
 } from "base/utils/groupedProductPagination";
 import storeConfig from "base/store.config";
+import ListingToolbar from "@/components/features/filters/ListingToolbar";
 
 const EMPTY_ATTR_FILTERS = Object.freeze([]);
 
@@ -587,115 +588,88 @@ export default function BrandGroupedView({
       <div
         ref={anchorRef}
         data-filter-scroll-anchor
-        className="max-w-[1440px] mx-auto px-4 lg:px-8 py-12 flex flex-col lg:flex-row gap-8"
+        className="site-container py-6 md:py-8"
       >
-        {/* Sidebar */}
-        <aside className="w-full lg:w-1/4">
-          <MobileFilterDrawer activeCount={activeCount} onReset={resetFilters}>
-          <div className="sticky top-24 flex flex-col gap-5">
-            {/* هدر فیلتر */}
-            <div className="flex items-center justify-between bg-white p-4 rounded-[6px] border border-gray-100 shadow-sm">
-              <div className="flex items-center gap-2 font-bold text-[var(--color-dark)]">
-                <FiFilter className="text-[var(--color-primary)]" size={14} />
-                <span>فیلترها</span>
-              </div>
-              <button
-                onClick={resetFilters}
-                className="text-[10px] font-bold text-gray-400 hover:text-red-500 transition-colors flex items-center gap-1"
-              >
-                <FiRotateCcw size={11} /> حذف فیلترها
-              </button>
-            </div>
-
-            {/* فیلتر ویژگیِ مگامنو — مقدار اولیه از URL، تغییر با navigationِ نرم */}
-            <AttributeFilterCard
-              meta={filterMeta}
-              activeValue={activeFilterValue}
-            />
-
-            {/* نویگیشن سری‌ها (پرش به بخش) */}
-            {index.length > 0 && (
-              <div className="bg-white rounded-[6px] border border-gray-100 shadow-sm overflow-hidden">
-                <h4 className="p-5 text-sm font-bold text-[var(--color-dark)]">سری‌ها</h4>
-                <div className="px-5 pb-5 flex flex-col gap-3 max-h-52 overflow-y-auto custom-scrollbar">
-                  {index.map((entry) =>
-                    entry.slug && sportSlug && brandSlug ? (
-                      <Link
-                        key={entry.key}
-                        href={withQueryParams(
-                          "/" + sportSlug + "/" + brandSlug + "/" + entry.slug,
-                          { targetAudience },
-                        )}
-                        className="w-full flex items-center justify-between group cursor-pointer text-right"
-                      >
-                        <div className="flex min-w-0 items-center gap-3">
-                          <div className="w-5 h-5 shrink-0 rounded-[4px] border-2 border-gray-200 flex items-center justify-center transition-all group-hover:border-[var(--color-primary)]" />
-                          <span className="min-w-0 truncate text-xs font-bold text-gray-500 transition-colors group-hover:text-gray-800">
-                            {entry.title}
-                          </span>
-                        </div>
-                      </Link>
-                    ) : (
-                      <button
-                        type="button"
-                        key={entry.key}
-                        onClick={() => jumpTo(entry.key)}
-                        className="w-full flex items-center justify-between group cursor-pointer text-right"
-                      >
-                        <div className="flex min-w-0 items-center gap-3">
-                          <div className="w-5 h-5 shrink-0 rounded-[4px] border-2 border-gray-200 flex items-center justify-center transition-all group-hover:border-[var(--color-primary)]" />
-                          <span className="min-w-0 truncate text-xs font-bold text-gray-500 transition-colors group-hover:text-gray-800">
-                            {entry.title}
-                          </span>
-                        </div>
-                      </button>
-                    )
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* فیلتر قیمت — کامپوننتِ مشترکِ اسلایدرِ دوسَره + اینپوت‌های هزارگان‌دار */}
-            <div className="bg-white rounded-[6px] border border-gray-100 shadow-sm">
-              <PriceRangeFilter
-                className="p-5"
-                bounds={priceBounds}
-                value={{ min: minPrice, max: maxPrice }}
-                onChange={handlePriceChange}
-              />
-            </div>
-
-            {/* ویژگی‌های دسته‌ی همین مسیر — آخرین بخشِ فیلترها */}
-            {categoryId && (
-              <div className="bg-white rounded-[6px] border border-gray-100 shadow-sm overflow-hidden">
-                <CategoryAttributeFilters
-                  categories={filterCategories}
-                  selected={categoryIds}
-                  onCategoryChange={handleCategoriesChange}
-                  attributes={categoryAttributes}
-                  onAttributesChange={handleAttributesChange}
-                />
-              </div>
-            )}
-          </div>
-          </MobileFilterDrawer>
-        </aside>
 
         {/* Sections */}
-        <main className="w-full lg:w-3/4">
-          {/* Top Bar */}
-          <div className="mb-8 flex flex-col md:flex-row justify-between items-center gap-6 bg-white p-5 rounded-[var(--radius)] border border-gray-100 shadow-sm">
-            <div className="w-full md:w-2/3">
-              <SearchBar value={searchTerm} onChange={handleSearchChange} />
+        <main>
+          <ListingToolbar search={searchTerm} onSearchChange={handleSearchChange} count={countLabel}>
+            <MobileFilterDrawer activeCount={activeCount} onReset={resetFilters}>
+            <div className="filter-columns">
+  
+              {/* فیلتر ویژگیِ مگامنو — مقدار اولیه از URL، تغییر با navigationِ نرم */}
+              <AttributeFilterCard
+                meta={filterMeta}
+                activeValue={activeFilterValue}
+              />
+  
+              {/* نویگیشن سری‌ها (پرش به بخش) */}
+              {index.length > 0 && (
+                <div className="bg-white rounded-[6px] border border-gray-100 shadow-sm overflow-hidden">
+                  <h4 className="p-5 text-sm font-bold text-[var(--color-dark)]">سری‌ها</h4>
+                  <div className="px-5 pb-5 flex flex-col gap-3 max-h-52 overflow-y-auto custom-scrollbar">
+                    {index.map((entry) =>
+                      entry.slug && sportSlug && brandSlug ? (
+                        <Link
+                          key={entry.key}
+                          href={withQueryParams(
+                            "/" + sportSlug + "/" + brandSlug + "/" + entry.slug,
+                            { targetAudience },
+                          )}
+                          className="w-full flex items-center justify-between group cursor-pointer text-right"
+                        >
+                          <div className="flex min-w-0 items-center gap-3">
+                            <div className="w-5 h-5 shrink-0 rounded-[4px] border-2 border-gray-200 flex items-center justify-center transition-all group-hover:border-[var(--color-primary)]" />
+                            <span className="min-w-0 truncate text-xs font-bold text-gray-500 transition-colors group-hover:text-gray-800">
+                              {entry.title}
+                            </span>
+                          </div>
+                        </Link>
+                      ) : (
+                        <button
+                          type="button"
+                          key={entry.key}
+                          onClick={() => jumpTo(entry.key)}
+                          className="w-full flex items-center justify-between group cursor-pointer text-right"
+                        >
+                          <div className="flex min-w-0 items-center gap-3">
+                            <div className="w-5 h-5 shrink-0 rounded-[4px] border-2 border-gray-200 flex items-center justify-center transition-all group-hover:border-[var(--color-primary)]" />
+                            <span className="min-w-0 truncate text-xs font-bold text-gray-500 transition-colors group-hover:text-gray-800">
+                              {entry.title}
+                            </span>
+                          </div>
+                        </button>
+                      )
+                    )}
+                  </div>
+                </div>
+              )}
+  
+              {/* فیلتر قیمت — کامپوننتِ مشترکِ اسلایدرِ دوسَره + اینپوت‌های هزارگان‌دار */}
+              <div className="bg-white rounded-[6px] border border-gray-100 shadow-sm">
+                <PriceRangeFilter
+                  className="p-5"
+                  bounds={priceBounds}
+                  value={{ min: minPrice, max: maxPrice }}
+                  onChange={handlePriceChange}
+                />
+              </div>
+  
+              {/* ویژگی‌های دسته‌ی همین مسیر — آخرین بخشِ فیلترها */}
+              {categoryId && (
+                <div className="bg-white rounded-[6px] border border-gray-100 shadow-sm overflow-hidden">
+                  <CategoryAttributeFilters
+                    categories={filterCategories}
+                    selected={categoryIds}
+                    onCategoryChange={handleCategoriesChange}
+                    attributes={categoryAttributes}
+                    onAttributesChange={handleAttributesChange}
+                  />
+                </div>
+              )}
             </div>
-            <div className="flex items-center gap-2 text-gray-500 whitespace-nowrap">
-              <FiShoppingBag className="text-[var(--color-primary)]" />
-              <span className="font-bold">تعداد کالا:</span>
-              <span className="text-[var(--color-text)] font-bold">
-                {countLabel}
-              </span>
-            </div>
-          </div>
+            </MobileFilterDrawer>
+          </ListingToolbar>
 
           {status?.op === "applyFilters" && statusNote(status.phase)}
 
@@ -756,7 +730,7 @@ export default function BrandGroupedView({
                   </div>
 
                   {/* محصولات بخش */}
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-1">
                     {section.products.map((product) => (
                       <ProductCard
                         key={product._id}

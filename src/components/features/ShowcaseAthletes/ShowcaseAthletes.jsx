@@ -87,7 +87,7 @@ export default function ShowcaseAthletes({ data = { men: [], women: [] } }) {
         <div className="absolute bottom-0 right-0 h-72 w-72 rounded-full bg-white/[0.03] blur-3xl" />
       </div>
 
-      <div className="relative z-10 mx-auto max-w-7xl px-4 sm:px-6">
+      <div className="site-container relative z-10">
         <div className="mb-10 flex flex-col items-center justify-between gap-4 text-center lg:flex-row lg:text-right">
           <div>
             <span className="mb-2 block text-[11px] font-bold uppercase tracking-[0.25em] text-[var(--color-primary)]">

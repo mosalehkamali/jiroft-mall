@@ -23,7 +23,6 @@ const Card = load('src/components/modules/cart/ProductCard.js', {
   'next/image': ({ fill, ...props }) => React.createElement('img', props),
   '@/lib/variantImages': { valueImageSwatches: () => [] },
   '@/hooks/useWishlist': () => ({ isWishlisted: false, toggle() {}, isLoading: false }),
-  './ProductCardTitle': ({ name, slug }) => React.createElement('a', { href: '/products/' + slug }, name),
 });
 
 test('product card navigation is named and never nests a button inside a link', () => {
@@ -32,11 +31,11 @@ test('product card navigation is named and never nests a button inside a link', 
     onQuickView() {},
   }));
   assert.match(html, /aria-label="راکت تست"/);
-  assert.match(html, /<a[^>]*href="\/products\/test"[^>]*aria-label="صفحه محصول"/);
+  assert.doesNotMatch(html, /صفحه محصول/, 'the card itself is the link — no separate button');
   for (const link of html.matchAll(/<a\b[^>]*>([\s\S]*?)<\/a>/g)) assert.doesNotMatch(link[1], /<button\b/);
   assert.match(html, /<button[^>]*aria-label="نمایش سریع"/);
   assert.match(html, /<button[^>]*aria-label="افزودن به علاقه مندی"/);
-  assert.equal((html.match(/h-6 w-6 -m-\[3px\]/g) || []).length, 3);
+  assert.equal((html.match(/h-7 w-7/g) || []).length, 2);
 });
 
 test('WhatsApp has an accessible name without additional visible text', () => {

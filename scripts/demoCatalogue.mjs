@@ -30,13 +30,20 @@ const photo = (id, w = 900, h = 1200) =>
 const SIZES = { clothes: ["S", "M", "L", "XL"], pants: ["30", "32", "34", "36"], shoes: ["40", "41", "42", "43", "44"] };
 
 const attr = (name, label, extra = {}) => ({ name, label, uiType: "text-input", required: false, filterable: true, ...extra });
-const sizeAttr = (options) => [{ name: "size", label: "سایز", uiType: "button-toggle", required: true, filterable: true, options }];
+const sizeAttr = (options) => [
+  { name: "size", label: "سایز", uiType: "button-toggle", required: true, filterable: true, options },
+  { name: "color", label: "رنگ", uiType: "button-toggle", required: false, filterable: true },
+];
 
 // [key, title, name(slug), parentKey, image id, sizes]
+// The top level (no parent) becomes the navbar buttons; men/women/accessories only group.
+const STRUCTURAL = new Set(["men", "women", "acc"]);
 const CATEGORIES = [
   ["men", "مردانه", "men", null, "1617137968427-85924c800a22"],
   ["women", "زنانه", "women", null, "1469334031218-e382a71b716b"],
-  ["acc", "کیف، کفش و اکسسوری", "accessories", null, "1516762689617-e1cffcef479d"],
+  ["bags", "کیف", "bags", null, "1584917865442-de89df76afd3"],
+  ["shoes", "کفش", "shoes", null, "1549298916-b41d501d3772", SIZES.shoes],
+  ["acc", "اکسسوری", "accessories", null, "1516762689617-e1cffcef479d"],
   ["m-tee", "تی‌شرت مردانه", "men-tshirts", "men", "1521572163474-6864f9cf17ab", SIZES.clothes],
   ["m-shirt", "پیراهن مردانه", "men-shirts", "men", "1598033129183-c4f50c736f10", SIZES.clothes],
   ["m-pants", "شلوار مردانه", "men-pants", "men", "1473966968600-fa801b869a1a", SIZES.pants],
@@ -46,8 +53,6 @@ const CATEGORIES = [
   ["w-top", "شومیز و بافت", "women-tops", "women", "1564257631407-4deb1f99d992", SIZES.clothes],
   ["w-pants", "شلوار زنانه", "women-pants", "women", "1594633312681-425c7b97ccd1", SIZES.clothes],
   ["w-coat", "پالتو و کاپشن زنانه", "women-coats", "women", "1539533018447-63fcce2678e3", SIZES.clothes],
-  ["shoes", "کفش", "shoes", "acc", "1549298916-b41d501d3772", SIZES.shoes],
-  ["bags", "کیف", "bags", "acc", "1584917865442-de89df76afd3"],
   ["hats", "کلاه", "hats", "acc", "1521369909029-2afed882baee"],
 ];
 
@@ -61,24 +66,25 @@ const BRANDS = [
   ["Kavir", "کویر", "ایران"],
 ];
 
-// [name, category, brand index, price (تومان), main image, color, material, label, discount %, extra gallery ids]
+// [name, category, brand index, price (تومان), main image, color, material, label, discount %, extra gallery ids,
+//  colour variants [[colour, image id], …] — optional; their images are what the product card slides through]
 const PRODUCTS = [
-  ["تی‌شرت نخی سفید ساده", "m-tee", 0, 480000, "1521572163474-6864f9cf17ab", "سفید", "۱۰۰٪ پنبه", "hot", 0, ["1562157873-818bc0726f68"]],
+  ["تی‌شرت نخی سفید ساده", "m-tee", 0, 480000, "1521572163474-6864f9cf17ab", "سفید", "۱۰۰٪ پنبه", "hot", 0, ["1562157873-818bc0726f68"], [["سفید", "1521572163474-6864f9cf17ab"], ["مشکی", "1583743814966-8936f5b7be1a"]]],
   ["تی‌شرت مشکی طرح‌دار", "m-tee", 2, 590000, "1503341504253-dff4815485f1", "مشکی", "پنبه سوپر", "new", 15, []],
   ["تی‌شرت کرم چاپی", "m-tee", 3, 620000, "1576566588028-4147f3842f27", "کرم", "پنبه", "none", 0, []],
   ["تی‌شرت مشکی یقه‌گرد", "m-tee", 0, 450000, "1583743814966-8936f5b7be1a", "مشکی", "۱۰۰٪ پنبه", "none", 0, ["1562157873-818bc0726f68"]],
   ["پیراهن جین آستین‌بلند", "m-shirt", 5, 1150000, "1596755094514-f87e34085b2c", "آبی", "جین", "new", 0, []],
-  ["پیراهن سفید رسمی", "m-shirt", 2, 980000, "1598033129183-c4f50c736f10", "سفید", "نخ پنبه", "hot", 20, ["1602810318383-e386cc2a3ccf"]],
+  ["پیراهن سفید رسمی", "m-shirt", 2, 980000, "1598033129183-c4f50c736f10", "سفید", "نخ پنبه", "hot", 20, ["1602810318383-e386cc2a3ccf"], [["سفید", "1598033129183-c4f50c736f10"], ["آبی", "1596755094514-f87e34085b2c"]]],
   ["پیراهن چهارخانه پاییزه", "m-shirt", 3, 890000, "1602810318383-e386cc2a3ccf", "زرشکی", "فلانل", "none", 0, []],
   ["شلوار جین مشکی راسته", "m-pants", 5, 1350000, "1542272604-787c3835535d", "مشکی", "جین کشی", "hot", 0, []],
   ["شلوار کتان خاکی", "m-pants", 0, 1090000, "1473966968600-fa801b869a1a", "خاکی", "کتان", "none", 10, []],
   ["شلوار پارچه‌ای سرمه‌ای", "m-pants", 2, 1240000, "1624378439575-d8705ad7ae80", "سرمه‌ای", "فاستونی", "none", 0, []],
-  ["هودی طوسی کلاه‌دار", "m-hoodie", 3, 1480000, "1556821840-3a63f95609a7", "طوسی", "دورس پنبه", "hot", 0, []],
+  ["هودی طوسی کلاه‌دار", "m-hoodie", 3, 1480000, "1556821840-3a63f95609a7", "طوسی", "دورس پنبه", "hot", 0, [], [["طوسی", "1556821840-3a63f95609a7"], ["سفید", "1620799140408-edc6dcb6d633"]]],
   ["سویشرت سفید یقه‌گرد", "m-hoodie", 0, 1190000, "1620799140408-edc6dcb6d633", "سفید", "دورس", "new", 25, []],
   ["کاپشن چرم مشکی", "m-jacket", 5, 4200000, "1551028719-00167b16eac5", "مشکی", "چرم مصنوعی", "limited", 0, []],
   ["کاپشن بامبر آجری", "m-jacket", 2, 2650000, "1591047139829-d91aecb6caea", "آجری", "پلی‌استر", "new", 0, []],
   ["کت تک سرمه‌ای", "m-jacket", 1, 3900000, "1617137968427-85924c800a22", "سرمه‌ای", "فاستونی", "none", 15, []],
-  ["پیراهن بلند قرمز مجلسی", "w-dress", 4, 2850000, "1595777457583-95e059d581b8", "قرمز", "حریر", "hot", 0, []],
+  ["پیراهن بلند قرمز مجلسی", "w-dress", 4, 2850000, "1595777457583-95e059d581b8", "قرمز", "حریر", "hot", 0, [], [["قرمز", "1595777457583-95e059d581b8"], ["گل‌دار", "1572804013309-59a88b7e92f1"], ["سفید", "1515372039744-b8f02a3ae446"]]],
   ["پیراهن گل‌دار تابستانه", "w-dress", 4, 1750000, "1572804013309-59a88b7e92f1", "قرمز", "ویسکوز", "new", 20, []],
   ["پیراهن سفید کوتاه", "w-dress", 1, 1620000, "1515372039744-b8f02a3ae446", "سفید", "کتان", "none", 0, []],
   ["سارافون گل‌دار بهاره", "w-dress", 1, 1490000, "1496747611176-843222e1e57c", "کرم", "نخ", "none", 30, []],
@@ -130,7 +136,7 @@ export async function seedDemo({ adminPhone }) {
       parent: parentKey ? cats[parentKey]._id : null,
       image: photo(image, 800, 800),
       order: Object.keys(cats).length,
-      attributes: parentKey ? [attr("material", "جنس"), attr("madeIn", "کشور سازنده", { filterable: false })] : [],
+      attributes: !STRUCTURAL.has(key) ? [attr("material", "جنس"), attr("madeIn", "کشور سازنده", { filterable: false })] : [],
       variantAttributes: sizes ? sizeAttr(sizes) : [],
     });
   }
@@ -150,7 +156,7 @@ export async function seedDemo({ adminPhone }) {
   /* products + size variants */
   const products = [];
   const discounted = [];
-  for (const [i, [name, catKey, brandIndex, basePrice, main, color, material, label, off, gallery]] of PRODUCTS.entries()) {
+  for (const [i, [name, catKey, brandIndex, basePrice, main, color, material, label, off, gallery, colours = [[]]]] of PRODUCTS.entries()) {
     const category = cats[catKey];
     const product = await Product.create({
       name,
@@ -170,12 +176,16 @@ export async function seedDemo({ adminPhone }) {
       isActive: true,
     });
     const sizes = category.variantAttributes[0]?.options || [];
-    for (const size of sizes) {
-      const variant = await Variant.create({
-        productId: product._id, categoryId: category._id,
-        sku: `${product.sku}-${size}`, attributes: { size }, price: basePrice,
-      });
-      product.variants.push(variant._id);
+    for (const [c, [colour, image]] of colours.entries()) {
+      for (const size of sizes) {
+        const variant = await Variant.create({
+          productId: product._id, categoryId: category._id, price: basePrice,
+          sku: `${product.sku}-${size}${c ? `-${c + 1}` : ""}`,
+          attributes: colour ? { size, color: colour } : { size },
+          images: image ? [photo(image)] : [],
+        });
+        product.variants.push(variant._id);
+      }
     }
     if (sizes.length) await product.save();
     products.push(product);

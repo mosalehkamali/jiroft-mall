@@ -16,6 +16,7 @@ import SeriesSlider from "@/components/templates/sports/SeriesSlider";
 import LimitedEditionsStrip from "@/components/templates/sports/LimitedEditionsStrip";
 import SportHero from "@/components/templates/sports/SportHero";
 import { FiShoppingBag } from "react-icons/fi";
+import ListingToolbar from "@/components/features/filters/ListingToolbar";
 import {
   buildAttributeMeta,
   mergeAttributeMeta,
@@ -410,59 +411,39 @@ export default function SportPageClient({
       <div
         ref={anchorRef}
         data-filter-scroll-anchor
-        className="max-w-[1440px] mx-auto px-4 lg:px-8 py-12 flex flex-col lg:flex-row gap-8"
+        className="site-container py-6 md:py-8"
       >
-        {/* Sidebar */}
-        <aside className="w-full lg:w-1/4">
-          <div className="sticky top-24">
-            <FilterSidebar
-              initialProducts={products}
-              filters={localFilters}
-              setFilters={applyLocalFilters}
-              hideSportFilter={true}
-              seriesOptions={seriesFilterOptions}
-              topCategoryOptions={categoryFilterFirst ? filterCategories : null}
-              categoryFilter={categoryFilterFirst ? (
-                <AttributeFilters
-                  attrMeta={attributeMeta}
-                  attrFilters={attrFilters}
-                  setAttrFilters={applyAttrFilters}
-                />
-              ) : hasCategoryCatalog ? (
-                <CategoryAttributeFilters
-                  categories={filterCategories}
-                  selected={localFilters.categories}
-                  attributes={attrFilters}
-                  onCategoryChange={(ids) => applyLocalFilters({ ...localFilters, categories: ids })}
-                  onAttributesChange={applyAttrFilters}
-                />
-              ) : null}
-              attributeMeta={hasCategoryCatalog ? [] : attributeMeta}
-              attrFilters={attrFilters}
-              setAttrFilters={applyAttrFilters}
-            />
-          </div>
-        </aside>
 
         {/* Products */}
-        <main className="w-full lg:w-3/4">
-          {/* Top Bar */}
-          <div className="mb-8 flex flex-col md:flex-row justify-between items-center gap-6 bg-white p-5 rounded-[var(--radius)] border border-gray-100 shadow-sm">
-            <div className="w-full md:w-2/3">
-              <SearchBar value={searchTerm} onChange={setSearchTerm} />
-            </div>
-
-            <div className="flex items-center gap-2 text-gray-500 whitespace-nowrap">
-              <FiShoppingBag className="text-[var(--color-primary)]" />
-
-              <span className="font-bold">تعداد کالا:</span>
-
-              <span className="text-[var(--color-text)] font-bold">
-                {filteredProducts.length}
-              </span>
-              {isLoadingMore && <span className="text-xs">در حال تکمیل…</span>}
-            </div>
-          </div>
+        <main>
+          <ListingToolbar search={searchTerm} onSearchChange={setSearchTerm} count={filteredProducts.length} countNote={isLoadingMore ? <span className="mr-1">(در حال تکمیل…)</span> : null}>
+            <FilterSidebar
+                initialProducts={products}
+                filters={localFilters}
+                setFilters={applyLocalFilters}
+                hideSportFilter={true}
+                seriesOptions={seriesFilterOptions}
+                topCategoryOptions={categoryFilterFirst ? filterCategories : null}
+                categoryFilter={categoryFilterFirst ? (
+                  <AttributeFilters
+                    attrMeta={attributeMeta}
+                    attrFilters={attrFilters}
+                    setAttrFilters={applyAttrFilters}
+                  />
+                ) : hasCategoryCatalog ? (
+                  <CategoryAttributeFilters
+                    categories={filterCategories}
+                    selected={localFilters.categories}
+                    attributes={attrFilters}
+                    onCategoryChange={(ids) => applyLocalFilters({ ...localFilters, categories: ids })}
+                    onAttributesChange={applyAttrFilters}
+                  />
+                ) : null}
+                attributeMeta={hasCategoryCatalog ? [] : attributeMeta}
+                attrFilters={attrFilters}
+                setAttrFilters={applyAttrFilters}
+              />
+          </ListingToolbar>
 
           {/* Product List */}
           {filteredProducts.length > 0 ? (

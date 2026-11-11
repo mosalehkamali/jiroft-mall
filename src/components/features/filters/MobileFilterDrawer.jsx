@@ -12,7 +12,8 @@
  * فیلترها به‌صورت زنده اعمال می‌شوند، پس «اعمال» صرفاً شیت را می‌بندد.
  */
 
-import { useEffect, useState } from 'react';
+import { useContext, useEffect, useState } from 'react';
+import { FilterPanelContext } from '@/components/features/filters/ListingToolbar';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { FaFilter, FaTimes } from 'react-icons/fa';
@@ -24,6 +25,11 @@ export default function MobileFilterDrawer({
   title = 'فیلترها',
 }) {
   const [open, setOpen] = useState(false);
+  // Inside ListingToolbar's accordion: no button, no sheet — the toolbar is the shell.
+  const panel = useContext(FilterPanelContext);
+  useEffect(() => {
+    panel?.report(activeCount, onReset);
+  });
 
   // portal فقط سمت کلاینت در دسترس است؛ چون open در SSR/hydration همیشه false است
   // این بررسی برای جلوگیری از خطای document undefined کافی است (بدون state اضافه).
@@ -46,6 +52,8 @@ export default function MobileFilterDrawer({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [open]);
+
+  if (panel) return children;
 
   return (
     <>

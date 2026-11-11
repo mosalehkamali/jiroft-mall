@@ -651,3 +651,27 @@
   }
 }
 
+
+/* The one page container of the storefront: full width with the same side gutter on
+   every page. Change the gutter here, not per page. In the components layer so a
+   utility on the same element can still override it. */
+@layer components {
+  .site-container { width: 100%; margin-inline: auto; padding-inline: 0.75rem; }
+  @media (min-width: 1024px) { .site-container { padding-inline: 2.5rem; } }
+
+  /* Filter groups inside the listing toolbar's accordion: as many columns as fit. */
+  .filter-columns { columns: 15rem; column-gap: 2rem; }
+  .filter-columns > * { break-inside: avoid; margin-bottom: 0.75rem; }
+
+  /* Navbar «دسته‌بندی محصولات» panel: two columns on phones, one per top level on desktop. */
+  .all-categories { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  @media (min-width: 1024px) { .all-categories { grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); } }
+
+  /* Product card photo: a slow, deep "cinematic" push-in while the card is hovered. */
+  .card-zoom { transition: transform 2.4s cubic-bezier(0.16, 1, 0.3, 1); will-change: transform; }
+  .group:hover .card-zoom { transform: scale(1.12); }
+  @media (prefers-reduced-motion: reduce) {
+    .card-zoom { transition: none; }
+    .group:hover .card-zoom { transform: none; }
+  }
+}

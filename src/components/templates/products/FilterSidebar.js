@@ -1,5 +1,4 @@
 import { useMemo } from "react";
-import { FaFilter, FaHistory } from "react-icons/fa";
 import MobileFilterDrawer from "@/components/features/filters/MobileFilterDrawer";
 import AttributeFilters from "@/components/features/filters/AttributeFilters";
 import FilterGroup from "@/components/features/filters/FilterGroup";
@@ -89,22 +88,8 @@ export default function FilterSidebar({
 
   return (
     <MobileFilterDrawer activeCount={activeCount} onReset={resetFilters}>
-    <div className="flex flex-col gap-5 sticky top-24">
-      {/* هدر فیلتر */}
-      <div className="flex items-center justify-between bg-white p-4 rounded-[6px] border border-gray-100 shadow-sm">
-        <div className="flex items-center gap-2 font-bold text-[var(--color-dark)]">
-          <FaFilter className="text-[var(--color-primary)]" size={14} />
-          <span>فیلترهای پیشرفته</span>
-        </div>
-        <button
-          onClick={resetFilters}
-          className="text-[10px] font-bold text-gray-400 hover:text-red-500 transition-colors flex items-center gap-1"
-        >
-          <FaHistory /> حذف فیلترها
-        </button>
-      </div>
-
-      <div className="bg-white rounded-[6px] border border-gray-100 shadow-sm overflow-hidden">
+    <div>
+      <div className="filter-columns">
         {topCategoryOptions && SHOW_CATEGORY && (
           <FilterGroup
             title="نوع محصول"

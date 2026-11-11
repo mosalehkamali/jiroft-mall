@@ -393,10 +393,10 @@ test("ناوبری بیرونِ جریانِ صفحه است، با همان ف�
   const nav = await read("../src/components/features/articles/MergedSliderNav.jsx");
   // absolute + bottom-full: هیچ ارتفاعی اضافه نمی‌کند، پس فاصله‌ی بلوکِ بالایی
   // تا اسلایدر همانی می‌ماند که ادمین تنظیم کرده.
-  assert.match(nav, /className="pointer-events-none absolute bottom-full end-0 mb-10 md:mb-16"/);
-  // mb-10/md:mb-16 دقیقاً فاصله‌ی سرصفحه تا اسلایدر در صفحه‌ی اصلی است.
+  assert.match(nav, /className="pointer-events-none absolute bottom-full end-0 mb-4 md:mb-5"/);
+  // mb-4/md:mb-5 دقیقاً فاصله‌ی سرصفحه تا اسلایدر در صفحه‌ی اصلی است.
   const home = await read("../src/components/features/bestSellers/ProductSliderContent.jsx");
-  assert.match(home, /justify-between mb-10 md:mb-16/);
+  assert.match(home, /justify-between mb-4 md:mb-5/);
   const renderer = await read("../src/components/features/articles/ArticleBlockRenderer.jsx");
   assert.match(renderer, /<div className=\{`\$\{blockSection\} relative`\}/);
 });
@@ -592,8 +592,10 @@ test("هدرِ تمام‌عرض هیچ ظرفی ندارد و فاصله‌ی �
   for (const wrapper of ["blockSection", "container", "max-w-"]) assert.ok(!fn.includes(wrapper), wrapper);
   // فاصله‌ی نوارِ بالا سراسری است و اینجا تکرار نمی‌شود.
   const navbar = await read("../src/components/features/navbar/Navbar.js");
-  assert.match(navbar, /\{!isHomePage && <div className="h-\[64px\] lg:h-\[75px\]" \/>\}/);
-  for (const spacing of ["64px", "75px", "pt-"]) assert.ok(!fn.includes(spacing), spacing);
+  // The spacer's height is the bar's: 64px, or 104px on phones with the category row.
+  assert.match(navbar, /\{!isHomePage && <div className=\{`lg:h-\[75px\] \$\{DEPARTMENTS_ON \? "h-\[64px\]" : "h-\[104px\]"\}`\} \/>\}/);
+  assert.match(navbar, /border-white\/10 lg:h-\[75px\] \$\{DEPARTMENTS_ON \? "h-\[64px\]" : "h-\[104px\]"\}`\}/);
+  for (const spacing of ["64px", "104px", "75px", "pt-"]) assert.ok(!fn.includes(spacing), spacing);
 });
 
 test("ویرایشگر هدر را یک‌بار و در صدر می‌گذارد", async () => {

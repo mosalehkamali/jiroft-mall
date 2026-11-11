@@ -38,7 +38,7 @@ export function SectionHeading({ eyebrow, title, subtitle, accent, center = true
 
 function Container({ children, className = "" }) {
   return (
-    <div className={`max-w-6xl mx-auto px-5 sm:px-8 ${className}`}>{children}</div>
+    <div className={`site-container ${className}`}>{children}</div>
   );
 }
 

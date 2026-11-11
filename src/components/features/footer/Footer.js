@@ -95,7 +95,7 @@ export default function Footer() {
     <footer className="bg-[var(--color-dark)] text-white border-t border-white/10">
       {newsletter ? (
         <div className="border-b border-white/5">
-          <div className="container mx-auto px-4 py-12">
+          <div className="site-container py-12">
             <div className="max-w-4xl mx-auto">
               <div className="grid md:grid-cols-2 gap-8 items-center">
                 <div>
@@ -138,7 +138,7 @@ export default function Footer() {
         </div>
       ) : null}
 
-      <div className="container mx-auto px-4 py-16">
+      <div className="site-container py-16">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-12">
           <div className="lg:col-span-2">
             <div className="mb-6 opacity-90">
@@ -206,7 +206,7 @@ export default function Footer() {
       </div>
 
       <div className="border-t border-white/5">
-        <div className="container mx-auto px-4 py-6">
+        <div className="site-container py-6">
           <p className="text-xs text-gray-300 text-center md:text-start">
             © {new Date().getFullYear()} — تمامی حقوق برای {brand.name} محفوظ است.
           </p>

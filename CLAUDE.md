@@ -1099,7 +1099,9 @@ Navbar → Header (full width) → Breadcrumb → content
 
 Rendered outside every container, so `SportHero`'s `w-full` is the viewport — the same as
 the sport page. **The navbar gap is not re-implemented:** `Navbar` already renders a global
-`h-[64px] lg:h-[75px]` spacer on every non-home page, so the header simply starts below it.
+spacer on every non-home page, the same height as the bar (`lg:h-[75px]`; on phones `h-[104px]`
+— the bar plus its row of top-level category buttons — or `h-[64px]` with departments on), so the
+header simply starts below it.
 Measured at 1400px the article's hero is `{x: 0, y: 75, w: 1388, h: 220}` and `/products`'
 hero is the same to the pixel; at 390px both are `{x: 0, y: 64, w: 390, h: 100}`.
 

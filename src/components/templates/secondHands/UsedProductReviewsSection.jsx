@@ -11,7 +11,7 @@ export default function UsedProductReviewsSection({ reviews = [] }) {
 
   return (
     <section className="bg-white pb-20 pt-4 text-black md:pb-20 md:pt-6" dir="rtl">
-      <div className="container mx-auto px-4 md:px-12 lg:px-16 xl:px-20">
+      <div className="site-container">
         <div className="relative mb-12">
           <h2 className="text-2xl font-black leading-tight text-gray-900 md:text-4xl">
             <span className="text-[var(--color-primary)]">تجربه‌ی خرید </span>

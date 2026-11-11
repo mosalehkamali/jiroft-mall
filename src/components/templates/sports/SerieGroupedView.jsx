@@ -33,6 +33,7 @@ import {
   waitBeforeRetry,
 } from "@/lib/groupedFetchRetry";
 import storeConfig from "base/store.config";
+import ListingToolbar from "@/components/features/filters/ListingToolbar";
 
 const BATCH_SECTIONS = 2;
 
@@ -440,108 +441,83 @@ export default function SerieGroupedView({
       <div
         ref={anchorRef}
         data-filter-scroll-anchor
-        className="max-w-[1440px] mx-auto px-4 lg:px-8 py-12 flex flex-col lg:flex-row gap-8"
+        className="site-container py-6 md:py-8"
       >
-        {/* Sidebar */}
-        <aside className="w-full lg:w-1/4">
-          <MobileFilterDrawer activeCount={activeCount} onReset={resetFilters}>
-          <div className="sticky top-24 flex flex-col gap-5">
-            <div className="flex items-center justify-between bg-white p-4 rounded-[6px] border border-gray-100 shadow-sm">
-              <div className="flex items-center gap-2 font-bold text-[var(--color-dark)]">
-                <FiFilter className="text-[var(--color-primary)]" size={14} />
-                <span>فیلترها</span>
-              </div>
-              <button
-                onClick={resetFilters}
-                className="text-[10px] font-bold text-gray-400 hover:text-red-500 transition-colors flex items-center gap-1"
-              >
-                <FiRotateCcw size={11} /> حذف فیلترها
-              </button>
-            </div>
-
-            {/* نویگیشن زیرسری‌ها */}
-            {index.length > 0 && (
-              <div className="bg-white rounded-[6px] border border-gray-100 shadow-sm p-5">
-                <h4 className="text-sm font-bold text-[var(--color-dark)] mb-4 flex items-center gap-2">
-                  <FiLayers className="text-[var(--color-primary)]" size={14} />
-                  زیرسری‌ها
-                </h4>
-                <div className="flex flex-col gap-1 max-h-72 overflow-y-auto custom-scrollbar">
-                  {index.map((entry) =>
-                    entry.slug && sportSlug && brandSlug ? (
-                      <Link
-                        key={entry.key}
-                        href={withQueryParams(
-                          `/${sportSlug}/${brandSlug}/${entry.slug}`,
-                          { targetAudience },
-                        )}
-                        className="flex items-center justify-between gap-2 px-3 py-2 rounded-[6px] text-right hover:bg-gray-50 transition-colors group"
-                      >
-                        <span className="text-xs font-bold text-gray-600 group-hover:text-[var(--color-primary)] truncate">
-                          {entry.title}
-                        </span>
-                        <span className="text-[10px] font-bold text-gray-400 bg-gray-100 rounded-full px-2 py-0.5 shrink-0">
-                          {entry.productCount.toLocaleString("fa-IR")}
-                        </span>
-                      </Link>
-                    ) : (
-                      <button
-                        key={entry.key}
-                        onClick={() => jumpTo(entry.key)}
-                        className="flex items-center justify-between gap-2 px-3 py-2 rounded-[6px] text-right hover:bg-gray-50 transition-colors group"
-                      >
-                        <span className="text-xs font-bold text-gray-600 group-hover:text-[var(--color-primary)] truncate">
-                          {entry.title}
-                        </span>
-                        <span className="text-[10px] font-bold text-gray-400 bg-gray-100 rounded-full px-2 py-0.5 shrink-0">
-                          {entry.productCount.toLocaleString("fa-IR")}
-                        </span>
-                      </button>
-                    )
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* فیلتر قیمت — کامپوننتِ مشترکِ اسلایدرِ دوسَره + اینپوت‌های هزارگان‌دار */}
-            <div className="bg-white rounded-[6px] border border-gray-100 shadow-sm">
-              <PriceRangeFilter
-                className="p-5"
-                bounds={priceBounds}
-                value={{ min: minPrice, max: maxPrice }}
-                onChange={handlePriceChange}
-              />
-            </div>
-
-            {/* نوع محصول + ویژگی‌هایش — آخرین بخشِ فیلترها */}
-            <div className="bg-white rounded-[6px] border border-gray-100 shadow-sm overflow-hidden">
-              <CategoryAttributeFilters
-                categories={filterCategories}
-                selected={selectedCategories}
-                fixedCategory={Boolean(categoryId)}
-                attributes={categoryAttributes}
-                onCategoryChange={handleCategoryChange}
-                onAttributesChange={handleAttributesChange}
-              />
-            </div>
-          </div>
-          </MobileFilterDrawer>
-        </aside>
 
         {/* Sections */}
-        <main className="w-full lg:w-3/4">
-          <div className="mb-8 flex flex-col md:flex-row justify-between items-center gap-6 bg-white p-5 rounded-[var(--radius)] border border-gray-100 shadow-sm">
-            <div className="w-full md:w-2/3">
-              <SearchBar value={searchTerm} onChange={handleSearchChange} />
+        <main>
+          <ListingToolbar search={searchTerm} onSearchChange={handleSearchChange} count={countLabel}>
+            <MobileFilterDrawer activeCount={activeCount} onReset={resetFilters}>
+            <div className="filter-columns">
+  
+              {/* نویگیشن زیرسری‌ها */}
+              {index.length > 0 && (
+                <div className="bg-white rounded-[6px] border border-gray-100 shadow-sm p-5">
+                  <h4 className="text-sm font-bold text-[var(--color-dark)] mb-4 flex items-center gap-2">
+                    <FiLayers className="text-[var(--color-primary)]" size={14} />
+                    زیرسری‌ها
+                  </h4>
+                  <div className="flex flex-col gap-1 max-h-72 overflow-y-auto custom-scrollbar">
+                    {index.map((entry) =>
+                      entry.slug && sportSlug && brandSlug ? (
+                        <Link
+                          key={entry.key}
+                          href={withQueryParams(
+                            `/${sportSlug}/${brandSlug}/${entry.slug}`,
+                            { targetAudience },
+                          )}
+                          className="flex items-center justify-between gap-2 px-3 py-2 rounded-[6px] text-right hover:bg-gray-50 transition-colors group"
+                        >
+                          <span className="text-xs font-bold text-gray-600 group-hover:text-[var(--color-primary)] truncate">
+                            {entry.title}
+                          </span>
+                          <span className="text-[10px] font-bold text-gray-400 bg-gray-100 rounded-full px-2 py-0.5 shrink-0">
+                            {entry.productCount.toLocaleString("fa-IR")}
+                          </span>
+                        </Link>
+                      ) : (
+                        <button
+                          key={entry.key}
+                          onClick={() => jumpTo(entry.key)}
+                          className="flex items-center justify-between gap-2 px-3 py-2 rounded-[6px] text-right hover:bg-gray-50 transition-colors group"
+                        >
+                          <span className="text-xs font-bold text-gray-600 group-hover:text-[var(--color-primary)] truncate">
+                            {entry.title}
+                          </span>
+                          <span className="text-[10px] font-bold text-gray-400 bg-gray-100 rounded-full px-2 py-0.5 shrink-0">
+                            {entry.productCount.toLocaleString("fa-IR")}
+                          </span>
+                        </button>
+                      )
+                    )}
+                  </div>
+                </div>
+              )}
+  
+              {/* فیلتر قیمت — کامپوننتِ مشترکِ اسلایدرِ دوسَره + اینپوت‌های هزارگان‌دار */}
+              <div className="bg-white rounded-[6px] border border-gray-100 shadow-sm">
+                <PriceRangeFilter
+                  className="p-5"
+                  bounds={priceBounds}
+                  value={{ min: minPrice, max: maxPrice }}
+                  onChange={handlePriceChange}
+                />
+              </div>
+  
+              {/* نوع محصول + ویژگی‌هایش — آخرین بخشِ فیلترها */}
+              <div className="bg-white rounded-[6px] border border-gray-100 shadow-sm overflow-hidden">
+                <CategoryAttributeFilters
+                  categories={filterCategories}
+                  selected={selectedCategories}
+                  fixedCategory={Boolean(categoryId)}
+                  attributes={categoryAttributes}
+                  onCategoryChange={handleCategoryChange}
+                  onAttributesChange={handleAttributesChange}
+                />
+              </div>
             </div>
-            <div className="flex items-center gap-2 text-gray-500 whitespace-nowrap">
-              <FiShoppingBag className="text-[var(--color-primary)]" />
-              <span className="font-bold">تعداد کالا:</span>
-              <span className="text-[var(--color-text)] font-bold">
-                {countLabel}
-              </span>
-            </div>
-          </div>
+            </MobileFilterDrawer>
+          </ListingToolbar>
 
           {status?.op === "applyFilters" && statusNote(status.phase)}
 
@@ -598,7 +574,7 @@ export default function SerieGroupedView({
                   </div>
 
                   {/* محصولات بخش */}
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-1">
                     {section.products.map((product) => (
                       <ProductCard
                         key={product._id}
