@@ -53,6 +53,7 @@ const menuItems = [
   { title: "سفارشات", href: "/p-admin/admin-orders", icon: ShoppingCart },
   { title: "صفحات سایت", href: "/p-admin/admin-pages", icon: FaFileAlt },
   { title: "مدیریت مالی", href: "/p-admin/financial", icon: FaMoneyBillWave },
+  { title: "حسابداری محک", href: "/p-admin/mahak", icon: FaLayerGroup },
   { title: "کاربران", href: "/p-admin/users", icon: FaUsersCog },
   { title: "پشتیبانی", href: "/p-admin/support", icon: FaHeadset },
   { title: "\u0645\u0642\u0627\u0644\u0627\u062a", href: "/p-admin/admin-articles", icon: FaFileAlt },

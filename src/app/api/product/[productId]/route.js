@@ -27,6 +27,7 @@ import { apiError, handleApiError } from "@/lib/apiError";
 import { normalizeTargetAudience } from "base/utils/targetAudience";
 import { resolveProductLimitedEdition } from "@/lib/limitedEditionRelations";
 import requireAdminPermission from "@/lib/requireAdminPermission";
+import { afterMahakProductEdit } from "base/services/mahak/sync.service";
 import {
   coerceCustomFields,
   toPublicProduct,
@@ -460,6 +461,10 @@ export async function PUT(request, { params }) {
     if (missing) {
       return apiError("محصول یافت نشد", 404);
     }
+
+    // کالای متصل به محک: موجودی از محک می‌ماند و نمایش در سایت تابعِ «عکس + موجودی» است
+    // (آپلودِ عکسِ اصلی همین‌جا محصول را منتشر می‌کند).
+    await afterMahakProductEdit(productId);
 
     // --------------------------------------------------
     // محصول نهایی populated

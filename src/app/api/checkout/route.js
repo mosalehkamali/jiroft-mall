@@ -57,6 +57,7 @@ import {
 import storeConfig from "base/store.config";
 import { isFeatureEnabled } from "@/lib/features";
 import { InventoryError, releaseOrderStock, reserveOrderStock } from "base/services/inventory.service";
+import { checkMahakStock, shortageMessage } from "base/services/mahak/sync.service";
 
 const COMMERCE = storeConfig.commerce || {};
 const NEEDS_ADDRESS = (COMMERCE.delivery?.mode || "shipping") === "shipping";
@@ -528,6 +529,13 @@ export async function POST(req) {
     let order;
     let payment;
     let installmentDoc = null;
+
+    // کالاهای متصل به حسابداری محک: موجودیِ همین لحظه از محک خوانده می‌شود و
+    // اگر قلمی کم باشد، پیش از ساختِ سفارش و هر پرداختی به مشتری گفته می‌شود.
+    const mahakShort = await checkMahakStock(orderItems);
+    if (mahakShort.length) {
+      return NextResponse.json({ message: shortageMessage(mahakShort), outOfStock: mahakShort }, { status: 409 });
+    }
 
     // رزروِ موجودی (commerce.inventory.mode = "stock") — همه‌ی خطوط یا هیچ‌کدام
     try {

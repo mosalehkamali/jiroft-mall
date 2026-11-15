@@ -167,6 +167,37 @@ const storeConfig = {
     warehouse: false, // barcode tracking in a separate warehouse DB
     aiAssistant: false, // admin data assistant (needs GEMINI_API_KEY)
     aiProductDraft: false, // AI-drafted product data + prompt settings (needs departments, GEMINI_API_KEY)
+    mahak: true, // Mahak accounting: products, prices, stock and invoices (see integrations.mahak)
+  },
+
+  /* ── Integrations ─────────────────────────────────────────────────────── */
+  integrations: {
+    // Mahak accounting (features.mahak). One entry per Mahak package; the
+    // credentials of each live in the environment as
+    //   MAHAK_<KEY>_USERNAME / _PASSWORD / _DATABASE_ID / _PACKAGE_NO
+    // An account without credentials is skipped. Needs commerce.inventory.mode "stock".
+    mahak: {
+      accounts: [
+        { key: "shoes", label: "کفش" },
+        { key: "clothing", label: "پوشاک" },
+      ],
+      // Which of Mahak's 10 sell price levels the site sells at. 0 = each item's default level.
+      priceLevel: 0,
+      // Mahak amount ÷ priceDivisor = site amount. 10 if Mahak keeps Rial (the site is in Toman).
+      priceDivisor: 1,
+      // The API has no purchase-price field. If purchase prices are kept in a price level, its number; 0 = none.
+      buyPriceLevel: 0,
+      // "auto": warehouse stock when Mahak sends it, else the count assigned to the site.
+      // "storeAssets" | "visitorProducts" force one of them.
+      stockSource: "auto",
+      // Count only these Mahak warehouses, e.g. { shoes: [1, 3] }. Empty = all warehouses.
+      storeIds: {},
+      // An invoiced order keeps its quantities off the site stock this long, until
+      // Mahak has accepted the invoice and lowered its own stock.
+      reservationHoldMinutes: 180,
+      // 201 = sales invoice, 299 = pre-invoice
+      orderType: 201,
+    },
   },
 
   /* ── Catalog data rules ───────────────────────────────────────────────── */
@@ -262,7 +293,7 @@ const storeConfig = {
       // "none":  stock is not tracked; anything purchasable can be ordered.
       // "stock": products/variants carry a stock count; checkout reserves it,
       //          deleting an unpaid/cancelled order returns it.
-      mode: "none",
+      mode: "stock", // stock comes from Mahak (integrations.mahak)
     },
 
     delivery: {

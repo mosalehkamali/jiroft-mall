@@ -9,6 +9,7 @@ import mongoose from "mongoose";
 import { markOrderUsedProductsSold } from "@/lib/usedProductOrderStatus";
 
 import requireAdminPermission from "@/lib/requireAdminPermission";
+import { queueMahakInvoice } from "base/services/mahak/order.service";
 
 export async function POST(req, { params }) {
   // `actor` همان شکلِ خروجیِ گیتِ قدیمی را دارد، پس ردپای ممیزی دست‌نخورده
@@ -112,6 +113,8 @@ export async function POST(req, { params }) {
 
       if (isFullyPaid) {
         await markOrderUsedProductsSold(order);
+        // فاکتور فروش در محک — پس از تأییدِ کاملِ پرداخت (اقساطی: در confirm-order)
+        if (order.paymentMethod !== "INSTALLMENT") await queueMahakInvoice(order._id);
       }
 
       // برای پرداخت‌های قدیمی که پیش از ایجاد اعلان ثبت شده‌اند fallback است؛

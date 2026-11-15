@@ -93,6 +93,28 @@ const CheckoutPaymentPage = () => {
     setCheckout(pending);
     setCheckoutReady(true);
 
+    // موجودیِ لحظه‌ایِ اقلام، پیش از هر پرداختی (کارت‌به‌کارت یا درگاه)
+    fetch('/api/checkout/stock-check', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items: prepareItemsForServer() }),
+    })
+      .then(async (res) => {
+        if (res.status !== 409) return;
+        const data = await res.json();
+        await Swal.fire({
+          title: 'موجودی کافی نیست',
+          text: `${data.message}. لطفاً سبد خرید را اصلاح کنید؛ هنوز مبلغی پرداخت نکرده‌اید.`,
+          icon: 'warning',
+          confirmButtonText: 'بازگشت به سبد خرید',
+          confirmButtonColor: 'var(--color-primary)',
+          allowOutsideClick: false,
+        });
+        router.replace('/p-user/signOrder');
+      })
+      .catch(() => {}); // خطای شبکه مانعِ خرید نیست؛ سرور هنگامِ ثبت دوباره بررسی می‌کند
+
     getProfile()
       .then((profile) => setUser(profile))
       .catch(() => setUser(null));

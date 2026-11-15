@@ -284,6 +284,38 @@ const OrderSchema = new mongoose.Schema(
     inventoryReserved: { type: Boolean, default: false },
     reviewFollowUpSentAt: { type: Date, default: null },
 
+    // Mahak accounting invoices of this order (services/mahak/order.service.js)
+    // — one per Mahak account that owns some of its lines. Internal: never
+    // selected by default, so it cannot reach a customer.
+    mahak: {
+      type: new mongoose.Schema(
+        {
+          state: { type: String, enum: ["pending", "done", "failed"], default: "pending" },
+          queuedAt: { type: Date, default: Date.now },
+          doneAt: { type: Date, default: null },
+          error: { type: String, default: "" },
+          invoices: {
+            type: [
+              new mongoose.Schema(
+                {
+                  account: String,
+                  orderClientId: Number, // the invoice number sent to Mahak (unique per account)
+                  orderId: { type: Number, default: null }, // Mahak's own id, once accepted
+                  postedAt: { type: Date, default: null },
+                  error: { type: String, default: "" },
+                },
+                { _id: false },
+              ),
+            ],
+            default: [],
+          },
+        },
+        { _id: false },
+      ),
+      default: undefined,
+      select: false,
+    },
+
     address: {
       ref: {
         type: mongoose.Schema.Types.ObjectId,

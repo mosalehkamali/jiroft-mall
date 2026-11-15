@@ -48,6 +48,7 @@ import "base/models/FlashSale";
 import "base/models/HealthCard";
 import "base/models/Installment";
 import "base/models/LimitedEdition";
+import "base/models/Mahak";
 import "base/models/Newsletter";
 import "base/models/Notification";
 import "base/models/Order";

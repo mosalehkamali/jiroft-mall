@@ -13,6 +13,7 @@
  */
 
 import { NextResponse } from "next/server";
+import { queueMahakInvoice } from "base/services/mahak/order.service";
 import connectToDB from "base/configs/db";
 import Order from "base/models/Order";
 import Payment from "base/models/Payment";
@@ -79,6 +80,8 @@ export async function POST(req) {
       await fresh.save({ session });
     });
     await markOrderUsedProductsSold(order);
+    // فاکتور فروش در محک — پرداختِ آنلاین تأیید شد
+    await queueMahakInvoice(order._id);
 
     // ─── اعلان تأیید پرداخت برای پنل مدیریت (غیرمسدودکننده) ───
     // چون این endpoint در صورت PAID بودن زودتر return می‌کند، اعلان تکراری ساخته نمی‌شود.

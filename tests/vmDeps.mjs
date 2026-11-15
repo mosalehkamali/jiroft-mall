@@ -28,6 +28,13 @@ export const PURE_DEPS = {
     reserveOrderStock: async () => false,
     releaseOrderStock: async () => {},
   },
+  // Mahak accounting: off in the fixture config, so both are no-ops there
+  "base/services/mahak/sync.service": {
+    checkMahakStock: async () => [],
+    shortageMessage: () => "",
+    afterMahakProductEdit: async () => {},
+  },
+  "base/services/mahak/order.service": { queueMahakInvoice: async () => {} },
   "base/services/productRules.service": {
     rulesForCategory: async () => productRules.resolveProductRules([]),
     rulesResolver: async () => () => productRules.resolveProductRules([]),

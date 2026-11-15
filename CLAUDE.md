@@ -1086,8 +1086,13 @@ npm run test:block-layout   # includes tests/richTextLineHeight.test.mjs
 `SportHero` (`src/components/templates/sports/SportHero.jsx`) is already the single
 source of truth for the full-bleed header — the sport page, `/products`, `/second-hand`,
 the athlete page and the CMS section renderer all render it. The block renders **the same
-component**, so height, gradient, image crop, h1 typography and the accent bar are not
-re-specified anywhere and a change to the site header reaches the block for free.
+component**, so h1 typography and the accent bar are not re-specified anywhere and a change
+to the site header reaches the block for free.
+
+**`SportHero` draws no image any more** (Jiroft Mall): just the title in `--color-primary`
+(or a campaign's `--event-text`) and a short `--color-secondary` line, inside `.site-container`.
+Callers still pass `image`/`alt`, which it ignores; the measurements below describe the old
+image header. The product page has no header at all — the breadcrumb sits under the navbar.
 
 **It is the top of the page, not a block in the column.** The page splits it out of the
 block flow (`splitHeaderBlock`) and renders it *before* its own `<header>`, which is where
@@ -1486,6 +1491,61 @@ Gotchas:
 npm run test:admin-audit     # plugin + flush against a real replica set
 npm run verify:audit-trail   # real HTTP against a built app on a throwaway DB
 ```
+
+### Mahak accounting (`features.mahak`)
+
+Mahak is the source of products, prices and stock; the site adds images and content and posts invoices
+back. **Two Mahak packages (shoes, clothing) feed one site**: each is an entry in `store.config.js` →
+`integrations.mahak.accounts` with its own credentials (`MAHAK_<KEY>_USERNAME/_PASSWORD/_DATABASE_ID/_PACKAGE_NO`),
+its own login, token and `visitorId`. An account without credentials is skipped, never an error.
+API: `https://mahakacc.mahaksoft.com/API/v3` (`LoginV2`, `GetAllDataV2`, `SaveAllDataV2`).
+
+| file | role |
+|---|---|
+| `src/lib/mahak/config.js` | settings + the only place credentials are read |
+| `src/lib/mahak/client.js` | login (re-login once on a failed cached token), `pullAll` (asks "newer than my largest rowVersion" until nothing comes — right whether or not the server pages), `saveAll` |
+| `src/lib/mahak/mapping.js` | pure: `parseProperties`, `planProduct`, `mahakStock`, `buildInvoicePayload` |
+| `models/Mahak.js` | `MahakRow` (verbatim mirror), `MahakLink` (detail ↔ product/variant), `MahakAccount` (cursors, build queue, invoice sequence) |
+| `services/mahak/sync.service.js` | pull → mirror → build products → stock → visibility; `checkMahakStock` for checkout |
+| `services/mahak/order.service.js` | order → one sales invoice per account |
+
+Rules that are load-bearing:
+
+- **A Mahak Product is one site Product; each ProductDetail is a Variant** when the product has more than one
+  detail or the detail has `properties`. `properties` is an undocumented string, so `parseProperties` accepts a
+  JSON array, a JSON map or plain text, and `planProduct` falls back to one attribute («مدل») when they are
+  unreadable or clash. **Run `npm run mahak:inspect` against the real accounts before trusting the mapping.**
+- **Never delete a Variant or Product from sync.** A detail that disappears is marked `MahakLink.gone` and sold out.
+- **Mahak ids never sit on Product/Variant** (they would be serialized to customers); the link is `MahakLink`.
+  The purchase price lives there too — and the API has no purchase-price field at all, only ten sell levels
+  (`buyPriceLevel` names one if the store keeps it there).
+- **Visibility is owned by the sync for linked products:** `isActive = has mainImage && some stock`
+  (`applyVisibility`). It runs after every sync and after the admin product PUT (`afterMahakProductEdit`), so
+  uploading the image publishes the product. The manual `isActive` switch does nothing for these products.
+- **Site stock = Mahak stock − held orders.** Mahak only learns about a sale when the invoice is posted and
+  accepted, so `heldQuantities()` subtracts orders that hold stock and are not invoiced yet (or were invoiced
+  less than `reservationHoldMinutes` ago). Without it the hourly sync would hand reserved units back.
+- **Stock is checked twice before money moves:** `POST /api/checkout/stock-check` when the payment page opens
+  (the customer has not transferred anything yet) and again inside `POST /api/checkout`. Both pull fresh stock
+  rows from the accounts in the cart; if Mahak is unreachable the last known stock is used, never a block.
+- **Invoices** are posted from the three places money is confirmed — receipt approval in full
+  (`admin/payments/[id]/approve`), `installments/[id]/confirm-order`, `orders/webhook-success` (online) — via
+  `queueMahakInvoice`, which never throws. The invoice number comes from a per-account sequence and is stored
+  on `order.mahak` (`select: false`) **before** sending, so a retry reuses it. The hourly cron retries failures.
+- Sync is incremental and resumable: products that were pulled but not built stay in `MahakAccount.dirty`
+  (the web sync has a time budget; `npm run mahak:sync` has none — use it for the first import).
+
+Open until real credentials exist: the shape of `properties`, whether prices are Rial (`priceDivisor: 10`),
+warehouse vs. assigned stock (`stockSource`), and how fast Mahak deducts stock after an invoice.
+
+```bash
+npm run mahak:inspect   # read-only: raw rows of each account
+npm run mahak:sync      # full sync from the command line
+npm run test:mahak      # whole cycle against a fake Mahak + real mongo
+npm run ensure:indexes  # the unique indexes of MahakRow / MahakLink (autoIndex is off)
+```
+
+Hourly sync is `/api/cron/mahak-sync` in `vercel.json`; admin screen: `/p-admin/mahak` (`mahak.view` / `mahak.sync`).
 
 ### State Management
 

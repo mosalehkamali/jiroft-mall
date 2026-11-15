@@ -24,6 +24,7 @@ async function review(action, { canceled = false, paidMeanwhile = false, wallet 
     '@/lib/requireAdminPermission': { default: async () => ({ actor: { userId: 'admin' } }) },
     '@/lib/usedProductOrderStatus': { markOrderUsedProductsSold: async () => {} },
     'base/services/notificationService': { notifyNewPayment: async () => {} },
+    'base/services/mahak/order.service': { queueMahakInvoice: async () => {} },
   };
   const context = vm.createContext({ console, Date, process: { env: {} }, fetch: async () => ({}) });
   const source = await readFile(new URL(`../src/app/api/admin/payments/[id]/${action}/route.js`, import.meta.url), 'utf8');

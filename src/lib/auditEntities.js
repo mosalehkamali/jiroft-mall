@@ -44,6 +44,9 @@ export const AUDIT_IGNORED_MODELS = new Set([
   "UserNotificationState",
   "ArticleRevision",
   "ArticleRedirect",
+  "MahakRow",
+  "MahakAccount",
+  "MahakLink",
 ]);
 
 /** مسیرهایی که در هیچ تفاوتی نمی‌آیند — نویزِ محض. */

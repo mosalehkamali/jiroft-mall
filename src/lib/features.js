@@ -208,6 +208,12 @@ export const FEATURES = {
     paths: ["/api/admin/orders/tracking-items", "/api/admin/orders/*/tracking"],
     modules: ["orderTracking"],
   },
+  mahak: {
+    label: "حسابداری محک",
+    // /api/checkout/stock-check stays open: it answers "ok" while this is off.
+    paths: ["/api/admin/mahak", "/api/cron/mahak-sync", "/p-admin/mahak"],
+    modules: ["mahak"],
+  },
   aiAssistant: {
     label: "دستیار هوشمند",
     paths: ["/api/admin/assistant"],

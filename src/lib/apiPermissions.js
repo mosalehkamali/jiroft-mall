@@ -166,6 +166,7 @@ export const ADMIN_API_PERMISSIONS = {
   // ── مالی ───────────────────────────────────────────────────────────
   "/admin/analytics": { GET: "analytics.view" },
   "/admin/exchange-rate": { GET: "exchangeRate.view", POST: "exchangeRate.edit" },
+  "/admin/mahak": { GET: "mahak.view", POST: "mahak.sync" },
   "/admin/installments": { GET: "installments.view" },
   "/admin/installments/[id]": { GET: "installments.view" },
   "/admin/installments/[id]/confirm-order": { POST: "installments.approveCheck" },

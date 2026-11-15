@@ -20,6 +20,7 @@ import Order from "base/models/Order";
 import { markOrderUsedProductsSold } from "@/lib/usedProductOrderStatus";
 
 import requireAdminPermission from "@/lib/requireAdminPermission";
+import { queueMahakInvoice } from "base/services/mahak/order.service";
 
 export async function POST(req, { params }) {
   const { denied } = await requireAdminPermission("installments.approveCheck");
@@ -72,6 +73,8 @@ export async function POST(req, { params }) {
     }
 
     await markOrderUsedProductsSold(order);
+    // فاکتور فروش در محک — سفارشِ اقساطی با تأییدِ ادمین ثبت می‌شود
+    await queueMahakInvoice(order._id);
 
     return NextResponse.json(
       {

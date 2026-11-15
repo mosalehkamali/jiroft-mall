@@ -336,6 +336,17 @@ const SECTION_DEFINITIONS = [
         ],
       },
       {
+        key: "mahak",
+        title: "حسابداری محک",
+        description: "همگام‌سازی کالا، قیمت و موجودی با محک و ثبت فاکتور سفارش‌ها",
+        path: "/p-admin/mahak",
+        api: ["/api/admin/mahak"],
+        permissions: [
+          { key: "view", title: "مشاهده وضعیت اتصال محک" },
+          { key: "sync", title: "همگام‌سازی و ارسال مجدد فاکتور" },
+        ],
+      },
+      {
         key: "payments",
         title: "پرداخت‌ها",
         description: "رسیدهای بانکی و تأیید پرداخت سفارش",
@@ -1116,6 +1127,7 @@ export const ADMIN_ROUTE_PERMISSIONS = {
   // مالی
   "/p-admin/discounts": ["discounts.view"],
   "/p-admin/exchange-rate": ["exchangeRate.view"],
+  "/p-admin/mahak": ["mahak.view"],
   // هاب مالی: هر کدام از قابلیت‌های واقعیِ فرزند کافی است (حالت any).
   // فاز UI فقط تب‌ها/لینک‌های مجاز و اولین تبِ مجاز را نشان می‌دهد.
   "/p-admin/financial": FINANCE_VIEW_KEYS,
