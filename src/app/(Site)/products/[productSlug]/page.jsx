@@ -1,14 +1,12 @@
 import { Suspense } from "react";
 import { getProductForPage, getProductPageData } from "@/lib/productPageData";
 import { ProductSchemaWithReviews } from "@/components/templates/product/DeferredProductReviews";
-import ResponsiveImage from "@/components/common/ResponsiveImage";
 import TaxonomyBreadcrumbs from "@/components/seo/TaxonomyBreadcrumbs";
 import { getPublicProductPrice } from "base/services/publicProductPrice.service";
 import ProductTemplate from "@/components/templates/product/ProductTemplate";
 import { eurToToman } from "@/lib/currency";
 import { generateProductMetadata } from "@/lib/seo/productSeo";
 import { generateBreadcrumbSchema } from "@/lib/seo/breadcrumbSchema";
-import { resolveSerieSportContent } from "@/lib/serieSportContent";
 import { notFound } from "next/navigation";
 import { isFeatureEnabled } from "@/lib/features";
 
@@ -65,22 +63,6 @@ export default async function ProductPage({ params }) {
     variants: convertedVariants,
   };
 
-  const productHeaderImage =
-    resolveSerieSportContent(product.serie, product.sport?._id || product.sport)
-      .headImage ||
-    product.brand?.image ||
-    product.category?.image ||
-    null;
-
-  const productHeaderAlt =
-    product.serie?.title ||
-    product.serie?.name ||
-    product.brand?.title ||
-    product.brand?.name ||
-    product.category?.title ||
-    product.category?.name ||
-    product.name;
-
   // Structured data stays public even when the buy box has a role-specific price.
   const publicPricePromise = personalized ? getPublicProductPrice(fetchProduct, rate) : Promise.resolve(pricing);
   const breadcrumbSchema = generateBreadcrumbSchema(product);
@@ -96,19 +78,6 @@ export default async function ProductPage({ params }) {
           __html: JSON.stringify(breadcrumbSchema),
         }}
       />
-
-      {productHeaderImage ? (
-        <div className="hidden md:block relative h-[200px] w-full overflow-hidden">
-          <ResponsiveImage
-            src={productHeaderImage}
-            sizes="(max-width: 767px) 1px, 100vw"
-            loading="lazy"
-            alt={productHeaderAlt}
-            className="w-full h-full object-cover scale-105"
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent z-10" />
-        </div>
-      ) : null}
 
       <TaxonomyBreadcrumbs filters={{ sport: product.sport, category: product.category, brand: product.brand, serie: product.serie }} currentItem={false} includeStructuredData={false} />
 

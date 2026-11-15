@@ -42,14 +42,14 @@ export default function ActiveFiltersLine({ filterableAttributes = [] }) {
   if (pairs.length === 0) return null;
 
   return (
-    <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-[11px] text-white/90 drop-shadow">
+    <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-[11px] text-gray-500">
       {pairs.map((p, i) => (
         <span key={`${p.label}-${p.value}-${i}`} className="flex items-center gap-2">
           <span>
             {p.label}: <span className="font-bold">{p.value}</span>
           </span>
           {i < pairs.length - 1 && (
-            <span className="text-white/40">|</span>
+            <span className="text-gray-300">|</span>
           )}
         </span>
       ))}

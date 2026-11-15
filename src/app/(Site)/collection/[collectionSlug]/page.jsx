@@ -179,7 +179,7 @@ export default async function EventPage({ params, searchParams }) {
         campaignBadge={campaignBadge}
         headerExtra={
           serialized.endDate ? (
-            <div className="mt-2 flex justify-center">
+            <div className="flex justify-center">
               <EventCountdown endDate={serialized.endDate} style="minimal" />
             </div>
           ) : null

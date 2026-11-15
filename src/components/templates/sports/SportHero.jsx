@@ -1,44 +1,27 @@
-import storeConfig from "base/store.config";
-import ResponsiveImage from "@/components/common/ResponsiveImage";
 /**
- * هدر (Hero) مشترکِ صفحه‌ی ورزش — تصویر تمام‌عرض + گرادیان + عنوان وسط‌چین.
- * این کامپوننت دقیقاً همان مارک‌آپِ قبلیِ inline در SportPageClient است که
- * استخراج شد تا بدون تکرار، در صفحه‌ی محصولات هم استفاده شود.
+ * The shared page header (category/brand/serie listings, /products, second-hand,
+ * athletes, CMS pages, the article «هدر» block): the page title in the primary
+ * colour with a short secondary-colour line under it. No image.
  *
  * props:
- *  - image: آدرس تصویر هدر (در نبودش به تصویر پیش‌فرض fallback می‌شود)
- *  - title: متن عنوان (h1)
- *  - alt: متن alt تصویر (پیش‌فرض = title)
- *  - headerExtra: اسلات اختیاری زیر عنوان (مثل شمارش معکوس رویداد)
+ *  - title: the h1 text
+ *  - headerExtra: optional slot under the line (campaign countdown, active filters)
+ *  - image / alt: still accepted from callers but no longer drawn
  */
-export default function SportHero({ image, title, alt = title, headerExtra = null }) {
+export default function SportHero({ title, headerExtra = null }) {
   return (
-    <div className="relative h-[100px] md:h-[220px] w-full overflow-hidden">
-      <ResponsiveImage
-        fetchPriority="high"
-        src={image || storeConfig.brand.imageFallback}
-        alt={alt}
-        className="w-full h-full object-cover scale-105"
-      />
+    <div className="site-container flex flex-col items-center pt-8 text-center md:pt-12">
+      {/* On a campaign page --event-text is the event's title colour; elsewhere the primary colour. */}
+      <h1
+        className="mb-3 text-2xl font-bold md:text-4xl"
+        style={{ color: "var(--event-text, var(--color-primary))" }}
+      >
+        {title}
+      </h1>
 
-      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent z-10" />
+      <div className="h-1 w-20 bg-[var(--color-secondary)]" />
 
-      <div className="absolute inset-0 z-20 flex flex-col justify-center items-center text-center px-4">
-        {/* Title color: on the campaign page --event-text = the event's Title
-            Color; on the Sport page the var is undefined → falls back to #fff
-            (identical to the previous text-white). */}
-        <h1
-          className="text-xl md:text-4xl font-bold mb-4 drop-shadow-xl"
-          style={{ color: "var(--event-text, #fff)" }}
-        >
-          {title}
-        </h1>
-
-        <div className="w-20 h-1 bg-[var(--color-primary)] rounded-full mb-4" />
-
-        {/* Optional slot (event countdown) — Sport page passes nothing */}
-        {headerExtra}
-      </div>
+      {headerExtra ? <div className="mt-4">{headerExtra}</div> : null}
     </div>
   );
 }

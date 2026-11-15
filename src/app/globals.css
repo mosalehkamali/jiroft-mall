@@ -667,6 +667,14 @@
   .all-categories { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   @media (min-width: 1024px) { .all-categories { grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); } }
 
+  /* Product page photo on desktop: photo + thumbnail strip (--thumbs, set by the gallery) fit
+     under the navbar and breadcrumb; still 3:4,
+     centred in its half of the row — the whole photo is visible without scrolling. */
+  .product-photo { width: 100%; }
+  @media (min-width: 1024px) {
+    .product-photo { width: auto; height: calc(100vh - 11rem - var(--thumbs, 0px)); max-width: 100%; margin-inline: auto; }
+  }
+
   /* Product card photo: a slow, deep "cinematic" push-in while the card is hovered. */
   .card-zoom { transition: transform 2.4s cubic-bezier(0.16, 1, 0.3, 1); will-change: transform; }
   .group:hover .card-zoom { transform: scale(1.12); }

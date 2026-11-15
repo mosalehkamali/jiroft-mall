@@ -20,13 +20,21 @@ const ProductGallery = ({ images = [], logo, verified = false, productName = "" 
   }, [images]);
 
   if (!images || images.length === 0) return null;
+  // One photo needs no strip of one thumbnail.
+  const hasThumbs = images.length > 1;
 
   return (
-    <div className="flex flex-col gap-4 w-full min-w-0 border border-gray-100 shadow-sm" dir="rtl">
+    // --thumbs = the strip's height (80px thumbnails + padding + gap), which .product-photo
+    // subtracts on desktop so photo and strip together fit the screen.
+    <div
+      className="flex flex-col gap-3 w-full min-w-0 border border-gray-100 shadow-sm"
+      style={hasThumbs ? { "--thumbs": "6.25rem" } : undefined}
+      dir="rtl"
+    >
       
       {/* Main Image */}
       <div className="relative group w-full">
-        <div className="relative aspect-square w-full overflow-hidden rounded-[6px] bg-[#fdfdfd]">
+        <div className="product-photo relative aspect-[3/4] overflow-hidden bg-[#f4f4f4]">
 
           {/* نشان تست‌شده - گوشه بالا راست تصویر گالری */}
           {verified && (
@@ -67,7 +75,7 @@ const ProductGallery = ({ images = [], logo, verified = false, productName = "" 
                 sizes={PRODUCT_IMAGE_SIZES}
                 priority
                 fetchPriority="high"
-                className="object-contain p-6 transition-transform duration-700 group-hover:scale-110"
+                className="card-zoom object-cover"
               />
             </motion.div>
           </AnimatePresence>
@@ -83,7 +91,8 @@ const ProductGallery = ({ images = [], logo, verified = false, productName = "" 
       </div>
 
       {/* Thumbnails */}
-      <div className="flex flex-nowrap gap-3 mt-2 w-full overflow-x-auto p-1 pb-3">
+      {hasThumbs && (
+      <div className="flex flex-nowrap gap-2 w-full overflow-x-auto p-1">
         {images.map((image, index) => {
           const isActive = index === activeIndex;
           return (
@@ -118,6 +127,7 @@ const ProductGallery = ({ images = [], logo, verified = false, productName = "" 
           );
         })}
       </div>
+      )}
     </div>
   );
 };
