@@ -14,9 +14,8 @@ import connectToDB from "base/configs/db";
 import "base/models/registerModels";
 import User from "base/models/User";
 import Admin from "base/models/Admin";
-import AdminRole from "base/models/AdminRole";
 import { hash } from "bcryptjs";
-import { SUPER_ADMIN_SYSTEM_KEY, SUPER_ADMIN_ROLE_NAME } from "base/src/lib/permissions";
+import { ensureSuperAdminRole } from "base/services/adminBootstrap.service";
 import { seedDemo } from "./demoCatalogue.mjs";
 
 function arg(name, fallback = undefined) {
@@ -27,18 +26,7 @@ function arg(name, fallback = undefined) {
 }
 
 async function ensureSuperAdmin({ phone, password, name }) {
-  let role = await AdminRole.findOne({ systemKey: SUPER_ADMIN_SYSTEM_KEY });
-  if (!role) {
-    role = await AdminRole.create({
-      name: SUPER_ADMIN_ROLE_NAME,
-      description: "همه‌ی دسترسی‌ها — نقشِ محافظت‌شده‌ی سیستم",
-      permissions: [],
-      isSystem: true,
-      isFullAccess: true,
-      systemKey: SUPER_ADMIN_SYSTEM_KEY,
-    });
-    console.log("✓ full-access role created");
-  }
+  const role = await ensureSuperAdminRole();
 
   let user = await User.findOne({ phone });
   if (!user) {

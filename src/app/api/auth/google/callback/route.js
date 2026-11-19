@@ -6,6 +6,7 @@ import { tokenGenrator, generateRefreshToken } from 'base/utils/auth';
 import { splitFullName } from 'base/utils/userName';
 import recordAdminLogin from '@/lib/recordAdminLogin';
 import { safeRedirectPath } from '@/lib/safeRedirect';
+import { grantFirstAdmin } from 'base/services/adminBootstrap.service';
 
 function getGoogleProfileNames({ name, givenName, familyName }) {
   const fullName = typeof name === 'string' ? name.trim() : '';
@@ -61,7 +62,7 @@ export async function GET(request) {
     });
     if (!userinfoRes.ok) throw new Error('Failed to fetch Google user info');
 
-    const { sub, email, name, given_name: givenName, family_name: familyName, picture } = await userinfoRes.json();
+    const { sub, email, email_verified: emailVerified, name, given_name: givenName, family_name: familyName, picture } = await userinfoRes.json();
     if (!sub || !email) throw new Error('Incomplete Google user info');
 
     const googleNames = getGoogleProfileNames({ name, givenName, familyName });
@@ -97,6 +98,8 @@ export async function GET(request) {
         await user.save();
       }
     }
+    // SUPER_ADMIN_EMAIL: اولین ورودِ گوگلیِ همین ایمیل، تا وقتی فروشگاه ادمین ندارد، ادمینِ اصلی می‌شود
+    await grantFirstAdmin(user, { emailVerified });
     // اگر این کاربر عضویتِ ادمین دارد، زمانِ ورودش ثبت می‌شود. برای بقیه بی‌اثر است.
     await recordAdminLogin(user._id);
 

@@ -1589,6 +1589,11 @@ different state before calling Google. Every post-login destination goes through
 (`src/lib/safeRedirect.js`): `?callbackUrl=https://evil…` used to send a freshly logged-in user off the site, for
 phone login too. `npm test -- googleAuth`.
 
+**First admin without a shell:** `SUPER_ADMIN_EMAIL` (`services/adminBootstrap.service.js`, called from the
+Google callback) — the first Google sign-in with exactly that email, *verified by Google*, becomes a full-access
+admin while the store has no active admin. Never by phone login (that email is self-typed), never a stranger
+signing in first, and inert once an admin exists. `npm test -- adminBootstrap`.
+
 `npm run check:services` tries every production service for real (MongoDB + replica set, ImageKit API, SMTP
 login, Google client credentials) without writing anything; `docs/DEPLOY.md` is the deploy walkthrough.
 
