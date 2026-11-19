@@ -72,6 +72,7 @@
     "check:mongodb": "node --env-file-if-exists=.env scripts/check-mongodb.js",
     "worker:installment-reminders": "node --env-file-if-exists=.env --experimental-loader ./tests/aliasHooks.mjs workers/installmentReminderWorker.js",
     "worker:review-followup": "node --env-file-if-exists=.env --experimental-loader ./tests/aliasHooks.mjs workers/reviewFollowUpWorker.js",
+    "check:services": "node --env-file-if-exists=.env scripts/check-services.mjs",
     "mahak:inspect": "node --env-file-if-exists=.env --experimental-loader ./tests/aliasHooks.mjs scripts/mahak.mjs inspect",
     "mahak:sync": "node --env-file-if-exists=.env --experimental-loader ./tests/aliasHooks.mjs scripts/mahak.mjs sync",
     "test:mahak": "node --test --test-timeout=180000 tests/mahak.test.mjs",

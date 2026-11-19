@@ -5,12 +5,7 @@ import User from 'base/models/User';
 import { tokenGenrator, generateRefreshToken } from 'base/utils/auth';
 import { splitFullName } from 'base/utils/userName';
 import recordAdminLogin from '@/lib/recordAdminLogin';
-
-const client = new OAuth2Client(
-  process.env.GOOGLE_CLIENT_ID,
-  process.env.GOOGLE_CLIENT_SECRET,
-  `${process.env.NEXT_PUBLIC_BASE_URL}/api/auth/google/callback`
-);
+import { safeRedirectPath } from '@/lib/safeRedirect';
 
 function getGoogleProfileNames({ name, givenName, familyName }) {
   const fullName = typeof name === 'string' ? name.trim() : '';
@@ -45,11 +40,19 @@ export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
     const code = searchParams.get('code');
+    const state = searchParams.get('state');
+    const expectedState = request.cookies.get('oauth_state')?.value;
 
-    if (!code) {
-      return NextResponse.json({ message: 'Authorization code is required' }, { status: 400 });
+    // no code (the user pressed "cancel" at Google) or a state this browser never asked for
+    if (!code || !state || !expectedState || state !== expectedState) {
+      throw new Error(code ? 'OAuth state mismatch' : 'No authorization code');
     }
 
+    const client = new OAuth2Client(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      `${process.env.NEXT_PUBLIC_BASE_URL}/api/auth/google/callback`,
+    );
     const { tokens } = await client.getToken(code);
     if (!tokens.access_token) throw new Error('No access token received from Google');
 
@@ -102,7 +105,7 @@ export async function GET(request) {
 
     // callbackUrl از کوکی موقت خونده میشه
     const rawCallback = request.cookies.get('oauth_callback')?.value;
-    const finalUrl = rawCallback ? decodeURIComponent(rawCallback) : '/';
+    const finalUrl = safeRedirectPath(rawCallback ? decodeURIComponent(rawCallback) : '/');
 
     // نکته: قبلاً اینجا revalidatePath('/', 'layout') صدا زده می‌شد که در هر ورودِ
     // گوگل کلِ کشِ ISR سایت را باطل می‌کرد (منشأ اصلی مصرفِ بیش از حدِ ISR Writes).
@@ -129,6 +132,7 @@ export async function GET(request) {
     });
 
     response.cookies.delete('oauth_callback');
+    response.cookies.set('oauth_state', '', { path: '/api/auth/google', maxAge: 0 });
 
     return response;
 

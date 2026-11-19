@@ -1580,6 +1580,18 @@ Rules that are load-bearing:
 npm test -- onlinePayment   # real mongo, fake gateway: verify-only, repeats, expiry, late payment
 ```
 
+### Google login and post-login redirects
+
+`features.googleAuth` shows the button; without `GOOGLE_CLIENT_ID/SECRET` the start route sends the visitor back
+with `?error=oauth_unavailable` instead of to a broken Google page. The start route sets an `oauth_state` cookie
+(httpOnly, **Lax** — it has to survive Google's top-level redirect back) and the callback refuses a missing or
+different state before calling Google. Every post-login destination goes through `safeRedirectPath`
+(`src/lib/safeRedirect.js`): `?callbackUrl=https://evil…` used to send a freshly logged-in user off the site, for
+phone login too. `npm test -- googleAuth`.
+
+`npm run check:services` tries every production service for real (MongoDB + replica set, ImageKit API, SMTP
+login, Google client credentials) without writing anything; `docs/DEPLOY.md` is the deploy walkthrough.
+
 ### State Management
 
 - **Server state:** `unstable_cache` + on-demand revalidation (described above)

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, Suspense } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useRouter, useSearchParams } from 'next/navigation';
 import AuthForm from '@/components/auth/AuthForm';
@@ -8,6 +8,10 @@ import GoogleButton from '@/components/auth/GoogleButton';
 import ForgotPasswordEmailFlow from '@/components/auth/ForgotPasswordEmailFlow';
 import { showToast } from '@/lib/toast';
 import { loginAction } from 'base/actions/authActions';
+import { isFeatureEnabled } from '@/lib/features';
+import { safeRedirectPath } from '@/lib/safeRedirect';
+
+const GOOGLE_LOGIN = isFeatureEnabled('googleAuth');
 
 function AuthContent() {
   const [mode, setMode] = useState('login');
@@ -15,7 +19,13 @@ function AuthContent() {
 
   const router = useRouter();
   const searchParams = useSearchParams();
-  const callbackUrl = searchParams.get('callbackUrl') || '/';
+  const callbackUrl = safeRedirectPath(searchParams.get('callbackUrl'));
+  const oauthError = searchParams.get('error');
+
+  useEffect(() => {
+    if (oauthError === 'oauth_failed') showToast.error('ورود با گوگل انجام نشد؛ دوباره تلاش کنید');
+    if (oauthError === 'oauth_unavailable') showToast.error('ورود با گوگل در حال حاضر در دسترس نیست');
+  }, [oauthError]);
 
   const handleSubmit = async (data) => {
     setLoading(true);
@@ -154,14 +164,18 @@ function AuthContent() {
 
       {!isForgotEmail && (
         <>
-          {/* Divider */}
-          <div className="my-8 flex items-center gap-4">
-            <span className="flex-1 h-px bg-slate-100" />
-            <span className="text-xs font-medium text-slate-400">یا ورود با</span>
-            <span className="flex-1 h-px bg-slate-100" />
-          </div>
+          {GOOGLE_LOGIN && (
+            <>
+              {/* Divider */}
+              <div className="my-8 flex items-center gap-4">
+                <span className="flex-1 h-px bg-slate-100" />
+                <span className="text-xs font-medium text-slate-400">یا ورود با</span>
+                <span className="flex-1 h-px bg-slate-100" />
+              </div>
 
-          <GoogleButton onClick={handleGoogleLogin} disabled={loading} />
+              <GoogleButton onClick={handleGoogleLogin} disabled={loading} />
+            </>
+          )}
 
           <p className="mt-6 text-center text-[10px] text-slate-400">
             با ورود به سایت، تمامی قوانین و مقررات ما را می‌پذیرید.

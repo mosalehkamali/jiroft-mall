@@ -153,7 +153,7 @@ const storeConfig = {
     newsletter: true,
     broadcasts: true, // admin → customer notifications
     push: false, // web push (needs VAPID keys)
-    googleAuth: false, // needs GOOGLE_CLIENT_ID / SECRET
+    googleAuth: true, // needs GOOGLE_CLIENT_ID / SECRET (without them the button explains it is unavailable)
 
     // money
     discounts: true, // discount rules, flash sales, quantity tiers, coupon codes
@@ -304,8 +304,9 @@ const storeConfig = {
     },
 
     // Offered at checkout. INSTALLMENT also needs features.installments.
-    // ONLINE = ZarinPal (ZARINPAL_MERCHANT_ID); without it checkout answers "not available".
-    paymentMethods: ["ONLINE", "BANK_RECEIPT"],
+    // "ONLINE" = ZarinPal: the code is ready; add it here once ZARINPAL_MERCHANT_ID
+    // is set (and the server's IP is registered with ZarinPal — docs/DEPLOY.md).
+    paymentMethods: ["BANK_RECEIPT"],
   },
 };
 

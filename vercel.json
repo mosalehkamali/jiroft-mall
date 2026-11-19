@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/cron/mahak-sync",
-      "schedule": "0 * * * *"
+      "schedule": "30 2 * * *"
     },
     {
       "path": "/api/cron/installment-reminders",

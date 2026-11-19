@@ -1,170 +1,209 @@
 # راهنمای انتشار (Production)
 
-ترتیب کارها همین است؛ هر مرحله پیش‌نیاز مرحله‌ی بعد است.
+**مرحله‌ی الف** (الان): سایت روی Vercel با پرداختِ کارت‌به‌کارت، دیتابیس MongoDB Atlas، آپلود عکس با
+ImageKit، ایمیل و ورود با گوگل.
+**مرحله‌ی ب** (بعداً): اتصال حساب‌های محک و درگاه زرین‌پال.
+
+همه‌ی کلیدها را در فایل `.env` روی کامپیوتر خودتان و در تنظیمات Vercel می‌گذارید — هیچ‌وقت در git یا چت.
 
 ---
 
-## ۱. انتخاب میزبان — قبل از هر چیز این را بسنجید
+# مرحله‌ی الف — راه‌اندازی روی Vercel
 
-دو سرویس بیرونیِ سایت ایرانی‌اند و ممکن است درخواستِ سرورِ خارج از ایران را نپذیرند:
+## ۱. دیتابیس: MongoDB Atlas
 
-| سرویس | آنچه دیده شده |
-|---|---|
-| **زرین‌پال** | ترمینال به **IP سرور** گره می‌خورد. در آزمایش، درگاهِ اصلی با پیامِ `Terminal ip not valid` جواب داد. IP خروجیِ سرور باید ثابت باشد و در پنل زرین‌پال ثبت شود. |
-| **API محک** | هنوز از سرورِ خارجی امتحان نشده است. |
-
-**نتیجه:** Vercel به‌طور پیش‌فرض IP خروجیِ ثابت ندارد (فقط با سرویسِ پولیِ جداگانه)، پس برای پرداختِ آنلاین گزینه‌ی خوبی نیست.
-یک سرورِ داخلی با IP ثابت پیشنهاد می‌شود — VPS، یا سرویس‌هایی مثل لیارا / ابر آروان که IP خروجیِ ثابت می‌دهند.
-
-پیش از خرید، از همان سرور این دو را امتحان کنید (فقط باید جواب JSON بگیرید، نه خطای اتصال):
-
-```bash
-curl -s -X POST https://payment.zarinpal.com/pg/v4/payment/request.json -H "Content-Type: application/json" -d "{}"
-```
-
-```bash
-curl -s -X POST https://mahakacc.mahaksoft.com/API/v3/Sync/LoginV2 -H "Content-Type: application/json" -d "{}"
-```
-
-اجرا روی هر میزبانِ Node.js (نسخه‌ی ۲۰ یا بالاتر):
-
-```bash
-npm ci
-```
-
-```bash
-npm run build
-```
-
-```bash
-npm start
-```
-
----
-
-## ۲. سرویس‌هایی که باید ساخته شوند
-
-| سرویس | برای چه | نکته |
-|---|---|---|
-| **MongoDB** | دیتابیس | حتماً **replica set** (ثبت محصول و پرداخت از تراکنش استفاده می‌کند). MongoDB Atlas همین‌طور است؛ روی سرورِ خودتان `mongod --replSet`. |
-| **ImageKit** | آپلود عکس | بدون آن هیچ عکسی آپلود نمی‌شود و کالاهای محک (که فقط با عکس نمایش داده می‌شوند) دیده نمی‌شوند. |
-| **زرین‌پال** | پرداخت آنلاین | مرچنت‌کد + **اینماد** برای دامنه + ثبتِ IP سرور و دامنه در پنل زرین‌پال. |
-| **ایمیل (SMTP)** | ایمیل تأیید سفارش و بازیابی رمز | اختیاری ولی توصیه‌شده. |
-| **دامنه + SSL** | — | درگاه پرداخت فقط به آدرسِ `https` برمی‌گردد. |
-
----
-
-## ۳. متغیرهای محیطی
-
-فهرستِ کامل در [`.env.example`](../.env.example). حداقلِ لازم برای فروش:
+1. در [cloud.mongodb.com](https://cloud.mongodb.com) یک کلاستر رایگان (**M0**) بسازید.
+   منطقه را **AWS / Frankfurt (eu-central-1)** بگذارید تا با سرورِ Vercel (مرحله‌ی ۵) کنار هم باشند.
+2. **Database Access** → یک کاربر با رمزِ قوی بسازید.
+3. **Network Access** → `0.0.0.0/0` را اضافه کنید (Vercel آی‌پیِ ثابت ندارد؛ امنیت با رمزِ کاربر است).
+4. **Connect → Drivers** → آدرس را کپی کنید و نام دیتابیس را قبل از `?` اضافه کنید:
 
 ```
-MONGODB_URI=                      # replica set
-AccessTokenPrivateKey=            # رشته‌ی تصادفیِ بلند
-RefreshTokenPrivateKey=           # رشته‌ی تصادفیِ بلندِ دیگر
+MONGODB_URI=mongodb+srv://USER:PASSWORD@cluster0.xxxxx.mongodb.net/jiroft-mall?retryWrites=true&w=majority
+```
+
+Atlas همیشه replica set است، که برای ثبت محصول و پرداخت لازم است.
+اگر سایت Atlas از داخل ایران باز نشد، ثبت‌نام و مدیریتش را با اتصالِ خارج انجام دهید؛ اتصالِ خودِ سایت از سرور Vercel است.
+
+## ۲. آپلود عکس: ImageKit
+
+1. در [imagekit.io](https://imagekit.io) حساب بسازید.
+2. **Developer options → API keys**: سه مقدار را بردارید.
+
+```
+IMAGEKIT_PUBLIC_KEY=public_...
+IMAGEKIT_PRIVATE_KEY=private_...
+IMAGEKIT_URL_ENDPOINT=https://ik.imagekit.io/شناسه‌ی-شما
+NEXT_PUBLIC_IMAGEKIT_URL_ENDPOINT=https://ik.imagekit.io/شناسه‌ی-شما
+```
+
+دو آدرسِ آخر یکی‌اند. بدونِ ImageKit هیچ عکسی آپلود نمی‌شود.
+
+## ۳. ایمیل: Gmail
+
+برای شروع یک حساب Gmail کافی است (حدود ۵۰۰ ایمیل در روز):
+
+1. در حساب گوگل **تأیید دومرحله‌ای (2-Step Verification)** را روشن کنید.
+2. **App passwords** → یک رمزِ ۱۶ حرفی بسازید. این رمز را می‌گذارید، **نه** رمزِ خودِ حساب.
+
+```
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=465
+EMAIL_USER=آدرس@gmail.com
+EMAIL_PASS=رمز-۱۶-حرفیِ-App-password
+EMAIL_FROM="جیرفت مال <آدرس@gmail.com>"
+ADMIN_EMAIL=ایمیلِ-خودتان-برای-خبرِ-سفارشِ-جدید
+NEXT_PUBLIC_LOGO_URL=https://آدرسِ-یک-لوگوی-PNG     # بیشتر ایمیل‌خوان‌ها SVG نشان نمی‌دهند
+```
+
+`EMAIL_FROM` باید همان آدرسِ `EMAIL_USER` باشد، وگرنه Gmail آن را عوض می‌کند یا اسپم می‌شود.
+
+## ۴. ورود با گوگل
+
+در [console.cloud.google.com](https://console.cloud.google.com):
+
+1. یک پروژه بسازید.
+2. **OAuth consent screen**: نوع **External**، نام فروشگاه، ایمیلِ پشتیبانی، و دامنه‌ی سایت در «Authorized domains».
+   بعد **Publish app** را بزنید — تا در حالت «Testing» است فقط کاربرانِ آزمایشی می‌توانند وارد شوند.
+   (دسترسی‌های ایمیل و نام «حساس» نیستند و بررسیِ گوگل لازم ندارند.)
+3. **Credentials → Create credentials → OAuth client ID**، نوع **Web application**:
+   - Authorized JavaScript origins: `https://دامنه`
+   - Authorized redirect URIs: `https://دامنه/api/auth/google/callback`
+
+```
+GOOGLE_CLIENT_ID=....apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=GOCSPX-...
+```
+
+اگر بعداً دامنه عوض شد، این دو آدرس را هم در گوگل عوض کنید.
+
+## ۵. Vercel
+
+1. در [vercel.com](https://vercel.com) → **Add New → Project** → مخزنِ GitHub را import کنید (تنظیماتِ build پیش‌فرض درست است).
+2. **پیش از اولین deploy** در **Settings → Environment Variables** این‌ها را (برای Production) بگذارید:
+
+```
+MONGODB_URI=
+AccessTokenPrivateKey=        # رشته‌ی تصادفی
+RefreshTokenPrivateKey=       # رشته‌ی تصادفیِ دیگر
+CRON_SECRET=                  # رشته‌ی تصادفیِ سوم
 NEXT_PUBLIC_SITE_URL=https://دامنه
 NEXT_PUBLIC_BASE_URL=https://دامنه
-
-IMAGEKIT_PUBLIC_KEY=
-IMAGEKIT_PRIVATE_KEY=
-IMAGEKIT_URL_ENDPOINT=
-NEXT_PUBLIC_IMAGEKIT_URL_ENDPOINT=
-
-ZARINPAL_MERCHANT_ID=             # ZARINPAL_SANDBOX را در production نگذارید
-CRON_SECRET=                      # رشته‌ی تصادفیِ بلند
-
-MAHAK_SHOES_USERNAME=      MAHAK_SHOES_PASSWORD=      MAHAK_SHOES_DATABASE_ID=      MAHAK_SHOES_PACKAGE_NO=
-MAHAK_CLOTHING_USERNAME=   MAHAK_CLOTHING_PASSWORD=   MAHAK_CLOTHING_DATABASE_ID=   MAHAK_CLOTHING_PACKAGE_NO=
++ همه‌ی مقادیرِ بخش‌های ۲، ۳ و ۴
 ```
 
-ساختِ رشته‌ی تصادفی:
+ساختِ رشته‌ی تصادفی (هر بار یکی):
 
 ```bash
 node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
 ```
 
-> ⚠️ `ZARINPAL_SANDBOX=1` یعنی پرداخت‌ها **بدون پول واقعی** موفق می‌شوند. فقط برای آزمایش.
-> پرداخت‌های sandbox در دیتابیس با `gateway: "zarinpal-sandbox"` علامت می‌خورند.
+3. **Settings → Functions → Function Region** را **Frankfurt (fra1)** بگذارید — همان منطقه‌ی دیتابیس.
+4. **Settings → Domains** → دامنه را اضافه کنید و رکوردهای DNS را که Vercel می‌گوید در پنلِ دامنه ثبت کنید.
 
-`.env.local` و `.env` در git نمی‌روند؛ روی سرور متغیرها را در تنظیماتِ میزبان یا فایلِ `.env` کنارِ برنامه بگذارید.
+> متغیرهای `NEXT_PUBLIC_*` هنگامِ **build** در کد قرار می‌گیرند. هر بار که یکی را عوض کردید
+> (مثلاً آدرسِ سایت بعد از وصل‌کردنِ دامنه)، از **Deployments → Redeploy** دوباره بسازید.
 
----
+## ۶. قبل و بعد از اولین deploy — روی کامپیوتر خودتان
 
-## ۴. کارهای یک‌باره بعد از اولین انتشار
+یک فایل `.env` بسازید با **همان** مقادیرِ Vercel (همان `MONGODB_URI` و بقیه). بعد:
 
-روی سیستمِ خودتان، با `.env`ی که به **دیتابیسِ production** اشاره می‌کند:
+همه‌ی سرویس‌ها را واقعاً امتحان می‌کند (دیتابیس، ImageKit، ورود به Gmail، کلیدهای گوگل) و چیزی نمی‌نویسد:
 
-ایندکس‌ها (در برنامه خاموش است؛ یکتاییِ شماره‌ی فاکتورها و لینک‌های محک به آن وابسته است):
+```bash
+npm run check:services
+```
+
+با یک ایمیلِ آزمایشی به آدرسِ خودتان:
+
+```bash
+npm run check:services -- --mail you@example.com
+```
+
+ایندکس‌های دیتابیس (در برنامه خودکار ساخته نمی‌شوند):
 
 ```bash
 npm run ensure:indexes
 ```
 
-اولین ادمین — **بدون `--demo`** (وگرنه کاتالوگِ نمونه وارد دیتابیسِ اصلی می‌شود):
+اولین ادمین — **بدون `--demo`**، وگرنه کاتالوگِ نمونه وارد دیتابیسِ اصلی می‌شود:
 
 ```bash
 npm run seed -- --phone 09xxxxxxxxx --password "…" --name "…"
 ```
 
-دیدنِ داده‌ی خامِ محک (فقط می‌خواند):
+## ۷. در پنل ادمین
+
+- **شماره‌ی کارت/حساب** برای کارت‌به‌کارت — بدون آن مشتری نمی‌داند کجا واریز کند.
+- **صفحات سایت**: قوانین، بازگشت کالا، ارسال، درباره‌ی ما.
+- `store.config.js` → `brand.contact` و `brand.social` (تلفن، ایمیل، آدرس — الان خالی‌اند).
+
+## ۸. آزمایشِ نهایی
+
+1. ثبت‌نام با شماره‌ی موبایل، و یک ورود با گوگل.
+2. «فراموشیِ رمز» با ایمیل → ایمیل برسد.
+3. آپلودِ عکسِ یک محصول در پنل.
+4. یک خریدِ کارت‌به‌کارت → تأییدِ رسید در پنل → ایمیلِ تأیید برسد.
+
+---
+
+# مرحله‌ی ب — بعداً
+
+## محک
+
+متغیرهای `MAHAK_SHOES_*` و `MAHAK_CLOTHING_*` را در Vercel و `.env` بگذارید، بعد روی کامپیوتر خودتان:
 
 ```bash
 npm run mahak:inspect
 ```
 
-از خروجی معلوم می‌شود قیمت‌ها ریال‌اند یا تومان (`priceDivisor`) و سایز/رنگ چه شکلی است؛ تنظیمات در
-`store.config.js` → `integrations.mahak`. بعد اولین دریافتِ کامل:
-
 ```bash
 npm run mahak:sync
 ```
 
----
+از خروجیِ اولی معلوم می‌شود قیمت‌ها ریال‌اند یا تومان (`priceDivisor` در `store.config.js` → `integrations.mahak`).
+دسترسی به API محک از سرورِ Vercel (خارج از ایران) هنوز امتحان نشده است.
 
-## ۵. کارهای زمان‌بندی‌شده
+**همگام‌سازیِ ساعتی:** پلنِ رایگانِ Vercel cron را فقط روزی یک بار اجرا می‌کند، برای همین در `vercel.json`
+همگام‌سازیِ محک روزانه است. برای ساعتی، یکی از این دو:
+- پلن Pro و برگرداندنِ `schedule` به `0 * * * *` در `vercel.json`؛
+- یا سرویسی مثل [cron-job.org](https://cron-job.org) که هر ساعت این را صدا بزند:
 
-این آدرس‌ها باید با هدرِ `Authorization: Bearer <CRON_SECRET>` صدا زده شوند:
+```
+GET https://دامنه/api/cron/mahak-sync
+Authorization: Bearer <CRON_SECRET>
+```
 
-| آدرس | هر چند وقت | کار |
+## زرین‌پال
+
+کدِ پرداختِ آنلاین آماده و آزموده است؛ فقط خاموش است. برای روشن‌کردن:
+
+1. مرچنت‌کد و **اینماد** برای دامنه.
+2. **IP ثابت.** زرین‌پال ترمینال را به IP سرور گره می‌زند (در آزمایش پیامِ `Terminal ip not valid` آمد) و
+   Vercel به‌طور پیش‌فرض IP خروجیِ ثابت ندارد. یعنی برای درگاه یا باید سرویسِ IP ثابتِ Vercel را بگیرید، یا سایت
+   را به سروری با IP ثابت ببرید (VPS، لیارا، ابر آروان). پیش از تصمیم، از همان سرور امتحان کنید:
+
+```bash
+curl -s -X POST https://payment.zarinpal.com/pg/v4/payment/request.json -H "Content-Type: application/json" -d "{}"
+```
+
+3. `ZARINPAL_MERCHANT_ID` را بگذارید و در `store.config.js`:
+
+```js
+paymentMethods: ["ONLINE", "BANK_RECEIPT"],
+```
+
+> `ZARINPAL_SANDBOX=1` یعنی پرداخت **بدون پولِ واقعی** موفق می‌شود — فقط برای آزمایش، هرگز در production.
+> `npm run check:services` اگر روشن باشد خطا می‌دهد.
+
+## کارهای زمان‌بندی‌شده (همه)
+
+| آدرس | زمان | کار |
 |---|---|---|
-| `/api/cron/mahak-sync` | **هر ساعت** | کالا، قیمت و موجودی از محک؛ ارسالِ دوباره‌ی فاکتورهای ناموفق؛ لغوِ سفارش‌های آنلاینِ پرداخت‌نشده |
+| `/api/cron/mahak-sync` | روزانه (بهتر: ساعتی) | کالا، قیمت، موجودیِ محک؛ ارسالِ دوباره‌ی فاکتورهای ناموفق؛ لغوِ سفارش‌های آنلاینِ پرداخت‌نشده |
 | `/api/cron/review-followup` | روزانه | «سفارش به دستتان رسید؟» |
-| `/api/cron/wallet-notifications` | روزانه | (فقط با کیف پولِ روشن) |
-| `/api/cron/installment-reminders` | روزانه | (فقط با فروشِ اقساطیِ روشن) |
+| `/api/cron/wallet-notifications` | روزانه | فقط با کیف پولِ روشن |
+| `/api/cron/installment-reminders` | روزانه | فقط با فروشِ اقساطیِ روشن |
 
-- **Vercel:** در `vercel.json` تعریف شده‌اند. پلنِ رایگان cron را فقط روزی یک بار اجرا می‌کند؛ ساعتی پلن Pro می‌خواهد.
-- **هر میزبانِ دیگر:** با `crontab` روی سرور، یا سرویسی مثل cron-job.org:
-
-```bash
-curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://دامنه/api/cron/mahak-sync
-```
-
-سفارشِ آنلاینی که ۳۰ دقیقه پرداخت نشود لغو و موجودی‌اش آزاد می‌شود. این کار هر بار که مشتری‌ای وارد
-صفحه‌ی پرداخت می‌شود هم انجام می‌شود، پس بدونِ cron هم کار می‌کند — cron فقط زودترش می‌کند.
-
----
-
-## ۶. محتوا و تنظیماتِ فروشگاه
-
-- `store.config.js` → `brand.contact` و `brand.social`: تلفن، ایمیل، آدرس، شبکه‌های اجتماعی (الان خالی‌اند).
-- پنل ادمین → شماره‌ی کارت/حساب برای کارت‌به‌کارت.
-- پنل ادمین → «صفحات سایت»: قوانین، بازگشت کالا، ارسال، درباره‌ی ما.
-- پنل ادمین → «حسابداری محک»: کالاهای موجودِ بدونِ عکس؛ با آپلودِ عکس منتشر می‌شوند.
-- تا مرچنت‌کدِ زرین‌پال آماده نیست، `"ONLINE"` را از `commerce.paymentMethods` بردارید؛
-  وگرنه گزینه نمایش داده می‌شود و مشتری پیامِ «در حال حاضر در دسترس نیست» می‌گیرد.
-
----
-
-## ۷. آزمایش پیش از باز کردنِ سایت
-
-روی یک نسخه‌ی آزمایشی با دیتابیسِ جدا (این دستور داده‌ی تست می‌نویسد):
-
-```bash
-npm run smoke -- --phone … --password … --base https://آدرس-آزمایشی
-```
-
-بعد روی سایتِ اصلی:
-
-1. یک خریدِ کارت‌به‌کارت → تأییدِ رسید در پنل → فاکتور در هر دو حسابِ محک ثبت شود.
-2. یک خریدِ آنلاینِ کوچک با کارتِ واقعی → سفارش «پرداخت‌شده» شود و فاکتورِ محک ثبت شود.
-3. یک پرداختِ آنلاین را در درگاه «انصراف» بزنید → به صفحه‌ی پرداخت برگردید و سبد سرِ جایش باشد.
+روی Vercel خودکار اجرا می‌شوند (`CRON_SECRET` باید تنظیم باشد). روی میزبانِ دیگر با `crontab` یا cron-job.org،
+با هدرِ `Authorization: Bearer <CRON_SECRET>`.
