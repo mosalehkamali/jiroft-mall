@@ -436,6 +436,17 @@ const SECTION_DEFINITIONS = [
         ],
       },
       {
+        key: "siteFooter",
+        title: "فوتر سایت",
+        description: "متن‌ها، تماس، شبکه‌های اجتماعی و ستون‌های لینک فوتر",
+        path: "/p-admin/admin-pages",
+        api: ["/api/admin/site-footer"],
+        permissions: [
+          { key: "view", title: "مشاهده فوتر" },
+          { key: "edit", title: "ویرایش فوتر" },
+        ],
+      },
+      {
         key: "navbar",
         title: "منوی ناوبری سایت",
         description: "باطل‌سازی دستیِ کشِ منو پس از تغییر ورزش/برند/دسته‌بندی",
@@ -1090,7 +1101,7 @@ export const ADMIN_ROUTE_PERMISSIONS = {
 
   // صفحات سایت — هابِ دو تبی (?tab=home | ?tab=content). مسیر پایه با هر کدام
   // از دو قابلیت باز می‌شود؛ تبِ صریح در ADMIN_TAB_PERMISSIONS دقیق می‌ماند.
-  "/p-admin/admin-pages": ["home.view", "pages.view"],
+  "/p-admin/admin-pages": ["home.view", "pages.view", "siteFooter.view"],
   "/p-admin/admin-pages/[slug]": ["pages.edit"],
 
   // محصولات و واریانت‌ها
@@ -1163,7 +1174,7 @@ export const ADMIN_ROUTE_PERMISSIONS = {
  *   • src/app/(Admin-Panel)/p-admin/support/page.jsx
  *       VALID = { tickets, comments, messages } + router.replace(`?tab=`)
  *   • src/app/(Admin-Panel)/p-admin/admin-pages/page.jsx
- *       VALID = { home, content } + router.replace(`?tab=`)
+ *       VALID = { home, content, footer } + router.replace(`?tab=`)
  *
  * ⚠️ صفحه‌ی «مدیریت مالی» (financial/page.jsx) عمداً اینجا نیست: تب‌هایش
  * (bank / exchange / financing / review-credit) فقط useState محلی‌اند و هیچ
@@ -1174,6 +1185,7 @@ export const ADMIN_ROUTE_PERMISSIONS = {
 export const ADMIN_TAB_PERMISSIONS = {
   "/p-admin/admin-pages?tab=home": ["home.view"],
   "/p-admin/admin-pages?tab=content": ["pages.view"],
+  "/p-admin/admin-pages?tab=footer": ["siteFooter.view"],
   "/p-admin/support?tab=tickets": ["tickets.view"],
   "/p-admin/support?tab=comments": ["comments.view"],
   "/p-admin/support?tab=messages": ["contactMessages.view"],

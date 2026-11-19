@@ -11,14 +11,15 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { FaFileAlt, FaHome } from "react-icons/fa";
-import { FiBookOpen, FiChevronLeft, FiGrid, FiImage, FiLayers, FiTrendingUp, FiAward } from "react-icons/fi";
+import { FiBookOpen, FiChevronLeft, FiColumns, FiGrid, FiImage, FiLayers, FiTrendingUp, FiAward } from "react-icons/fi";
 
 import SectionTabs from "@/components/admin/SectionTabs";
 import PagesList from "@/components/admin/pages/PagesList";
+import SiteFooterManager from "@/components/admin/pages/SiteFooterManager";
 import { useAdminPermissions } from "@/components/admin/AdminPermissionProvider";
 import { ADMIN_TAB_PERMISSIONS } from "@/lib/permissions";
 
-const ORDER = ["home", "content"];
+const ORDER = ["home", "content", "footer"];
 const VALID = new Set(ORDER);
 
 const HOME_SECTIONS = [
@@ -164,6 +165,7 @@ function AdminPagesContent() {
       [
         { value: "home", label: "صفحه اصلی سایت", icon: FaHome },
         { value: "content", label: "صفحات محتوایی", icon: FaFileAlt },
+        { value: "footer", label: "فوتر", icon: FiColumns },
       ].filter((t) => allows(t.value)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [can]
@@ -195,7 +197,7 @@ function AdminPagesContent() {
               صفحات سایت
             </h1>
             <p className="text-xs font-bold mt-0.5" style={{ color: "var(--admin-text-muted)" }}>
-              مدیریت ویترین صفحه اصلی و محتوای صفحات اطلاع‌رسانی
+              مدیریت ویترین صفحه اصلی، محتوای صفحات اطلاع‌رسانی و فوتر
             </p>
           </div>
         </div>
@@ -206,6 +208,7 @@ function AdminPagesContent() {
         {/* برابریِ صریح: با `else` ی قبلی، تبِ null هم فهرستِ صفحات را نشان می‌داد */}
         {tab === "home" && <HomeSectionsPanel />}
         {tab === "content" && <PagesList />}
+        {tab === "footer" && <SiteFooterManager />}
       </div>
     </div>
   );

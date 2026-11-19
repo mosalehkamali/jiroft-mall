@@ -2,30 +2,27 @@
 
 import storeConfig from "base/store.config";
 import { useState, useEffect } from "react";
-import { FiMail, FiPhone, FiMapPin, FiInstagram, FiTwitter } from "react-icons/fi";
-import { FaTelegram } from "react-icons/fa";
+import { FiMail, FiPhone, FiMapPin, FiInstagram, FiTwitter, FiYoutube, FiLinkedin } from "react-icons/fi";
+import { FaTelegram, FaWhatsapp } from "react-icons/fa";
 import { isFeatureEnabled, isHrefEnabled } from "@/lib/features";
+import { defaultSiteFooter, renderCopyright, SOCIAL_PLATFORMS, telHref } from "@/lib/siteFooter";
 import Input from "@/components/ui/Input";
 import Button from "@/components/ui/Button";
 import Image from "next/image";
 import Link from "next/link";
 
-const { brand, navigation } = storeConfig;
+const { brand } = storeConfig;
 
 const SOCIAL_ICONS = {
-  instagram: <FiInstagram size={24} />,
-  telegram: <FaTelegram size={24} />,
-  x: <FiTwitter size={24} />,
+  instagram: FiInstagram,
+  telegram: FaTelegram,
+  whatsapp: FaWhatsapp,
+  x: FiTwitter,
+  youtube: FiYoutube,
+  linkedin: FiLinkedin,
 };
 
-// Links into a disabled feature are dropped; an emptied column disappears.
-const FOOTER_SECTIONS = (navigation?.footer || [])
-  .map((section) => ({ ...section, links: (section.links || []).filter((l) => isHrefEnabled(l.href)) }))
-  .filter((section) => section.links.length > 0);
-
-const SOCIAL_LABELS = { instagram: "اینستاگرام", telegram: "تلگرام", x: "ایکس (توییتر)" };
-
-const SOCIALS = Object.entries(brand.social || {}).filter(([key, href]) => href && SOCIAL_ICONS[key]);
+const SOCIAL_LABELS = Object.fromEntries(SOCIAL_PLATFORMS.map((p) => [p.key, p.label]));
 
 // فوتر در همه‌ی صفحات است؛ sweetalert2 فقط وقتی لازم می‌شود که فرم خبرنامه نتیجه بدهد.
 const showAlert = (options) =>
@@ -33,11 +30,19 @@ const showAlert = (options) =>
     .then(({ default: Swal }) => Swal.fire(options))
     .catch(() => window.alert(options.text));
 
-export default function Footer() {
+/** `footer` comes from the (Site) layout (Admin → صفحات سایت → فوتر). */
+export default function Footer({ footer = defaultSiteFooter() }) {
   const newsletter = isFeatureEnabled("newsletter");
+  const texts = footer.newsletter;
   const [email, setEmail] = useState("");
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // Links into a disabled feature are dropped; an emptied column disappears.
+  const sections = footer.sections
+    .map((section) => ({ ...section, links: section.links.filter((l) => isHrefEnabled(l.href)) }))
+    .filter((section) => section.links.length > 0);
+  const socials = footer.socials.filter((s) => s.enabled && s.url && SOCIAL_ICONS[s.key]);
 
   // بررسی وضعیت کوکی هنگام لود شدن صفحه
   useEffect(() => {
@@ -89,7 +94,13 @@ export default function Footer() {
     }
   };
 
-  const contact = brand.contact || {};
+  // Phone and address sit above the email. Phone numbers and emails are LTR text inside an RTL row:
+  // `dir="ltr"` isolates them, so "+98 912 …" never renders reversed.
+  const contactRows = [
+    ...footer.phones.map((phone) => [FiPhone, phone, telHref(phone), true]),
+    [FiMapPin, footer.address, null, false],
+    [FiMail, footer.email, footer.email && `mailto:${footer.email}`, true],
+  ].filter(([, value]) => value);
 
   return (
     <footer className="bg-[var(--color-dark)] text-white border-t border-white/10">
@@ -100,13 +111,9 @@ export default function Footer() {
               <div className="grid md:grid-cols-2 gap-8 items-center">
                 <div>
                   <h3 className="text-2xl font-bold mb-2 text-white">
-                    {isSubscribed ? "شما عضو خبرنامه هستید" : "عضویت در خبرنامه"}
+                    {isSubscribed ? texts.subscribedTitle : texts.title}
                   </h3>
-                  <p className="text-gray-300">
-                    {isSubscribed
-                      ? "از اینکه ما را دنبال می‌کنید سپاسگزاریم."
-                      : "از جدیدترین محصولات و تخفیف‌های ویژه با خبر شوید"}
-                  </p>
+                  <p className="text-gray-300">{isSubscribed ? texts.subscribedSubtitle : texts.subtitle}</p>
                 </div>
 
                 {!isSubscribed ? (
@@ -115,7 +122,7 @@ export default function Footer() {
                       type="email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      placeholder="ایمیل خود را وارد کنید"
+                      placeholder={texts.placeholder}
                       required
                       className="flex-grow bg-white/5 border-white/10 text-white placeholder:text-gray-500 focus:border-[var(--color-primary)]"
                     />
@@ -124,7 +131,7 @@ export default function Footer() {
                       disabled={loading}
                       className="bg-[var(--color-primary)] hover:bg-[var(--color-primary-dark)] text-white px-8"
                     >
-                      {loading ? "در حال ثبت..." : "عضویت"}
+                      {loading ? "در حال ثبت..." : texts.button}
                     </Button>
                   </form>
                 ) : (
@@ -141,56 +148,57 @@ export default function Footer() {
       <div className="site-container py-16">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-12">
           <div className="lg:col-span-2">
-            <div className="mb-6 opacity-90">
-              <Image src={brand.logoLight || brand.logo}alt={brand.name} width={120} height={120} />
-            </div>
-            <p className="text-gray-300 mb-8 leading-relaxed text-sm">{brand.description}</p>
+            {footer.logo ? (
+              <div className="mb-6 opacity-90">
+                <Image src={footer.logo} alt={brand.name} width={120} height={120} />
+              </div>
+            ) : null}
+            {footer.description ? (
+              <p className="text-gray-300 mb-8 leading-relaxed text-sm whitespace-pre-line">{footer.description}</p>
+            ) : null}
 
             <div className="space-y-4">
-              {[
-                [FiMail, contact.email, contact.email && `mailto:${contact.email}`],
-                [FiPhone, contact.phone, contact.phone && `tel:${contact.phone}`],
-                [FiMapPin, contact.address, null],
-              ]
-                .filter(([, value]) => value)
-                .map(([Icon, value, href]) => (
-                  <div key={value} className="flex items-center gap-3 text-gray-300 hover:text-white transition-colors group">
-                    <Icon className="text-[var(--color-primary)] group-hover:scale-110 transition-transform" size={20} />
-                    {href ? (
-                      <a href={href} className="text-sm" dir="ltr">{value}</a>
-                    ) : (
-                      <span className="text-sm">{value}</span>
-                    )}
-                  </div>
-                ))}
+              {contactRows.map(([Icon, value, href, ltr]) => (
+                <div key={value} className="flex items-center gap-3 text-gray-300 hover:text-white transition-colors group">
+                  <Icon className="shrink-0 text-[var(--color-primary)] group-hover:scale-110 transition-transform" size={20} />
+                  {href ? (
+                    <a href={href} className="text-sm" dir={ltr ? "ltr" : undefined}>{value}</a>
+                  ) : (
+                    <span className="text-sm leading-relaxed">{value}</span>
+                  )}
+                </div>
+              ))}
             </div>
 
-            {SOCIALS.length ? (
+            {socials.length ? (
               <div className="flex gap-5 mt-8">
-                {SOCIALS.map(([key, href]) => (
-                  <a
-                    key={key}
-                    href={href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    aria-label={`${SOCIAL_LABELS[key]} ${brand.name}`}
-                    className="text-white hover:text-[var(--color-primary)] transition-all duration-300 ease-in-out transform hover:-translate-y-1"
-                  >
-                    {SOCIAL_ICONS[key]}
-                  </a>
-                ))}
+                {socials.map(({ key, url }) => {
+                  const Icon = SOCIAL_ICONS[key];
+                  return (
+                    <a
+                      key={key}
+                      href={url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label={`${SOCIAL_LABELS[key]} ${brand.name}`}
+                      className="text-white hover:text-[var(--color-primary)] transition-all duration-300 ease-in-out transform hover:-translate-y-1"
+                    >
+                      <Icon size={24} />
+                    </a>
+                  );
+                })}
               </div>
             ) : null}
           </div>
 
-          {FOOTER_SECTIONS.map((section) => (
-            <div key={section.title}>
+          {sections.map((section, i) => (
+            <div key={`${section.title}-${i}`}>
               <h3 className="text-white font-bold mb-6 pb-2 border-b border-[var(--color-primary)] inline-block">
                 {section.title}
               </h3>
               <ul className="space-y-4">
-                {section.links.map((link) => (
-                  <li key={link.href}>
+                {section.links.map((link, j) => (
+                  <li key={`${link.href}-${j}`}>
                     <Link
                       href={link.href}
                       className="text-gray-300 hover:text-white transition-colors block text-sm"
@@ -205,13 +213,13 @@ export default function Footer() {
         </div>
       </div>
 
-      <div className="border-t border-white/5">
-        <div className="site-container py-6">
-          <p className="text-xs text-gray-300 text-center md:text-start">
-            © {new Date().getFullYear()} — تمامی حقوق برای {brand.name} محفوظ است.
-          </p>
+      {footer.copyright ? (
+        <div className="border-t border-white/5">
+          <div className="site-container py-6">
+            <p className="text-xs text-gray-300 text-center">{renderCopyright(footer.copyright)}</p>
+          </div>
         </div>
-      </div>
+      ) : null}
     </footer>
   );
 }

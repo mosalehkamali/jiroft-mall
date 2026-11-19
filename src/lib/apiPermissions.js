@@ -255,6 +255,7 @@ export const ADMIN_API_PERMISSIONS = {
     GET: "homeProductSliders.view",
     PUT: "homeProductSliders.edit",
   },
+  "/admin/site-footer": { GET: "siteFooter.view", PUT: "siteFooter.edit" },
   "/admin/home-roland-garros": {
     GET: "homeRolandGarros.view",
     PUT: "homeRolandGarros.edit",

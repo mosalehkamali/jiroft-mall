@@ -174,6 +174,7 @@ const SITE_SETTING_LABELS = {
   review_credit_config: "پیکربندی اعتبار نظرات",
   home_featured_article_ids: "مقالات منتخب صفحه اصلی",
   secondhand_header_image: "تصویر سربرگ بازار دست دوم",
+  site_footer: "فوتر سایت",
 };
 
 /* ────────────────────────────────────────────────────────────────────────────
