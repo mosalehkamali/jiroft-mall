@@ -118,6 +118,7 @@ const storeConfig = {
           { label: "درباره ما", href: "/about" },
           { label: "تماس با ما", href: "/contact" },
           { label: "قوانین و مقررات", href: "/terms" },
+          { label: "حریم خصوصی", href: "/privacy" },
         ],
       },
     ],

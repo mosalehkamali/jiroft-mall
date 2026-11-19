@@ -24,6 +24,7 @@ const RESERVED_ARTICLE_ROOTS = new Set([
   "second-hand",
   "shipping",
   "terms",
+  "privacy",
 ]);
 
 export function isReservedArticleRoot(slug) {
