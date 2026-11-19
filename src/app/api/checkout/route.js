@@ -12,7 +12,9 @@
  *    items: [{ productId?, variantId?, usedProductId?, itemType, quantity, flowSelections? }],
  *    addressId?:       string,
  *    addressSnapshot?: object,   // آدرس موقت (ذخیره نمی‌شود)
- *    paymentMethod:    یکی از store.config.js → commerce.paymentMethods (ONLINE فعلاً غیرفعال است)
+ *    paymentMethod:    یکی از store.config.js → commerce.paymentMethods
+ *                      ONLINE: سفارش «پرداخت‌نشده» ساخته می‌شود و پاسخ paymentUrl (درگاه) دارد؛
+ *                      پرداخت در services/onlinePayment.service.js تأیید می‌شود.
  *    couponCode?:      string,
  *    description?:     string,
  *    receiptImageUrls?: string[],   // BANK_RECEIPT
@@ -58,6 +60,8 @@ import storeConfig from "base/store.config";
 import { isFeatureEnabled } from "@/lib/features";
 import { InventoryError, releaseOrderStock, reserveOrderStock } from "base/services/inventory.service";
 import { checkMahakStock, shortageMessage } from "base/services/mahak/sync.service";
+import { expireUnpaidOnlineOrders, startOnlinePayment } from "base/services/onlinePayment.service";
+import { zarinpalConfigured } from "base/services/payments/zarinpal";
 
 const COMMERCE = storeConfig.commerce || {};
 const NEEDS_ADDRESS = (COMMERCE.delivery?.mode || "shipping") === "shipping";
@@ -211,10 +215,11 @@ export async function POST(req) {
     }
 
     if (paymentMethod === "ONLINE") {
-      return badRequest("پرداخت آنلاین در حال حاضر غیرفعال است");
+      if (!zarinpalConfigured()) return badRequest("پرداخت آنلاین در حال حاضر در دسترس نیست؛ از پرداخت بانکی استفاده کنید", 503);
+      if (walletAmount > 0) return badRequest("پرداخت آنلاین همراه با کیف پول ممکن نیست");
     }
 
-    if (!["BANK_RECEIPT", "INSTALLMENT"].includes(paymentMethod) || !allowedPaymentMethods().includes(paymentMethod)) {
+    if (!["BANK_RECEIPT", "INSTALLMENT", "ONLINE"].includes(paymentMethod) || !allowedPaymentMethods().includes(paymentMethod)) {
       return badRequest("روش پرداخت معتبر نیست");
     }
 
@@ -352,6 +357,9 @@ export async function POST(req) {
     if (walletAmount > orderTotal) return badRequest("مبلغ کیف پول بیشتر از مبلغ سفارش است؛ آن را اصلاح کنید");
     const totalPrice = orderTotal - walletAmount; // external amount after wallet
     const fullyWalletPaid = totalPrice === 0 && (walletAmount > 0 || !!priceResult.coupon?.createdByCoach);
+    if (paymentMethod === "ONLINE" && priceResult.coupon?.createdByCoach) {
+      return badRequest("با این کد تخفیف پرداخت آنلاین ممکن نیست؛ از پرداخت بانکی استفاده کنید");
+    }
     if (priceResult.coupon?.createdByCoach && !walletIdentity) walletIdentity = walletCheckoutIdentity(user.userId, checkoutKey, body);
 
     // ─── اعتبارسنجی داده‌های پرداخت (قبل از ساخت سفارش) ───
@@ -529,9 +537,12 @@ export async function POST(req) {
     let order;
     let payment;
     let installmentDoc = null;
+    let paymentUrl = null;
 
     // کالاهای متصل به حسابداری محک: موجودیِ همین لحظه از محک خوانده می‌شود و
     // اگر قلمی کم باشد، پیش از ساختِ سفارش و هر پرداختی به مشتری گفته می‌شود.
+    // سفارش‌های آنلاینِ رهاشده موجودی را نگه داشته‌اند؛ پیش از چک آزاد شوند
+    try { await expireUnpaidOnlineOrders(); } catch (e) { console.error("[checkout] expire online orders:", e?.message); }
     const mahakShort = await checkMahakStock(orderItems);
     if (mahakShort.length) {
       return NextResponse.json({ message: shortageMessage(mahakShort), outOfStock: mahakShort }, { status: 409 });
@@ -588,6 +599,9 @@ export async function POST(req) {
 
           order.payments.push(payment._id);
           await order.save();
+        } else if (paymentMethod === "ONLINE") {
+          const buyer = await User.findById(user.userId).select("phone email").lean();
+          ({ url: paymentUrl, payment } = await startOnlinePayment(order, { mobile: buyer?.phone, email: buyer?.email }));
         } else {
           // INSTALLMENT — پیش‌پرداخت + سند اقساط
           payment = await Payment.create({
@@ -625,7 +639,7 @@ export async function POST(req) {
       } catch (err) {
         // جبران: سفارش بدون پرداخت نباید باقی بماند
         try {
-          if (payment?._id) await Payment.findByIdAndDelete(payment._id);
+          await Payment.deleteMany({ order: order._id });
           if (installmentDoc?._id) await Installment.findByIdAndDelete(installmentDoc._id);
           await Order.findByIdAndDelete(order._id);
           await UsedProduct.updateMany({ order: order._id, status: "reserved" }, { $set: { status: "available", order: null } });
@@ -635,6 +649,14 @@ export async function POST(req) {
         }
         throw err;
       }
+    }
+
+    // پرداخت آنلاین: ایمیل، اعلان و فاکتور محک بعد از تأییدِ درگاه (onlinePayment.service)
+    if (paymentMethod === "ONLINE") {
+      return NextResponse.json(
+        { message: "در حال انتقال به درگاه پرداخت", orderId: order._id, trackingCode: order.trackingCode, totalPrice: order.totalPrice, paymentUrl },
+        { status: 201 },
+      );
     }
 
     // ═══ ۴. اقدامات پس از ثبت (خطاها روند را متوقف نمی‌کنند) ═══
@@ -693,6 +715,7 @@ export async function POST(req) {
   } catch (error) {
     console.error("خطا در ثبت نهایی سفارش:", error);
     if (error.code === "WALLET_CHECKOUT_ERROR") return badRequest(error.message, error.status);
+    if (error.name === "GatewayError") return badRequest(error.message, 502);
     return NextResponse.json({ message: "خطای داخلی سرور" }, { status: 500 });
   }
 }

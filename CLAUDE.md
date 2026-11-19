@@ -1547,6 +1547,39 @@ npm run ensure:indexes  # the unique indexes of MahakRow / MahakLink (autoIndex 
 
 Hourly sync is `/api/cron/mahak-sync` in `vercel.json`; admin screen: `/p-admin/mahak` (`mahak.view` / `mahak.sync`).
 
+### Online payment (ZarinPal)
+
+`commerce.paymentMethods` includes `"ONLINE"`; it needs `ZARINPAL_MERCHANT_ID` (`ZARINPAL_SANDBOX=1` = sandbox,
+payments succeed with no money — tagged `gateway: "zarinpal-sandbox"`). Deploy steps: `docs/DEPLOY.md`.
+
+| file | role |
+|---|---|
+| `services/payments/zarinpal.js` | v4 REST: `requestPayment` (Toman in, Rial sent), `verifyPayment` (100 / 101 = paid) |
+| `services/onlinePayment.service.js` | `startOnlinePayment`, `handleGatewayReturn`, `confirmOrderPaid`, `expireUnpaidOnlineOrders` |
+| `src/app/api/payments/online/callback/route.js` | where the gateway returns the customer |
+
+Rules that are load-bearing:
+
+- **Only the gateway's verify marks money received.** The callback's `Status=OK` proves nothing; the payment is
+  matched to the order by `authority` and verified server to server with the stored amount. The old
+  `/api/orders/webhook-success` (anyone could POST to it) is gone; `confirmOrderPaid` is a function, not a route.
+- **ONLINE checkout creates the order unpaid with stock reserved**, then returns `paymentUrl`. Email, admin
+  notification and the Mahak invoice happen in `confirmOrderPaid`, not at checkout. The cart is cleared only on the
+  success page (`?paid=online`), so a failed payment returns to a full cart.
+- **Abandoned orders expire after 30 min** (`expireUnpaidOnlineOrders`: cancel, release stock and used products).
+  It runs at checkout, at the payment page's stock check and in the hourly cron. **An expired order is never
+  verified** even if the customer paid at the last second — the gateway refunds unverified transactions.
+- **The callback answers with a self-navigating page, not a 302.** The auth cookies are `SameSite=strict` and
+  this request comes from zarinpal.com, so a redirect chain reached `/p-user/*` without them and the customer
+  landed on the login form. A navigation started by our own page is same-site.
+- A re-opened callback of an already-PAID payment re-runs `confirmOrderPaid` (idempotent) — the recovery path if
+  the first attempt crashed after verify. Coach credit runs only with `features.coach`.
+- ZarinPal binds a terminal to the server's outbound IP (`Terminal ip not valid`), so the host needs a static IP.
+
+```bash
+npm test -- onlinePayment   # real mongo, fake gateway: verify-only, repeats, expiry, late payment
+```
+
 ### State Management
 
 - **Server state:** `unstable_cache` + on-demand revalidation (described above)

@@ -15,7 +15,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
-const DEFAULT_CONFIG_TESTS = new Set(["features.test.mjs", "productRules.test.mjs", "mahak.test.mjs"]);
+const DEFAULT_CONFIG_TESTS = new Set(["features.test.mjs", "productRules.test.mjs", "mahak.test.mjs", "onlinePayment.test.mjs"]);
 const filters = process.argv.slice(2);
 const files = fs
   .readdirSync("tests")

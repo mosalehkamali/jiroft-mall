@@ -3,6 +3,7 @@ import connectToDB from "base/configs/db";
 import "base/models/registerModels";
 import { runMahakSync } from "base/services/mahak/sync.service";
 import { retryMahakInvoices } from "base/services/mahak/order.service";
+import { expireUnpaidOnlineOrders } from "base/services/onlinePayment.service";
 import { revalidateContent } from "@/lib/revalidate";
 
 export const runtime = "nodejs";
@@ -20,8 +21,9 @@ export async function GET(req) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   await connectToDB();
+  const expiredOnlineOrders = await expireUnpaidOnlineOrders(); // their stock goes back before the recount
   const sync = await runMahakSync({ budgetMs: 40000 });
   if (sync.changed) revalidateContent(["products", "navbar", "categories"]);
   const invoices = await retryMahakInvoices();
-  return NextResponse.json({ ok: true, sync, invoices });
+  return NextResponse.json({ ok: true, expiredOnlineOrders, sync, invoices });
 }

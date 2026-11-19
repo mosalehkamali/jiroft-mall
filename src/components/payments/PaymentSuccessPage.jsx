@@ -14,6 +14,8 @@ import { useEffect, useState } from "react";
 import OrderFlowSelectionsView from "@/components/order/OrderFlowSelectionsView";
 import VariantSummary from "@/components/order/VariantSummary";
 import DownloadInvoiceButton from "@/components/order/DownloadInvoiceButton";
+import { clearCart } from "@/lib/cart";
+import { clearPendingCheckout } from "@/lib/pendingCheckout";
 
 // جداسازی نام فارسی و انگلیسی
 function splitName(text) {
@@ -44,6 +46,11 @@ export default function PaymentSuccessPage({ trackingCode }) {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
+        // برگشت از درگاه با پرداخت موفق: سبد فقط همین‌جا پاک می‌شود
+        if (new URLSearchParams(window.location.search).get("paid")) {
+            clearCart();
+            clearPendingCheckout();
+        }
         const loadOrder = async () => {
             try {
                 const res = await fetch(`/api/orders/${trackingCode}`, {

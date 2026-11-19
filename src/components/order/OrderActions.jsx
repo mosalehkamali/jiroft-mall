@@ -63,11 +63,6 @@ const OrderActions = ({
   const handleSubmitOrder = async () => {
     if (!validateOrder()) return;
 
-    if (selectedPaymentMethod === 'ONLINE') {
-      toast.error('پرداخت آنلاین در حال حاضر غیرفعال است');
-      return;
-    }
-
     const result = await Swal.fire({
       title: 'ادامه به پرداخت',
       html: `

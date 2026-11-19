@@ -93,6 +93,18 @@ const CheckoutPaymentPage = () => {
     setCheckout(pending);
     setCheckoutReady(true);
 
+    // بازگشت از درگاه بدونِ پرداختِ موفق — سبد دست‌نخورده است و می‌شود دوباره پرداخت کرد
+    const gatewayResult = new URLSearchParams(window.location.search).get('payment');
+    if (gatewayResult) {
+      toast.error(
+        gatewayResult === 'expired'
+          ? 'مهلت پرداخت این سفارش تمام شده بود؛ مبلغی کسر نشده یا ظرف چند ساعت به حسابتان برمی‌گردد. دوباره پرداخت کنید.'
+          : 'پرداخت انجام نشد. اگر مبلغی از حسابتان کسر شده، ظرف چند ساعت برمی‌گردد. می‌توانید دوباره پرداخت کنید.',
+        { autoClose: false },
+      );
+      window.history.replaceState(null, '', window.location.pathname);
+    }
+
     // موجودیِ لحظه‌ایِ اقلام، پیش از هر پرداختی (کارت‌به‌کارت یا درگاه)
     fetch('/api/checkout/stock-check', {
       method: 'POST',
@@ -210,6 +222,30 @@ const CheckoutPaymentPage = () => {
     }
   };
 
+  // ─── پرداخت آنلاین: سفارش ساخته می‌شود و مشتری به درگاه می‌رود ───
+  // سبد عمداً پاک نمی‌شود: اگر پرداخت ناموفق بود، کاربر با همان سبد برمی‌گردد.
+  const handleOnlineSubmit = async () => {
+    if (!rulesChecked) {
+      toast.error('پذیرش قوانین الزامی است.');
+      return;
+    }
+    if (email && !validateEmail(email)) {
+      toast.error('فرمت ایمیل وارد شده صحیح نیست.');
+      return;
+    }
+    setSubmitLoading(true);
+    try {
+      if (email) await editProfile({ email });
+      const data = await submitCheckout({});
+      if (!data.paymentUrl) throw new Error('آدرس درگاه پرداخت دریافت نشد');
+      window.location.assign(data.paymentUrl);
+    } catch (error) {
+      console.error(error);
+      toast.error(error.message || 'خطا در اتصال به درگاه پرداخت');
+      setSubmitLoading(false);
+    }
+  };
+
   // ─── ثبت درخواست اقساط (از InstallmentPage فراخوانی می‌شود) ───
   const handleInstallmentSubmit = async (installmentPayload) => {
     const data = await submitCheckout({ installment: installmentPayload });
@@ -311,7 +347,8 @@ const CheckoutPaymentPage = () => {
     );
   }
 
-  // ─── رسید بانکی ───
+  // ─── رسید بانکی / پرداخت آنلاین ───
+  const isOnline = checkout.paymentMethod === 'ONLINE' && !fullyCovered;
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
       {backLink}
@@ -322,9 +359,14 @@ const CheckoutPaymentPage = () => {
         </div>
 
         <div className="md:w-2/3 flex flex-col gap-4 sm:gap-6 md:px-6">
-          {!fullyCovered && <BankInfoBox />}
+          {!fullyCovered && !isOnline && <BankInfoBox />}
 
-          {!fullyCovered && <ReceiptUploader onFileChange={setReceiptUrls} />}
+          {!fullyCovered && !isOnline && <ReceiptUploader onFileChange={setReceiptUrls} />}
+          {isOnline && (
+            <p className="rounded-xl border border-slate-200 bg-white p-4 text-sm leading-7 text-slate-700">
+              با زدن دکمه‌ی زیر به درگاه امن زرین‌پال منتقل می‌شوید. سفارش شما پس از پرداخت موفق ثبت نهایی می‌شود.
+            </p>
+          )}
           {fullyCovered && <p className="rounded-xl bg-emerald-50 p-4 text-sm text-emerald-800">مبلغ سفارش با اعتبار انتخاب‌شده پوشش داده می‌شود و نیازی به فیش بانکی نیست.</p>}
 
           <EmailBox
@@ -338,11 +380,21 @@ const CheckoutPaymentPage = () => {
             onChange={setRulesChecked}
           />
 
-          <SubmitPaymentButton
-            loading={submitLoading}
-            disabled={(!fullyCovered && receiptUrls.length === 0) || !rulesChecked}
-            onClick={handleBankReceiptSubmit}
-          />
+          {isOnline ? (
+            <SubmitPaymentButton
+              loading={submitLoading}
+              disabled={!rulesChecked}
+              onClick={handleOnlineSubmit}
+              label="پرداخت آنلاین"
+              loadingLabel="در حال انتقال به درگاه..."
+            />
+          ) : (
+            <SubmitPaymentButton
+              loading={submitLoading}
+              disabled={(!fullyCovered && receiptUrls.length === 0) || !rulesChecked}
+              onClick={handleBankReceiptSubmit}
+            />
+          )}
         </div>
       </div>
     </div>

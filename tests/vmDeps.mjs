@@ -35,6 +35,8 @@ export const PURE_DEPS = {
     afterMahakProductEdit: async () => {},
   },
   "base/services/mahak/order.service": { queueMahakInvoice: async () => {} },
+  "base/services/onlinePayment.service": { expireUnpaidOnlineOrders: async () => 0, startOnlinePayment: async () => ({ url: "", payment: null }) },
+  "base/services/payments/zarinpal": { zarinpalConfigured: () => false },
   "base/services/productRules.service": {
     rulesForCategory: async () => productRules.resolveProductRules([]),
     rulesResolver: async () => () => productRules.resolveProductRules([]),

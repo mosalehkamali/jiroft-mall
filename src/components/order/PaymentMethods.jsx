@@ -6,8 +6,6 @@ const paymentOptions = [
     title: 'پرداخت آنلاین',
     description: 'پرداخت امن از طریق درگاه بانکی',
     icon: 'credit-card',
-    disabled: true,
-    disabledLabel: 'در حال حاضر غیرفعال'
   },
   {
     method: 'BANK_RECEIPT',

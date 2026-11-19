@@ -5,6 +5,7 @@ import "base/models/registerModels";
 import { verifyToken } from "base/utils/auth";
 import { checkMahakStock, shortageMessage } from "base/services/mahak/sync.service";
 import { revalidateContent } from "@/lib/revalidate";
+import { expireUnpaidOnlineOrders } from "base/services/onlinePayment.service";
 
 /**
  * POST /api/checkout/stock-check { items } — asked when the customer opens the
@@ -22,6 +23,7 @@ export async function POST(req) {
     return NextResponse.json({ message: "سبد خرید خالی است" }, { status: 400 });
   }
   await connectToDB();
+  await expireUnpaidOnlineOrders().catch((e) => console.error("[stock-check] expire:", e?.message));
   const outOfStock = await checkMahakStock(items);
   if (!outOfStock.length) return NextResponse.json({ ok: true });
   revalidateContent(["products"]); // the storefront should stop offering them too

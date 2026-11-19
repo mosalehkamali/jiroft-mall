@@ -304,7 +304,8 @@ const storeConfig = {
     },
 
     // Offered at checkout. INSTALLMENT also needs features.installments.
-    paymentMethods: ["BANK_RECEIPT"],
+    // ONLINE = ZarinPal (ZARINPAL_MERCHANT_ID); without it checkout answers "not available".
+    paymentMethods: ["ONLINE", "BANK_RECEIPT"],
   },
 };
 
