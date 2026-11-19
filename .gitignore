@@ -19,7 +19,7 @@
 
 # production
 /build
-.env
+# .env is committed on purpose (private repository); local overrides stay out
 .env*.local
 # misc
 .DS_Store

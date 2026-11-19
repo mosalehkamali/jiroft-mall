@@ -1614,6 +1614,8 @@ login, Google client credentials) without writing anything; `docs/DEPLOY.md` is 
 
 ### Environment Variables
 
-See `.env.example` (required: `MONGODB_URI`, `AccessTokenPrivateKey`, `RefreshTokenPrivateKey`,
-`NEXT_PUBLIC_SITE_URL`; everything else enables an optional service or feature). The ImageKit client is
+`.env` is **committed** in this store's private repository (by the owner's choice) and holds the real keys —
+never make the repository public. Required: `MONGODB_URI`, `AccessTokenPrivateKey`, `RefreshTokenPrivateKey`,
+`NEXT_PUBLIC_SITE_URL`; everything else enables an optional service or feature (full list: `docs/DEPLOY.md`).
+Vercel's own Environment Variables override the file. The ImageKit client is
 created lazily (`src/lib/imagekit.js`), so the app builds and runs before uploads are configured.

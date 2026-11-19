@@ -288,7 +288,7 @@ easy to compare with the base when you port improvements between clients.
 ## 7. Starting a new client
 
 1. Copy the base into a new repository (fresh history).
-2. `.env` from `.env.example`; a MongoDB replica set (Atlas, or `npm run dev:db`).
+2. `.env` (committed in this store's private repository); a MongoDB replica set (Atlas, or `npm run dev:db`).
 3. Edit `store.config.js`; replace `public/brand/*`.
 4. `npm run seed -- --phone … --password …` for the first admin
    (`--demo` adds a sample catalogue).

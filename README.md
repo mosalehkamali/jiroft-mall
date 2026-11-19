@@ -26,7 +26,7 @@ rm -rf .git && git init -b main            # (Windows: Remove-Item -Recurse -For
 npm install
 
 # 2. configure
-cp .env.example .env                        # fill in MONGODB_URI and the two token secrets
+# .env is committed in this store's (private) repo — edit MONGODB_URI and the keys there
 # edit store.config.js, replace public/brand/*
 
 # 3. a database: MongoDB Atlas, or a throwaway local one
