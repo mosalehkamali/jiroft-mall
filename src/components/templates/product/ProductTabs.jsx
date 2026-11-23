@@ -103,9 +103,16 @@ const ProductTabs = ({
     );
   }, [customTab, customTabItemIds]);
 
+  // تبِ خالی نمایش داده نمی‌شود: توضیحاتی که بعد از حذفِ تگ‌ها متنی ندارد، یا مشخصاتی که هیچ مقداری ندارد.
+  const hasDescription =
+    typeof description === "string" &&
+    description.replace(/<[^>]*>|&nbsp;/g, "").trim().length > 0;
+  const hasAttributes =
+    Array.isArray(attributes) && attributes.some((a) => String(a?.value ?? "").trim());
+
   const tabs = [
-    { id: "description", label: "توضیحات تخصصی", icon: FiFileText },
-    { id: "attributes", label: "مشخصات فنی", icon: FiSettings },
+    ...(hasDescription ? [{ id: "description", label: "توضیحات تخصصی", icon: FiFileText }] : []),
+    ...(hasAttributes ? [{ id: "attributes", label: "مشخصات فنی", icon: FiSettings }] : []),
     ...(matchingCustomItems.length > 0
       ? [
           {
@@ -125,6 +132,11 @@ const ProductTabs = ({
         }]
       : []),
   ];
+
+  // اگر تبِ پیش‌فرض (توضیحات) حذف شده باشد، اولین تبِ موجود فعال می‌شود.
+  const currentTab = tabs.some((t) => t.id === activeTab) ? activeTab : tabs[0]?.id;
+
+  if (tabs.length === 0) return null;
 
   const renderContent = (sectionId, isActive = true) => (
     <>
@@ -166,7 +178,7 @@ const ProductTabs = ({
     <div className="mt-24 w-full rtl text-right" dir="rtl">
       <div className="relative hidden items-stretch gap-x-1 border-b border-gray-100 pb-px sm:flex sm:gap-x-2 lg:gap-x-8">
         {tabs.map((tab) => {
-          const isActive = activeTab === tab.id;
+          const isActive = currentTab === tab.id;
 
           return (
             <button
@@ -214,7 +226,7 @@ const ProductTabs = ({
       <div className="relative min-h-[300px] py-10">
         {/* Keep searchable text in the document; expensive interactive panels
             still mount only when selected. The visible tab animation is unchanged. */}
-        {tabs.filter(tab => tab.id !== activeTab && tab.id !== "reviews").map(tab => (
+        {tabs.filter(tab => tab.id !== currentTab && tab.id !== "reviews").map(tab => (
           <div key={tab.id} hidden>{renderContent(tab.id, false)}</div>
         ))}
 
@@ -222,13 +234,13 @@ const ProductTabs = ({
             در HTML سرور مرئی باشد؛ initial خودِ فرزند برای تعویض تب فعال می‌ماند. */}
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
-            key={activeTab}
+            key={currentTab}
             initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -15 }}
             transition={{ duration: 0.4, ease: "easeOut" }}
           >
-            {renderContent(activeTab)}
+            {renderContent(currentTab)}
           </motion.div>
         </AnimatePresence>
       </div>

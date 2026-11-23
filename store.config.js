@@ -79,7 +79,7 @@ const storeConfig = {
   productPage: {
     assurances: [
       { icon: "shield", label: "ضمانت اصل بودن کالا" },
-      { icon: "return", label: "۷ روز ضمانت بازگشت کالا" },
+      { icon: "return", label: "ضمانت بازگشت کالا" },
       { icon: "card", label: "امکان پرداخت قسطی", feature: "installments" },
       { icon: "truck", label: "ارسال به سراسر کشور" },
     ],
