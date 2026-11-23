@@ -346,7 +346,7 @@ export default function UsedProductForm({ initialData }) {
           <div className="flex items-center justify-between">
             <label className="text-sm font-bold text-neutral-600">ارزیابی وضعیت (کارت سلامت)</label>
             {overallScore != null && (
-              <span className="text-sm font-bold bg-orange-50 text-orange-600 px-3 py-1 rounded-full">
+              <span className="text-sm font-bold bg-[var(--color-primary)]/5 text-[var(--color-primary)] px-3 py-1 rounded-full">
                 امتیاز کل: {overallScore}/10
               </span>
             )}

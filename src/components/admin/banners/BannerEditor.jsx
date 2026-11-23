@@ -182,7 +182,7 @@ function ImageSlotUploader({ slot, value, onChange }) {
             border: "2px dashed #ddd", borderRadius: "10px", padding: "18px",
             textAlign: "center", cursor: "pointer", transition: "all 0.2s",
           }}
-          onMouseOver={e => { e.currentTarget.style.borderColor = "var(--color-primary)"; e.currentTarget.style.background = "#fff5f2"; }}
+          onMouseOver={e => { e.currentTarget.style.borderColor = "var(--color-primary)"; e.currentTarget.style.background = "color-mix(in srgb, var(--color-primary) 5%, white)"; }}
           onMouseOut={e => { e.currentTarget.style.borderColor = "#ddd"; e.currentTarget.style.background = ""; }}
         >
           {uploading ? (
@@ -296,7 +296,7 @@ export default function BannerEditor({ banner, position, onClose, onSave }) {
         .tab-btn:not(.active) { background: #f0f0f0; color: #555; }
         .tpl-card { border: 2px solid #eee; border-radius: 12px; padding: 14px; cursor: pointer; transition: all 0.2s; text-align: center; }
         .tpl-card:hover { border-color: var(--color-primary, var(--color-primary)); transform: translateY(-2px); box-shadow: 0 4px 16px color-mix(in srgb, var(--color-primary) 15%, transparent); }
-        .tpl-card.selected { border-color: var(--color-primary, var(--color-primary)); background: #fff5f2; }
+        .tpl-card.selected { border-color: var(--color-primary, var(--color-primary)); background: color-mix(in srgb, var(--color-primary) 5%, white); }
         .color-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
         .color-swatch { width: 36px; height: 36px; border-radius: 8px; border: 1.5px solid #ddd; cursor: pointer; overflow: hidden; flex-shrink: 0; }
         .color-swatch input[type=color] { width: 150%; height: 150%; margin: -25%; border: none; cursor: pointer; }

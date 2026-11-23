@@ -1155,7 +1155,7 @@ export default function AddCategory() {
             {/* Technical Stats Section */}
             <div id="stat-form-anchor" className="border-t pt-8 space-y-6">
               <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-orange-100 text-orange-600">
+                <div className="p-2 rounded-lg bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
                   <FiEdit3 size={18} />
                 </div>
                 <div>
@@ -1164,7 +1164,7 @@ export default function AddCategory() {
                 </div>
               </div>
 
-              <div className={`rounded-[var(--radius)] p-6 space-y-5 border-2 ${editingStatId ? 'bg-orange-50/30 border-orange-200' : 'bg-neutral-50 border-transparent'}`}>
+              <div className={`rounded-[var(--radius)] p-6 space-y-5 border-2 ${editingStatId ? 'bg-[var(--color-primary)]/5 border-[var(--color-primary)]/20' : 'bg-neutral-50 border-transparent'}`}>
                 <div className="grid md:grid-cols-2 gap-4">
                   <Input
                     label="نام سیستمی (انگلیسی)"
@@ -1206,8 +1206,8 @@ export default function AddCategory() {
               </div>
 
               {technicalStats.length > 0 && (
-                <div className="mt-6 p-6 bg-orange-50/50 border border-orange-100 rounded-[var(--radius)] space-y-3">
-                  <div className="flex items-center gap-2 text-orange-700 font-bold text-sm">
+                <div className="mt-6 p-6 bg-[var(--color-primary)]/5 border border-[var(--color-primary)]/10 rounded-[var(--radius)] space-y-3">
+                  <div className="flex items-center gap-2 text-[var(--color-primary)] font-bold text-sm">
                     <FiTag size={16} />
                     راهنمای واحد هوش مصنوعی برای تحلیل شاخص‌های فنی
                   </div>

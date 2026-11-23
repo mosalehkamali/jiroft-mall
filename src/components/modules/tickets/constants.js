@@ -89,7 +89,7 @@ export const TICKET_PRIORITY = {
   high: {
     label: PRIORITY_LABELS.high,
     icon: ChevronUp,
-    badge: 'bg-orange-50 text-orange-600 border-orange-200',
+    badge: 'bg-[var(--color-primary)]/5 text-[var(--color-primary)] border-[var(--color-primary)]/20',
   },
   urgent: {
     label: PRIORITY_LABELS.urgent,

@@ -30,17 +30,17 @@ function SectionCard({ icon: Icon, title, desc, href, createHref, accent, stats 
   // مجوز از روی خودِ روتِ مقصد خوانده می‌شود، پس این کارت برای هر دو بخش
   // (محصولات دست دوم و کارت‌های سلامت) بدون کلیدِ سخت کار می‌کند.
   const { canRoute } = useAdminPermissions();
-  const isOrange = accent === 'orange';
+  const isPrimary = accent === 'primary';
 
-  const base = isOrange ? 'text-[var(--color-primary)]' : 'text-blue-500';
-  const light = isOrange ? 'bg-orange-50' : 'bg-blue-50';
-  const btn = isOrange
+  const base = isPrimary ? 'text-[var(--color-primary)]' : 'text-blue-500';
+  const light = isPrimary ? 'bg-[var(--color-primary)]/5' : 'bg-blue-50';
+  const btn = isPrimary
     ? 'bg-[var(--color-primary)] hover:bg-[var(--color-primary)]/90'
     : 'bg-blue-500 hover:bg-blue-600';
-  const addBtn = isOrange
-    ? 'border-orange-200 text-[var(--color-primary)] hover:bg-orange-50'
+  const addBtn = isPrimary
+    ? 'border-[var(--color-primary)]/20 text-[var(--color-primary)] hover:bg-[var(--color-primary)]/5'
     : 'border-blue-200 text-blue-500 hover:bg-blue-50';
-  const bar = isOrange ? 'bg-[var(--color-primary)]' : 'bg-blue-500';
+  const bar = isPrimary ? 'bg-[var(--color-primary)]' : 'bg-blue-500';
 
   return (
     <div className="bg-white border border-neutral-100 rounded-[var(--radius)] shadow-sm hover:shadow-xl transition-all duration-300 overflow-hidden flex flex-col">
@@ -224,7 +224,7 @@ export default function UsedProductsHubPage() {
             desc="ثبت، ویرایش و قیمت‌گذاری محصولات کارکرده به همراه ارزیابی وضعیت با امتیاز از ۱۰"
             href="/p-admin/admin-secondHands/used-products"
             createHref="/p-admin/admin-secondHands/used-products/create"
-            accent="orange"
+            accent="primary"
             stats={[
               { label: 'کل', value: stats?.total },
               { label: 'موجود', value: stats?.available },

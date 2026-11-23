@@ -135,7 +135,7 @@ export default function UsedProductsPage() {
                 <div className="flex items-center gap-4 mt-1">
                   {item.overallScore != null && (
                     <div className="flex items-center gap-1">
-                      <span className="text-orange-500 text-sm">★</span>
+                      <span className="text-[var(--color-primary)] text-sm">★</span>
                       <span className="text-xs font-bold text-neutral-600">{item.overallScore}</span>
                       <span className="text-[10px] text-neutral-400">/۱۰</span>
                     </div>

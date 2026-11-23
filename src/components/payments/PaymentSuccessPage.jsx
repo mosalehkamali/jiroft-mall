@@ -133,7 +133,7 @@ export default function PaymentSuccessPage({ trackingCode }) {
                                     <span className={`text-xs px-3 py-1 rounded-full font-medium ${
                                         order?.paymentStatus === "PAID"
                                             ? "bg-green-100 text-green-700"
-                                            : "bg-orange-100 text-orange-700"
+                                            : "bg-[var(--color-primary)]/10 text-[var(--color-primary)]"
                                     }`}>
                                         {order?.paymentStatus === "PAID" ? "پرداخت شده" : "در انتظار تایید"}
                                     </span>

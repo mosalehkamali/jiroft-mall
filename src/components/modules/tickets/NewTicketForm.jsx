@@ -429,7 +429,7 @@ const NewTicketForm = () => {
           <button
             type="submit"
             disabled={submitting}
-            className="inline-flex items-center gap-2 bg-[var(--color-primary)] text-white text-sm font-semibold px-6 py-2.5 rounded-[6px] shadow-sm hover:bg-[#8f3b1f] disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+            className="inline-flex items-center gap-2 bg-[var(--color-primary)] text-white text-sm font-semibold px-6 py-2.5 rounded-[6px] shadow-sm hover:bg-[var(--color-primary-dark)] disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
           >
             {submitting && <Loader2 className="animate-spin" size={15} />}
             {submitting ? 'در حال ثبت...' : 'ثبت تیکت'}

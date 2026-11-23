@@ -313,7 +313,7 @@ export default function UsedQuickViewModal({
                   flex-[5] h-12 sm:h-13 lg:h-14
                   rounded-lg font-bold text-sm sm:text-base lg:text-lg
                   flex items-center justify-center gap-2 sm:gap-3
-                  bg-[var(--color-primary)] text-white hover:bg-[#8e3b1e]
+                  bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-dark)]
                   transition-all shadow-xl shadow-[var(--color-primary)]/20 active:scale-95
                 "
               >

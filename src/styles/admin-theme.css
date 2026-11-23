@@ -304,8 +304,8 @@
      خطِ زیرِ سربرگ به رنگِ گروه. بازطراحی این‌ها را خاکستری کرده بود و نوعِ
      بلوک‌ها از هم تشخیص داده نمی‌شد؛ بقیه‌ی طراحیِ فشرده دست‌نخورده است. */
   .admin-scope .a-block-card {
-    --admin-block-accent: #c8927b;
-    --admin-block-tint: #fdf5f1;
+    --admin-block-accent: var(--color-primary);
+    --admin-block-tint: color-mix(in srgb, var(--color-primary) 5%, white);
     position: relative;
     background: var(--be-surface);
     border: 1px solid var(--admin-block-accent);
@@ -679,7 +679,7 @@
    مثلاً دکمه‌ی «بلوک روی تصویر» که رنگِ بلوکِ تصویر را دارد، حتی در مودالِ
    پیش‌نمایش که کارتی دورش نیست. هم‌وزن با قاعده‌ی کارت و پس از آن، پس روی کارت
    همان نتیجه‌ی قبلی را می‌دهد. */
-.admin-scope [data-block-group="content"]   { --admin-block-accent: #c07a56; --admin-block-tint: #fbf1ea; }
+.admin-scope [data-block-group="content"]   { --admin-block-accent: var(--color-primary); --admin-block-tint: color-mix(in srgb, var(--color-primary) 5%, white); }
 .admin-scope [data-block-group="media"]     { --admin-block-accent: #8f7bbe; --admin-block-tint: #f4f1fb; }
 .admin-scope [data-block-group="layout"]    { --admin-block-accent: #8d9c95; --admin-block-tint: #f1f5f3; }
 .admin-scope [data-block-group="data"]      { --admin-block-accent: #5f94bd; --admin-block-tint: #edf4fa; }

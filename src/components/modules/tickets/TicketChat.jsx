@@ -442,7 +442,7 @@ const TicketChat = ({ ticketId }) => {
               <button
                 type="submit"
                 disabled={sending}
-                className="inline-flex items-center gap-1.5 bg-[var(--color-primary)] text-white text-xs font-semibold px-5 py-2 rounded-[6px] shadow-sm hover:bg-[#8f3b1f] disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+                className="inline-flex items-center gap-1.5 bg-[var(--color-primary)] text-white text-xs font-semibold px-5 py-2 rounded-[6px] shadow-sm hover:bg-[var(--color-primary-dark)] disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
               >
                 {sending ? (
                   <Loader2 className="animate-spin" size={13} />

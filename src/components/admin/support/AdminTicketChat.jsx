@@ -55,7 +55,7 @@ const STATUS_BADGE = {
 const PRIORITY_BADGE = {
   low: "bg-gray-100 text-gray-500",
   medium: "bg-sky-50 text-sky-600",
-  high: "bg-orange-50 text-orange-600",
+  high: "bg-[var(--color-primary)]/5 text-[var(--color-primary)]",
   urgent: "bg-red-50 text-red-600",
 };
 

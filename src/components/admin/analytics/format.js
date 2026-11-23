@@ -97,6 +97,6 @@ export const AGING_COLORS = {
   current: "#16a34a",
   d0_30: "#84cc16",
   d31_60: "#f59e0b",
-  d61_90: "#f97316",
+  d61_90: "var(--color-primary)",
   d90_plus: "#dc2626",
 };

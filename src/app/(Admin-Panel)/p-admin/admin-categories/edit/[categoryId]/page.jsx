@@ -1075,7 +1075,7 @@ export default function EditCategory() {
           </CategorySection>
 
           <CategorySection id="stat-form-anchor" icon={FiLayers} title="شاخص‌های فنی (نمودار رادار)" description="ویژگی‌های نمره‌ای برای تحلیل هوش مصنوعی و نمایش در نمودار">
-            <div className={`rounded-[var(--radius)] p-6 space-y-5 border-2 transition-all ${editingStatId ? 'bg-orange-50/30 border-orange-200' : 'bg-neutral-50 border-transparent'}`}>
+            <div className={`rounded-[var(--radius)] p-6 space-y-5 border-2 transition-all ${editingStatId ? 'bg-[var(--color-primary)]/5 border-[var(--color-primary)]/20' : 'bg-neutral-50 border-transparent'}`}>
               <div className="grid md:grid-cols-2 gap-4">
                 <Input
                   label="نام سیستمی (انگلیسی)"
@@ -1129,8 +1129,8 @@ export default function EditCategory() {
             </div>
 
             {technicalStats.length > 0 && (
-              <div className="mt-6 p-6 bg-orange-50/50 border border-orange-100 rounded-[var(--radius)] space-y-3">
-                <div className="flex items-center gap-2 text-orange-700 font-bold text-sm">
+              <div className="mt-6 p-6 bg-[var(--color-primary)]/5 border border-[var(--color-primary)]/10 rounded-[var(--radius)] space-y-3">
+                <div className="flex items-center gap-2 text-[var(--color-primary)] font-bold text-sm">
                   <FiTag size={16} />
                   راهنمای واحد هوش مصنوعی برای تحلیل شاخص‌های فنی
                 </div>

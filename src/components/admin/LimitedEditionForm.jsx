@@ -327,7 +327,7 @@ export default function LimitedEditionForm({ brandId, limitedEditionId = null })
                           key={id}
                           className={`min-h-11 flex cursor-pointer items-center gap-3 rounded-[var(--radius)] border px-3 py-2 text-sm transition-colors ${
                             checked
-                              ? "border-[var(--color-primary)] bg-orange-50 text-gray-900"
+                              ? "border-[var(--color-primary)] bg-[var(--color-primary)]/5 text-gray-900"
                               : "border-gray-100 bg-white text-gray-600 hover:border-gray-200"
                           }`}
                         >

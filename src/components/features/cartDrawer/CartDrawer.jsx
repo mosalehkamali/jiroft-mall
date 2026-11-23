@@ -28,7 +28,6 @@ import {
 } from '@/lib/cart';
 import FlowSelectionsList from '@/components/modules/orderFlow/FlowSelectionsList';
 import { useUser } from '@/components/features/auth/UserContext';
-import StockReminderToast from '@/components/order/StockReminderToast';
 import VariantSummary from '@/components/order/VariantSummary';
 
 const splitName = (text) => {
@@ -212,8 +211,7 @@ export default function CartDrawer({ isOpen, onClose }) {
                 </div>
 
                 {/* ─── Items ─── */}
-                <div className="flex-1 relative min-h-0 flex flex-col">
-                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                <div className="min-h-0 flex-1 overflow-y-auto p-4 space-y-4">
                     {loading ? (
                         <div className="flex items-center justify-center h-full">
                             <FaSpinner className="animate-spin text-4xl text-[var(--color-primary)]" />
@@ -373,9 +371,6 @@ export default function CartDrawer({ isOpen, onClose }) {
                     )}
                 </div>
 
-                {/* ─── اعلان موجودی — toast مشترک، از پایین سایدبار بالا می‌آید ─── */}
-                <StockReminderToast active={items.length > 0} floating />
-                </div>
 
                 {/* ─── Footer ─── */}
                 {items.length > 0 && (
@@ -411,7 +406,7 @@ export default function CartDrawer({ isOpen, onClose }) {
 
                         <button
                             onClick={handleCheckout}
-                            className="w-full bg-[var(--color-primary)] text-white py-3 rounded-lg font-bold text-lg hover:bg-[#8a3719] transition-colors shadow-lg hover:shadow-xl"
+                            className="w-full bg-[var(--color-primary)] text-white py-3 rounded-lg font-bold text-lg hover:bg-[var(--color-primary-dark)] transition-colors shadow-lg hover:shadow-xl"
                         >
                             تکمیل خرید
                         </button>

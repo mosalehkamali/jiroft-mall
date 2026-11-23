@@ -77,7 +77,7 @@ export default function SecondHandHeaderUploader() {
       <div className="h-1 w-full bg-[var(--color-primary)]" />
       <div className="p-7 space-y-5">
         <div className="flex items-start gap-3">
-          <div className="p-3 bg-orange-50 rounded-[var(--radius)]">
+          <div className="p-3 bg-[var(--color-primary)]/5 rounded-[var(--radius)]">
             <FiImage size={22} className="text-[var(--color-primary)]" />
           </div>
           <div>

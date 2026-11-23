@@ -13,7 +13,7 @@ const TYPE_LABELS = {
 const TYPE_COLORS = {
   global:   "bg-green-50 text-green-700 border-green-200",
   product:  "bg-blue-50 text-blue-700 border-blue-200",
-  brand:    "bg-orange-50 text-orange-700 border-orange-200",
+  brand:    "bg-[var(--color-primary)]/5 text-[var(--color-primary)] border-[var(--color-primary)]/20",
   serie:    "bg-indigo-50 text-indigo-700 border-indigo-200",
   category: "bg-purple-50 text-purple-700 border-purple-200",
 };

@@ -311,7 +311,7 @@ export default function EventList() {
                       <button
                         onClick={() => changeStatus(event, "archived")}
                         title="بایگانی"
-                        className="w-8 h-8 flex items-center justify-center rounded-lg bg-orange-50 text-orange-500 hover:bg-orange-500 hover:text-white transition-all border border-orange-100"
+                        className="w-8 h-8 flex items-center justify-center rounded-lg bg-[var(--color-primary)]/5 text-[var(--color-primary)] hover:bg-[var(--color-primary)] hover:text-white transition-all border border-[var(--color-primary)]/10"
                       >
                         <FaArchive size={11} />
                       </button>

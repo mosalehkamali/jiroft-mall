@@ -21,10 +21,10 @@ import ImageUpload from "./ImageUpload";
 import SerieMiniArticleCard from "./series/SerieMiniArticleCard";
 
 export const inputClass =
-  "w-full rounded-[6px] border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm font-medium text-gray-900 outline-none transition focus:border-[var(--color-primary)] focus:bg-white focus:ring-2 focus:ring-orange-100 disabled:cursor-not-allowed disabled:opacity-60";
+  "w-full rounded-[6px] border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm font-medium text-gray-900 outline-none transition focus:border-[var(--color-primary)] focus:bg-white focus:ring-2 focus:ring-[var(--color-primary)]/10 disabled:cursor-not-allowed disabled:opacity-60";
 
 export const textareaClass =
-  "w-full resize-y rounded-[6px] border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm leading-7 text-gray-900 outline-none transition focus:border-[var(--color-primary)] focus:bg-white focus:ring-2 focus:ring-orange-100";
+  "w-full resize-y rounded-[6px] border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm leading-7 text-gray-900 outline-none transition focus:border-[var(--color-primary)] focus:bg-white focus:ring-2 focus:ring-[var(--color-primary)]/10";
 
 import { isFeatureEnabled } from "@/lib/features";
 import storeConfig from "base/store.config";

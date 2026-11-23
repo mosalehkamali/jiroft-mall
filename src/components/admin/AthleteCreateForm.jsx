@@ -325,7 +325,7 @@ export default function AthleteCreateForm({ initialData, sports, isEdit = false 
           <div className="bg-white p-8 rounded-[3.5rem] border border-gray-100 shadow-sm">
             <div className="flex justify-between items-center mb-6">
               <h3 className="flex items-center gap-3 font-bold text-gray-900">
-                <FaHandshake className="text-orange-500" /> مدیریت حامیان مالی
+                <FaHandshake className="text-[var(--color-primary)]" /> مدیریت حامیان مالی
               </h3>
               <span className="text-[10px] font-bold bg-gray-900 text-white px-3 py-1 rounded-full uppercase italic tracking-widest">
                 Selected: {formData.sponsors?.length || 0}
@@ -353,8 +353,8 @@ export default function AthleteCreateForm({ initialData, sports, isEdit = false 
                       onClick={() => toggleSponsor(sponsor._id)}
                       className={`cursor-pointer p-4 rounded-[2.5rem] border-2 transition-all flex flex-col items-center gap-2 relative ${
                         isSelected
-                          ? 'border-orange-500 bg-orange-50/30'
-                          : 'border-gray-50 bg-white hover:border-orange-100'
+                          ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/5'
+                          : 'border-gray-50 bg-white hover:border-[var(--color-primary)]/10'
                       }`}
                     >
                       <div className="w-12 h-12 rounded-full overflow-hidden bg-white border border-gray-50 p-1">
@@ -364,7 +364,7 @@ export default function AthleteCreateForm({ initialData, sports, isEdit = false 
                         {sponsor.name}
                       </span>
                       {isSelected && (
-                        <FaCheckCircle className="absolute top-2 right-4 text-orange-500 animate-pulse" size={14} />
+                        <FaCheckCircle className="absolute top-2 right-4 text-[var(--color-primary)] animate-pulse" size={14} />
                       )}
                     </div>
                   );

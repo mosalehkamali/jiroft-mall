@@ -180,7 +180,7 @@ export default function AdminProducts() {
           <span className="font-bold text-gray-900">{pagination.total}</span>
         </div>
         {search && (
-          <div className="flex items-center gap-2 px-4 py-2 bg-orange-50 rounded-[var(--radius)] border border-orange-100 text-sm">
+          <div className="flex items-center gap-2 px-4 py-2 bg-[var(--color-primary)]/5 rounded-[var(--radius)] border border-[var(--color-primary)]/10 text-sm">
             <span className="font-bold text-gray-500">نتایج جستجو:</span>
             <span className="font-bold" style={{ color: 'var(--color-primary)' }}>{pagination.total}</span>
           </div>

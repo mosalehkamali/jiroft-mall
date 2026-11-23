@@ -198,7 +198,7 @@ const TicketsModule = () => {
   const newTicketButton = (
     <Link
       href="/p-user/tickets/new"
-      className="inline-flex items-center gap-1.5 bg-[var(--color-primary)] text-white text-sm font-semibold px-4 py-2 rounded-[6px] shadow-sm hover:bg-[#8f3b1f] transition-colors"
+      className="inline-flex items-center gap-1.5 bg-[var(--color-primary)] text-white text-sm font-semibold px-4 py-2 rounded-[6px] shadow-sm hover:bg-[var(--color-primary-dark)] transition-colors"
     >
       <Plus size={16} />
       تیکت جدید

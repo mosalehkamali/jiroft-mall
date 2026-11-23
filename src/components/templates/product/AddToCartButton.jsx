@@ -37,7 +37,7 @@ const AddToCartButton = ({ onAddToCart, inCart = false, disabled = false }) => {
     ? "#e5e7eb"   // خاکستری — در سبد
     : isAdded
     ? "#10b981"   // سبز — تایید شد
-    : "var(--color-primary)";  // نارنجی — حالت عادی
+    : "var(--color-primary)";  // رنگ اصلی — حالت عادی
 
   return (
     <button
