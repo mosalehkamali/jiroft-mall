@@ -7,9 +7,11 @@ import "base/models/registerModels";
 
 import requireAdminPermission, { forbidden } from "@/lib/requireAdminPermission";
 import { resolveSiteSettingPermission } from "@/lib/apiPermissions";
-import { revalidateContent } from "@/lib/revalidate";
+import { purgeSportPagesCdn, revalidateContent } from "@/lib/revalidate";
 import { publicArticleFilter } from "base/utils/articleRoutes";
 import { REVIEW_CREDIT_CONFIG_KEY, validateReviewCreditConfig } from "@/lib/reviewCreditFinance";
+
+import { TOP_BANNER_KEY, validateTopBanner } from "@/lib/topBanner";
 
 // مسیرهایی که با تغییر یک کلید تنظیم باید دوباره ساخته شوند
 const REVALIDATE_PATHS = {
@@ -70,6 +72,11 @@ export async function PUT(req) {
   try {
     await connectToDB();
 
+    if (key === TOP_BANNER_KEY) {
+      const error = validateTopBanner(value);
+      if (error) return NextResponse.json({ error }, { status: 400 });
+    }
+
     if (key === REVIEW_CREDIT_CONFIG_KEY) {
       const error = validateReviewCreditConfig(value);
       if (error) return NextResponse.json({ error }, { status: 400 });
@@ -107,6 +114,11 @@ export async function PUT(req) {
       { value: value ?? null },
       { new: true, upsert: true, setDefaultsOnInsert: true }
     ).lean();
+
+    if (key === TOP_BANNER_KEY) {
+      revalidateContent([TOP_BANNER_KEY]);
+      await purgeSportPagesCdn();
+    }
 
     for (const path of REVALIDATE_PATHS[key] || []) {
       try {

@@ -1,5 +1,7 @@
 "use client";
 
+import TopBanner from "./TopBanner";
+
 import storeConfig from "base/store.config";
 import { getUserFullName } from "base/utils/userName";
 
@@ -37,6 +39,7 @@ import { catalogPath } from "@/lib/catalogPath";
 const NAVIGATION_ITEMS = (storeConfig.navigation?.header || []).filter((item) => isHrefEnabled(item.href));
 const AUDIENCE_ON = isFeatureEnabled("targetAudience");
 const DEPARTMENTS_ON = isFeatureEnabled("departments");
+const NAV_HEIGHT = `lg:h-[75px] ${DEPARTMENTS_ON ? "h-[64px]" : "h-[104px]"}`;
 const SECOND_HAND_ON = isFeatureEnabled("secondHand");
 // فروشگاهِ «استعلامی/نمایشی» سبد خرید ندارد
 const CART_ON = (storeConfig.commerce?.purchase?.mode || "cart") === "cart";
@@ -668,7 +671,7 @@ function MobileCategoryDrawer({ navData, onClose, selectedAudience, onSelectAudi
 }
 
 // ---- Main Navbar ----
-export default function Navbar({ navData: initialNavData = [] }) {
+export default function Navbar({ navData: initialNavData = [], topBanner = null }) {
   const pathname = usePathname();
   const isHomePage = pathname === "/";
 
@@ -828,9 +831,11 @@ useEffect(() => {
 
   return (
     <>
+      {topBanner && <TopBanner key={JSON.stringify(topBanner)} banner={topBanner} height={NAV_HEIGHT} />}
+      <div className={topBanner ? "sticky top-0 z-50 h-0" : "contents"}>
       <nav
         onMouseLeave={() => setIsCategoryOpen(false)}
-        className={`fixed top-0 right-0 left-0 z-50 bg-[#20232ae6] border-b border-white/10 lg:h-[75px] ${DEPARTMENTS_ON ? "h-[64px]" : "h-[104px]"}`}
+        className={`${topBanner ? "relative" : "fixed top-0 right-0 left-0"} z-50 bg-[#20232ae6] border-b border-white/10 ${NAV_HEIGHT}`}
       >
         {/* ===== DESKTOP ===== */}
         <div className="site-container hidden lg:block h-full">
@@ -1228,8 +1233,9 @@ useEffect(() => {
           </AnimatePresence>
         </div>
       </nav>
+      </div>
 
-      {!isHomePage && <div className={`lg:h-[75px] ${DEPARTMENTS_ON ? "h-[64px]" : "h-[104px]"}`} />}
+      {!isHomePage && <div className={NAV_HEIGHT} />}
       {CART_ON && <CartDrawer isOpen={openCart} onClose={() => setOpenCart(false)} />}
     </>
   );

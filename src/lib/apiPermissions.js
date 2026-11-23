@@ -373,6 +373,7 @@ export const PUBLIC_ADMIN_API_PERMISSIONS = {
  * هم نشت می‌کرد.
  */
 export const SITE_SETTING_OWNERS = {
+  store_top_banner: { view: "homeBanners.view", edit: "homeBanners.edit" },
   bank_account_details: { view: "bankAccount.view", edit: "bankAccount.edit" },
   monthly_installment_rate: {
     view: "financingSettings.view",

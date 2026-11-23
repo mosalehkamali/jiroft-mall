@@ -15,7 +15,7 @@ const segments = (title = "", highlight = "") => {
 export default function HomeSectionHeading({ title, highlight, subtitle, id, compact = false }) {
   return (
     <div className={compact ? "mb-3" : "relative"}>
-      <h2 id={id} className={compact ? "text-base font-medium leading-7 text-gray-900 md:text-lg" : "text-2xl font-black leading-tight text-gray-900 md:text-4xl"}>
+      <h2 id={id} className={compact ? "relative ps-4 text-lg font-bold leading-7 text-gray-900 before:absolute before:start-0 before:top-[0.35em] before:h-[0.85em] before:w-1.5 before:rounded-full before:bg-[var(--color-primary)] md:text-xl" : "text-2xl font-black leading-tight text-gray-900 md:text-4xl"}>
         {segments(title, highlight).map(([text, on], index) => (text
           ? <span key={index} className={on ? "text-[var(--color-primary)]" : ""}>{text}</span>
           : null))}

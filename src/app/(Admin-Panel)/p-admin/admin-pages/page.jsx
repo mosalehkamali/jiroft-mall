@@ -24,6 +24,12 @@ const VALID = new Set(ORDER);
 
 const HOME_SECTIONS = [
   {
+    href: "/p-admin/admin-home/top-banner",
+    icon: FiImage,
+    title: "بنر بالای نوبار",
+    desc: "تنظیم تصویر، لینک و وضعیت نمایش بنر سراسری فروشگاه.",
+  },
+  {
     href: "/p-admin/admin-home/slider",
     icon: FiImage,
     title: "اسلایدر اصلی",

@@ -396,7 +396,7 @@ const SECTION_DEFINITIONS = [
         title: "بنرهای گرید",
         description: "بنر افقی بزرگ، بنرهای عمودی کناری و نوار پایین صفحه",
         path: "/p-admin/admin-home/banners",
-        api: ["/api/banners"],
+        api: ["/api/banners", "/api/admin/site-settings?key=store_top_banner"],
         permissions: [
           { key: "view", title: "مشاهده بنرها" },
           { key: "edit", title: "ویرایش بنرها" },
@@ -1082,6 +1082,7 @@ export const ADMIN_ROUTE_PERMISSIONS = {
 
   // صفحه اصلی سایت
   "/p-admin/admin-home": ["home.view"],
+  "/p-admin/admin-home/top-banner": ["homeBanners.view"],
   "/p-admin/admin-home/banners": ["homeBanners.view"],
   "/p-admin/admin-home/featured-articles": ["homeFeaturedArticles.view"],
   "/p-admin/admin-home/product-sliders": ["homeProductSliders.view"],

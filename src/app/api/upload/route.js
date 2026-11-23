@@ -55,7 +55,8 @@ export async function POST(req) {
     // در این حالت به پسوند نام فایل اتکا می‌کنیم.
     const isAllowedType =
       ALLOWED_MIME.includes(file.type) ||
-      /\.(jpe?g|png|webp|avif|svg|pdf)$/i.test(file.name || "");
+      /\.(jpe?g|png|webp|avif|svg|pdf)$/i.test(file.name || "") ||
+      (folderInput === "store-top-banner" && (file.type === "image/gif" || /\.gif$/i.test(file.name || "")));
     if (!isAllowedType) {
       return NextResponse.json(
         { error: "فرمت فایل نامعتبر است. فقط تصویر (JPG/PNG/WebP/AVIF/SVG) یا PDF مجاز است" },

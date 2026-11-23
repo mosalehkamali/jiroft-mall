@@ -6,6 +6,7 @@ import "@/app/globals.css";
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
+import { getActiveTopBanner } from "base/services/topBanner.service";
 import Navbar from "@/components/features/navbar/Navbar";
 import WhatsAppSupport from "@/components/features/WhatsAppSupport/WhatsAppSupport";
 import Footer from "@/components/features/footer/Footer";
@@ -110,7 +111,7 @@ export const metadata = {
 export default async function RootLayout({ children }) {
   // ⚠️ هیچ `cookies()`/`headers()` در این layout صدا زده نمی‌شود تا کل درخت `(Site)`
   // بتواند static/ISR باقی بماند. وضعیت کاربر در جزیره‌ی کلاینت `UserProvider` مدیریت می‌شود.
-  const [navData, footer] = await Promise.all([getCachedNavbar(), getSiteFooter()]);
+  const [navData, footer, topBanner] = await Promise.all([getCachedNavbar(), getSiteFooter(), getActiveTopBanner()]);
 
   const sameAs = footer.socials.filter((s) => s.enabled && s.url).map((s) => s.url);
   const jsonLd = {
@@ -152,7 +153,7 @@ export default async function RootLayout({ children }) {
           <ScrollToTop />
           <CartCleanup />
 
-          <Navbar navData={navData} />
+          <Navbar navData={navData} topBanner={topBanner} />
 
           {brand.contact?.whatsapp ? <WhatsAppSupport /> : null}
           {isFeatureEnabled("push") ? <PushOptInBanner /> : null}
