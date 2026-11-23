@@ -1,4 +1,4 @@
-import storeConfig from "base/store.config";
+import { loaderArtwork } from "./loaderArtwork";
 /**
  * src/components/common/InitialLoadLoader.jsx
  *
@@ -35,20 +35,10 @@ const OVERLAY_HTML = `
 <style>
 #__tnd-initial-loader{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;width:100%;min-height:100vh;pointer-events:none;opacity:1}
 html[data-tnd-il-done] #__tnd-initial-loader{display:none!important}
-#__tnd-initial-loader .tnd-il-panel{display:flex;flex-direction:column;align-items:center;gap:48px;background:#fff;padding:40px 56px;border-radius:6px;border:1px solid rgba(255,255,255,.72);box-shadow:0 18px 50px rgba(15,23,42,.16)}
-#__tnd-initial-loader .tnd-il-logo{width:auto;height:64px;object-fit:contain}
-#__tnd-initial-loader .tnd-il-spinner{height:60px;aspect-ratio:2;border-bottom:3px solid var(--color-primary);position:relative;overflow:hidden}
-#__tnd-initial-loader .tnd-il-spinner::before{content:"";position:absolute;inset:auto 42.5% 0;aspect-ratio:1;border-radius:50%;background:var(--color-secondary);animation:tnd-il-bounce .5s cubic-bezier(0,900,1,900) infinite,tnd-il-move 2s linear infinite}
-@keyframes tnd-il-bounce{0%,2%{bottom:0%}98%,to{bottom:.1%}}
-@keyframes tnd-il-move{0%{translate:-500%}to{translate:500%}}
-@media (prefers-reduced-motion:reduce){#__tnd-initial-loader .tnd-il-spinner::before{animation:none}}
 </style>
 <noscript><style>#__tnd-initial-loader{display:none}</style></noscript>
 <div id="__tnd-initial-loader" role="status" aria-label="در حال بارگذاری">
-  <div class="tnd-il-panel">
-    <img src="${storeConfig.brand.logo}" alt="${storeConfig.brand.name}" width="180" height="72" class="tnd-il-logo" />
-    <span class="tnd-il-spinner" aria-hidden="true"></span>
-  </div>
+  ${loaderArtwork}
 </div>
 <script>
 (function () {

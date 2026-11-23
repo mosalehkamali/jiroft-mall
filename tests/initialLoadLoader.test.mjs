@@ -2,12 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
-import storeConfig from "base/store.config";
+import { loaderArtwork } from "../src/components/common/loaderArtwork.js";
 
 const source = readFileSync(new URL("../src/components/common/InitialLoadLoader.jsx", import.meta.url), "utf8");
 // Execute the actual template literal, including its escape processing, just
 // as the component does before injecting the script into the document.
-const html = runInNewContext(source.match(/const OVERLAY_HTML = (`[\s\S]*?`);/)[1], { storeConfig });
+const html = runInNewContext(source.match(/const OVERLAY_HTML = (`[\s\S]*?`);/)[1], { loaderArtwork });
 const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
 
 function boot(readyState, contentState) {
