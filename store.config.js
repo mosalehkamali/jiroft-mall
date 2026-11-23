@@ -161,7 +161,7 @@ const storeConfig = {
     wallet: false,
     reviewCredit: false, // wallet credit for reviews  (needs reviews, wallet)
     coach: false, // coach codes + coach wallets          (needs wallet)
-    installments: false, // cheque-based instalment payments
+    installments: true, // cheque-based instalment payments
     orderEur: false, // manual EUR bookkeeping on orders
 
     // operations
@@ -309,7 +309,7 @@ const storeConfig = {
     // is set (and the server's IP is registered with ZarinPal — docs/DEPLOY.md).
     // "ROZPARDAKHT" = installment credit via RozPardakht (national id + SMS code);
     // needs ROZPARDAKHT_USERNAME / _PASSWORD / _SHOP_ID (services/payments/rozpardakht.js).
-    paymentMethods: ["BANK_RECEIPT", "ROZPARDAKHT"],
+    paymentMethods: ["BANK_RECEIPT", "ROZPARDAKHT", "INSTALLMENT"],
   },
 };
 
