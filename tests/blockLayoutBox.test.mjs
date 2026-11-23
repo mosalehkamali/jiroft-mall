@@ -346,7 +346,7 @@ test("دکمه‌های اسلایدر همان کامپوننتِ صفحه‌ی
   assert.match(nav, /import HomeSliderNav from "@\/components\/features\/home\/HomeSliderNav"/);
   assert.match(home, /import HomeSliderNav from "@\/components\/features\/home\/HomeSliderNav"/);
   // کلاس‌های پایه همان‌اند؛ isolated (بلوکِ «اسلایدر محصولات») فقط کلاسِ یکتای خودش را می‌افزاید.
-  assert.match(home, /<HomeSliderNav prevClass=\{scope\("product-prev-btn"\)\} nextClass=\{scope\("product-next-btn"\)\} \/>/);
+  assert.match(home, /<HomeSliderNav sideControls prevClass=\{scope\("product-prev-btn"\)\} nextClass=\{scope\("product-next-btn"\)\} \/>/);
   assert.ok(home.includes('const scope = (base) => (isolated ? `${base} ${base}-${instance}` : base);'));
   // مارک‌آپِ دکمه فقط یک جا تعریف شده است.
   const shared = await read("../src/components/features/home/HomeSliderNav.jsx");
@@ -394,9 +394,6 @@ test("ناوبری بیرونِ جریانِ صفحه است، با همان ف�
   // absolute + bottom-full: هیچ ارتفاعی اضافه نمی‌کند، پس فاصله‌ی بلوکِ بالایی
   // تا اسلایدر همانی می‌ماند که ادمین تنظیم کرده.
   assert.match(nav, /className="pointer-events-none absolute bottom-full end-0 mb-4 md:mb-5"/);
-  // mb-4/md:mb-5 دقیقاً فاصله‌ی سرصفحه تا اسلایدر در صفحه‌ی اصلی است.
-  const home = await read("../src/components/features/bestSellers/ProductSliderContent.jsx");
-  assert.match(home, /justify-between mb-4 md:mb-5/);
   const renderer = await read("../src/components/features/articles/ArticleBlockRenderer.jsx");
   assert.match(renderer, /<div className=\{`\$\{blockSection\} relative`\}/);
 });

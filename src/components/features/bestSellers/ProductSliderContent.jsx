@@ -1,6 +1,5 @@
 "use client";
 
-import storeConfig from "base/store.config";
 import { useId, useState } from "react";
 import dynamic from "next/dynamic";
 
@@ -41,8 +40,6 @@ const UsedQuickViewModal = dynamic(() => import("@/components/templates/secondHa
 
 export default function ProductSlider({
   title = PRODUCT_SLIDER_TEXT.title,
-
-  subtitle = PRODUCT_SLIDER_TEXT.subtitle,
 
   // واژه‌ای از عنوان که با رنگِ اصلیِ سایت متمایز می‌شود؛ پیش‌فرض همان رفتارِ
   // قبلیِ صفحه‌ی اصلی است تا هیچ استفاده‌ی موجودی تغییر نکند.
@@ -92,26 +89,9 @@ export default function ProductSlider({
   };
 
   return (
-    <section className={`${removeTopPadding ? "pt-0 pb-6 md:pb-8" : "py-6 md:py-8"} bg-[#fcfcfc] relative overflow-hidden group/section`}>
-      {/* --- المان‌های پس‌زمینه (بهینه‌سازی شده برای موبایل) --- */}
-
-      <div className="absolute top-[-5%] left-[-5%] w-[200px] md:w-[400px] h-[200px] md:h-[400px] bg-[var(--color-primary)]/5 rounded-full blur-[60px] md:blur-[100px] pointer-events-none" />
-
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={storeConfig.brand.logo} alt="" aria-hidden="true" className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-[85%] w-auto max-w-none opacity-[0.05] select-none pointer-events-none z-0" />
-
-      <div className="site-container relative z-10">
-        {/* هدر */}
-
-        <div className="relative flex flex-col md:flex-row md:items-end justify-between mb-4 md:mb-5">
-          {title || subtitle ? <HomeSectionHeading title={title} highlight={highlight} subtitle={subtitle} /> : <div />}
-
-          {/* کنترلرهای ناوبری (مخفی در موبایل برای تمیزی بیشتر، نمایش در تبلت به بالا) */}
-
-          <HomeSliderNav prevClass={scope("product-prev-btn")} nextClass={scope("product-next-btn")} />
-        </div>
-
-        {/* اسلایدر */}
+    <section className={`${removeTopPadding ? "pt-0 pb-6 md:pb-8" : "py-6 md:py-8"} product-slider-section relative overflow-hidden group/section`}>
+      <div className="site-container">
+        {title && <HomeSectionHeading compact title={title} highlight={highlight} />}
 
         <div className="relative">
           <Swiper
@@ -182,20 +162,21 @@ export default function ProductSlider({
               </SwiperSlide>
             ))}
           </Swiper>
+          <HomeSliderNav sideControls prevClass={scope("product-prev-btn")} nextClass={scope("product-next-btn")} />
+        </div>
 
-          {/* بخش زیر اسلایدر: پیجینیشن و دکمه کاتالوگ */}
+        {/* بخش زیر اسلایدر: پیجینیشن و دکمه کاتالوگ */}
 
-          <div className="flex flex-row items-center justify-between gap-3 md:gap-6 mt-3">
-            <div className={`${scope("slider-pagination")} !w-auto flex md:gap-2`} />
+        <div className="flex flex-row items-center justify-between gap-3 md:gap-6 mt-3">
+          <div className={`${scope("slider-pagination")} !w-auto flex md:gap-2`} />
 
-            {ctaLabel && ctaHref ? <Link
-              href={ctaHref}
-              className="group flex items-center gap-2 bg-white px-5 py-2.5 md:px-6 md:py-3 rounded-full shadow-sm border border-gray-100 text-gray-900 font-bold text-xs md:text-sm hover:bg-[var(--color-primary)] hover:text-white transition-all duration-300 w-full sm:w-auto justify-center"
-            >
-              {ctaLabel}
-              <FiPlusCircle className="text-lg md:text-xl group-hover:rotate-180 transition-transform duration-500" />
-            </Link> : null}
-          </div>
+          {ctaLabel && ctaHref ? <Link
+            href={ctaHref}
+            className="group flex items-center gap-2 bg-white px-5 py-2.5 md:px-6 md:py-3 rounded-full shadow-sm border border-gray-100 text-gray-900 font-bold text-xs md:text-sm hover:bg-[var(--color-primary)] hover:text-white transition-all duration-300 w-full sm:w-auto justify-center"
+          >
+            {ctaLabel}
+            <FiPlusCircle className="text-lg md:text-xl group-hover:rotate-180 transition-transform duration-500" />
+          </Link> : null}
         </div>
       </div>
 

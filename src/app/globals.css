@@ -683,3 +683,15 @@
     .group:hover .card-zoom { transform: none; }
   }
 }
+
+.product-slider-section {
+  background-image: linear-gradient(to bottom, color-mix(in srgb, var(--color-primary) 22%, transparent), transparent 50%);
+}
+
+.product-slider-arrow {
+  @apply pointer-events-auto flex size-11 cursor-pointer items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 shadow-sm transition-colors hover:text-[var(--color-primary)] focus-visible:outline-2 focus-visible:outline-[var(--color-primary)] disabled:cursor-default disabled:opacity-40;
+}
+
+.product-slider-arrow.swiper-button-lock {
+  display: none;
+}

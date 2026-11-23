@@ -19,19 +19,20 @@ export default function HomeSliderNav({
   prevDisabled = false,
   nextDisabled = false,
   className = "hidden md:flex items-center mt-8 md:mt-0",
+  sideControls = false,
   label,
 }) {
-  const button = "w-12 h-12 flex items-center justify-center text-gray-400 hover:text-[var(--color-primary)] hover:bg-[var(--color-primary)]/5 transition-all rounded-lg disabled:opacity-40 disabled:pointer-events-none";
+  const button = sideControls ? "product-slider-arrow" : "w-12 h-12 flex items-center justify-center text-gray-400 hover:text-[var(--color-primary)] hover:bg-[var(--color-primary)]/5 transition-all rounded-lg disabled:opacity-40 disabled:pointer-events-none";
   return (
-    <div className={className} {...(label ? { role: "group", "aria-label": label } : null)}>
-      <div className="flex bg-white/80 backdrop-blur-md shadow-xl shadow-black/5 rounded-xl p-1 border border-white/50">
-        <button className={`${prevClass} ${button}`.trim()} onClick={onPrev} disabled={prevDisabled} aria-label="قبلی">
+    <div className={sideControls ? "pointer-events-none absolute inset-x-0 top-1/2 z-10 -translate-y-1/2" : className} {...(label ? { role: "group", "aria-label": label } : null)}>
+      <div dir="rtl" className={sideControls ? "flex justify-between" : "flex bg-white/80 backdrop-blur-md shadow-xl shadow-black/5 rounded-xl p-1 border border-white/50"}>
+        <button type="button" className={`${prevClass} ${button}`.trim()} onClick={onPrev} disabled={prevDisabled} aria-label="قبلی">
           <FiArrowRight size={22} />
         </button>
 
-        <div className="w-[1px] h-6 bg-gray-100 self-center mx-1" />
+        {!sideControls && <div className="w-[1px] h-6 bg-gray-100 self-center mx-1" />}
 
-        <button className={`${nextClass} ${button}`.trim()} onClick={onNext} disabled={nextDisabled} aria-label="بعدی">
+        <button type="button" className={`${nextClass} ${button}`.trim()} onClick={onNext} disabled={nextDisabled} aria-label="بعدی">
           <FiArrowLeft size={22} />
         </button>
       </div>
