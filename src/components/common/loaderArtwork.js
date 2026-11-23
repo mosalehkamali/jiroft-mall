@@ -13,7 +13,7 @@ export const loaderArtwork = `
     filter: drop-shadow(0 8px 16px color-mix(in srgb, var(--color-primary) 18%, transparent));
   }
   .store-loader-disc { fill: var(--color-primary); animation: store-loader-disc 3s linear infinite }
-  .store-loader-ink { fill: var(--color-secondary); animation: store-loader-ink 3s linear infinite }
+  .store-loader-ink { fill: var(--color-background); animation: store-loader-ink 3s linear infinite }
   .store-loader-rim, .store-loader-ball { filter: drop-shadow(0 2px 3px color-mix(in srgb, var(--color-primary-dark) 42%, transparent)) }
   .store-loader-arc { transform: rotate(136deg); animation: store-loader-turn 1.5s cubic-bezier(.893,0,.114,1) infinite }
   .store-loader-ball { transform: translateY(47.9px); animation: store-loader-bounce 1.5s infinite }
@@ -27,10 +27,10 @@ export const loaderArtwork = `
   }
   @keyframes store-loader-disc {
     0%, 24.444%, 75.556%, 100% { fill: var(--color-primary) }
-    25%, 75% { fill: var(--color-secondary) }
+    25%, 75% { fill: var(--color-background) }
   }
   @keyframes store-loader-ink {
-    0%, 24.444%, 75.556%, 100% { fill: var(--color-secondary) }
+    0%, 24.444%, 75.556%, 100% { fill: var(--color-background) }
     25%, 75% { fill: var(--color-primary) }
   }
   @media (prefers-reduced-motion: reduce) {
