@@ -180,6 +180,11 @@ export async function deleteOrderCascade(
 
 /** پوسته‌ی تراکنش‌دار — چیزی که روت صدا می‌زند. */
 export async function deleteOrderPermanently(orderId, releaseTracking) {
+  // رزپرداخت بیرونِ تراکنش است: اول اعتبارِ مشتری برگردد؛ اگر نشد (خطا)، چیزی حذف نمی‌شود
+  if (await Payment.exists({ order: orderId, method: "ROZPARDAKHT", status: "PAID" })) {
+    const { refundRozPayment } = await import("base/services/rozPayment.service");
+    await refundRozPayment(orderId);
+  }
   const session = await mongoose.startSession();
   session.startTransaction();
   try {

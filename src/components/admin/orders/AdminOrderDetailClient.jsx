@@ -54,6 +54,7 @@ const FULFILLMENT_STATUS = {
 
 const PAYMENT_METHOD = {
   ONLINE: { label: "پرداخت آنلاین", icon: CreditCard },
+  ROZPARDAKHT: { label: "رزپرداخت (اقساطی)", icon: CreditCard },
   BANK_RECEIPT: { label: "رسید بانکی", icon: Receipt },
   WALLET: { label: "کیف پول", icon: Wallet },
   INSTALLMENT: { label: "اقساطی", icon: Calendar },
@@ -1237,7 +1238,7 @@ function PaymentCard({ payment, orderTotal, onViewReceipt, onApprove, onReject, 
         <div className="flex items-center gap-2">
           <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0
             ${isPaid ? "bg-green-100" : isPending ? "bg-amber-100" : "bg-red-100"}`}>
-            {payment.method === "ONLINE"
+            {["ONLINE", "ROZPARDAKHT"].includes(payment.method)
               ? <CreditCard size={14} className={isPaid ? "text-green-600" : "text-amber-600"} />
               : <Receipt size={14} className={isPaid ? "text-green-600" : isPending ? "text-amber-600" : "text-red-600"} />
             }
@@ -1349,7 +1350,7 @@ function PaymentCard({ payment, orderTotal, onViewReceipt, onApprove, onReject, 
         </div>
       )}
 
-      {payment.method === "ONLINE" && payment.onlinePayment?.refId && (
+      {["ONLINE", "ROZPARDAKHT"].includes(payment.method) && payment.onlinePayment?.refId && (
         <p className="text-[10px] text-gray-400 font-mono">
           شماره پیگیری: {payment.onlinePayment.refId}
         </p>

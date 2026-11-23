@@ -12,7 +12,7 @@ export function invoiceDate(value) {
   return value && !Number.isNaN(date.getTime())
     ? date.toLocaleDateString("fa-IR", { timeZone: "Asia/Tehran" }) : "—";
 }
-const methods = { ONLINE: "آنلاین", BANK_RECEIPT: "فیش بانکی", WALLET: "کیف پول", INSTALLMENT: "اقساطی" };
+const methods = { ONLINE: "آنلاین", ROZPARDAKHT: "رزپرداخت", BANK_RECEIPT: "فیش بانکی", WALLET: "کیف پول", INSTALLMENT: "اقساطی" };
 const statuses = { PAID: "پرداخت شده", UNPAID: "پرداخت نشده", PARTIALLY_PAID: "پرداخت جزئی", PENDING: "در انتظار تأیید", FAILED: "ناموفق", REJECTED: "رد شده", WAITING: "در انتظار", NEEDS_PURCHASE: "در انتظار تأمین", PROCESSING: "در حال پردازش", SENT: "ارسال شده", DELIVERED: "تحویل شده", CANCELED: "لغو شده", RECEIVED: "دریافت شده", APPROVED: "تأیید شده", BOUNCED: "برگشت خورده", OVERDUE: "سررسید گذشته", SUBMITTED: "ثبت شده" };
 const label = (value) => statuses[value] || value || "—";
 const imageUrl = (value) => typeof value === "string" ? value : value?.url || "";

@@ -242,7 +242,7 @@ const OrderSchema = new mongoose.Schema(
 
     paymentMethod: {
       type: String,
-      enum: ["ONLINE", "BANK_RECEIPT", "INSTALLMENT", "WALLET"],
+      enum: ["ONLINE", "BANK_RECEIPT", "INSTALLMENT", "WALLET", "ROZPARDAKHT"],
       required: true,
     },
     coachCreditEligible: { type: Boolean, default: false },

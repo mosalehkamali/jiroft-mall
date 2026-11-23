@@ -25,6 +25,7 @@ const OrderSummary = ({ order }) => {
     BANK_RECEIPT:  'فیش بانکی',
     INSTALLMENT:   'اقساطی',
     ONLINE:        'پرداخت آنلاین',
+    ROZPARDAKHT:   'رزپرداخت (اقساطی)',
     WALLET:        'کیف پول',
   };
 

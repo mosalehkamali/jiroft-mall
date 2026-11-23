@@ -307,7 +307,9 @@ const storeConfig = {
     // Offered at checkout. INSTALLMENT also needs features.installments.
     // "ONLINE" = ZarinPal: the code is ready; add it here once ZARINPAL_MERCHANT_ID
     // is set (and the server's IP is registered with ZarinPal — docs/DEPLOY.md).
-    paymentMethods: ["BANK_RECEIPT"],
+    // "ROZPARDAKHT" = installment credit via RozPardakht (national id + SMS code);
+    // needs ROZPARDAKHT_USERNAME / _PASSWORD / _SHOP_ID (services/payments/rozpardakht.js).
+    paymentMethods: ["BANK_RECEIPT", "ROZPARDAKHT"],
   },
 };
 

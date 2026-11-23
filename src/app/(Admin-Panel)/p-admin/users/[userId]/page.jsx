@@ -458,7 +458,7 @@ export default function AdminUserDetailsPage() {
                           className={`transition-colors ${p.orderInfo ? 'hover:bg-gray-50/60 cursor-pointer' : ''}`}
                         >
                           <td className="p-2.5 font-mono font-bold text-gray-700">{p.orderInfo?.trackingCode || '—'}</td>
-                          <td className="p-2.5 font-bold text-gray-600">{p.method === 'ONLINE' ? 'آنلاین' : 'فیش بانکی'}</td>
+                          <td className="p-2.5 font-bold text-gray-600">{p.method === 'ONLINE' ? 'آنلاین' : p.method === 'ROZPARDAKHT' ? 'رزپرداخت' : 'فیش بانکی'}</td>
                           <td className="p-2.5 font-bold text-gray-700">{fmtToman(p.amount)}</td>
                           <td className="p-2.5"><span className={`px-2 py-0.5 rounded-full font-bold ${st.cls || ''}`}>{st.label || p.status}</span></td>
                           <td className="p-2.5 font-mono text-gray-400">{fmtDate(p.createdAt)}</td>

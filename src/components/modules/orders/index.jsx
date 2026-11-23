@@ -78,6 +78,7 @@ const FULFILLMENT_STATUS = {
 
 const PAYMENT_METHOD = {
   ONLINE:       'پرداخت آنلاین',
+  ROZPARDAKHT:  'رزپرداخت (اقساطی)',
   BANK_RECEIPT: 'فیش بانکی',
   INSTALLMENT:  'اقساطی',
 }

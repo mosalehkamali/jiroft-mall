@@ -23,7 +23,7 @@ function buildSteps(payment) {
     return steps
   }
 
-  if (payment.method === 'ONLINE') {
+  if (payment.method === 'ONLINE' || payment.method === 'ROZPARDAKHT') {
     const paidAt = payment.onlinePayment?.paidAt
     if (status === 'FAILED') {
       return [

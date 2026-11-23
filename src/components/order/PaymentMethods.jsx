@@ -14,6 +14,12 @@ const paymentOptions = [
     icon: 'dollar'
   },
   {
+    method: 'ROZPARDAKHT',
+    title: 'رزپرداخت (اقساطی)',
+    description: 'خرید اعتباری با کد ملی و کد پیامکی',
+    icon: 'calendar'
+  },
+  {
     method: 'INSTALLMENT',
     title: 'پرداخت اقساطی',
     description: 'پرداخت در چند قسط با چک',

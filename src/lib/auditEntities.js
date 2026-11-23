@@ -85,6 +85,7 @@ export const AUDIT_ENUMS = {
   paymentMethod: {
     WALLET: "پرداخت با کیف پول",
     ONLINE: "پرداخت آنلاین",
+    ROZPARDAKHT: "رزپرداخت (اقساطی)",
     BANK_RECEIPT: "فیش بانکی",
   },
   reviewStatus: {

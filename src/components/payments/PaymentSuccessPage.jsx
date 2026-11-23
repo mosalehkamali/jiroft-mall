@@ -39,6 +39,7 @@ const PAYMENT_LABEL = {
     WALLET: "کیف پول",
     INSTALLMENT:  "اقساطی",
     ONLINE:       "پرداخت آنلاین",
+    ROZPARDAKHT:  "رزپرداخت (اقساطی)",
 };
 
 export default function PaymentSuccessPage({ trackingCode }) {
@@ -85,7 +86,7 @@ export default function PaymentSuccessPage({ trackingCode }) {
                         </h1>
                         <p className="text-white/90 text-sm md:text-base leading-7">
                             از خرید شما سپاسگزاریم.{" "}
-                            {order?.paymentMethod === "ONLINE"
+                            {["ONLINE", "ROZPARDAKHT"].includes(order?.paymentMethod) && order?.paymentStatus === "PAID"
                                 ? "پرداخت شما تأیید شد."
                                 : "اطلاعات پرداخت ثبت شده و پس از بررسی ادمین اعلام خواهد شد."}
                         </p>

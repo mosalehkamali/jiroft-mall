@@ -37,6 +37,8 @@ export const PURE_DEPS = {
   "base/services/mahak/order.service": { queueMahakInvoice: async () => {} },
   "base/services/onlinePayment.service": { expireUnpaidOnlineOrders: async () => 0, startOnlinePayment: async () => ({ url: "", payment: null }) },
   "base/services/payments/zarinpal": { zarinpalConfigured: () => false },
+  "base/services/payments/rozpardakht": { rozpardakhtConfigured: () => false, isValidNationalCode: () => false, normalizeNationalCode: (v) => String(v ?? "") },
+  "base/services/rozPayment.service": { startRozPayment: async () => null },
   "base/services/productRules.service": {
     rulesForCategory: async () => productRules.resolveProductRules([]),
     rulesResolver: async () => () => productRules.resolveProductRules([]),

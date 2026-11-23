@@ -29,6 +29,8 @@ import "base/models/User";
 
 import requireAdminPermission from "@/lib/requireAdminPermission";
 import { InventoryError, releaseOrderStock, reserveOrderStock } from "base/services/inventory.service";
+import { refundRozPayment } from "base/services/rozPayment.service";
+import { RozError } from "base/services/payments/rozpardakht";
 
 // تبدیل attributes واریانت (Map) به آبجکت ساده تا در JSON درست سریالایز شود
 function normalizeVariant(variant) {
@@ -265,6 +267,15 @@ export async function PATCH(req, { params }) {
     // ponytail: جدا از به‌روزرسانیِ وضعیت (بدونِ تراکنش)؛ اگر لازم شد هر دو در یک session.
     if (fulfillmentStatus) {
       const current = await Order.findById(orderId).select("fulfillmentStatus inventoryReserved items").lean();
+      // رزپرداخت: اول اعتبارِ مشتری برگردد؛ اگر نشد، سفارش لغو نمی‌شود
+      if (current && fulfillmentStatus === "CANCELED" && current.fulfillmentStatus !== "CANCELED") {
+        try {
+          await refundRozPayment(orderId);
+        } catch (err) {
+          if (err instanceof RozError) return NextResponse.json({ message: `لغو در رزپرداخت انجام نشد: ${err.message}` }, { status: 409 });
+          throw err;
+        }
+      }
       if (current && fulfillmentStatus === "CANCELED" && current.fulfillmentStatus !== "CANCELED" && current.inventoryReserved) {
         await releaseOrderStock(current.items);
         update.inventoryReserved = false;
@@ -402,6 +413,7 @@ export async function DELETE(req, { params }) {
   } catch (error) {
     console.error("[admin/orders/:id DELETE]", error);
     if (error.code === "WALLET_CHECKOUT_ERROR") return NextResponse.json({ message: error.message }, { status: error.status || 409 });
+    if (error instanceof RozError) return NextResponse.json({ message: `لغو در رزپرداخت انجام نشد: ${error.message}` }, { status: 409 });
     return NextResponse.json({ message: "خطای داخلی سرور" }, { status: 500 });
   }
 }

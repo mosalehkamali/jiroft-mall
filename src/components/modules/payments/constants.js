@@ -80,6 +80,7 @@ export const FULFILLMENT_STATUS = {
 /* ─── روشِ پرداخت (Payment.method) ───────────────────────────────────── */
 export const PAYMENT_METHOD = {
   ONLINE: { label: 'پرداخت آنلاین', icon: CreditCard },
+  ROZPARDAKHT: { label: 'رزپرداخت (اقساطی)', icon: CreditCard },
   BANK_RECEIPT: { label: 'فیش بانکی', icon: Receipt },
   WALLET: { label: 'کیف پول', icon: CreditCard },
 }

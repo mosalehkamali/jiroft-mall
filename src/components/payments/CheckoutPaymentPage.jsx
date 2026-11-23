@@ -75,6 +75,9 @@ const CheckoutPaymentPage = () => {
   const [receiptUrls,  setReceiptUrls]  = useState([]);
   const [email,        setEmail]        = useState('');
   const [rulesChecked, setRulesChecked] = useState(false);
+  const [nationalCode, setNationalCode] = useState('');
+  const [rozOrderId,   setRozOrderId]   = useState(null);
+  const [otp,          setOtp]          = useState('');
   const walletAmount = Number(checkout?.walletAmount || 0);
   const payable = Math.max(0, totalPrice - walletAmount);
   const fullyWalletPaid = walletAmount > 0 && payable === 0;
@@ -246,6 +249,66 @@ const CheckoutPaymentPage = () => {
     }
   };
 
+  // ─── رزپرداخت: ۱) کد ملی → سفارش ساخته می‌شود و کد پیامک می‌شود  ۲) کد → پرداخت ───
+  // سبد تا پرداختِ موفق پاک نمی‌شود (صفحه‌ی موفقیت با ?paid پاکش می‌کند).
+  const handleRozStart = async () => {
+    if (!rulesChecked) return toast.error('پذیرش قوانین الزامی است.');
+    if (!/^[0-9۰-۹]{10}$/.test(nationalCode.trim())) return toast.error('کد ملی ۱۰ رقمی را وارد کنید.');
+    if (email && !validateEmail(email)) return toast.error('فرمت ایمیل وارد شده صحیح نیست.');
+    setSubmitLoading(true);
+    try {
+      if (email) await editProfile({ email });
+      const data = await submitCheckout({ nationalCode: nationalCode.trim() });
+      setRozOrderId(data.orderId);
+      toast.success(data.message);
+    } catch (error) {
+      toast.error(error.message || 'خطا در اتصال به رزپرداخت');
+    } finally {
+      setSubmitLoading(false);
+    }
+  };
+
+  const rozCall = async (body) => {
+    const res = await fetch('/api/payments/rozpardakht', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orderId: rozOrderId, ...body }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const err = new Error(data.message || 'خطا در ارتباط با رزپرداخت');
+      err.status = res.status;
+      throw err;
+    }
+    return data;
+  };
+
+  const handleRozConfirm = async () => {
+    if (!otp.trim()) return toast.error('کد پیامک‌شده را وارد کنید.');
+    setSubmitLoading(true);
+    try {
+      const data = await rozCall({ action: 'confirm', code: otp.trim() });
+      window.location.replace(`/p-user/orders/success/${encodeURIComponent(data.trackingCode)}?paid=rozpardakht`);
+    } catch (error) {
+      toast.error(error.message, { autoClose: error.status === 409 || error.status === 502 ? false : 5000 });
+      if (error.status === 409) setRozOrderId(null); // سفارش لغو شد؛ از اول یا با روش دیگر
+      setSubmitLoading(false);
+    }
+  };
+
+  const handleRozResend = async () => {
+    setSubmitLoading(true);
+    try {
+      toast.success((await rozCall({ action: 'resend' })).message);
+    } catch (error) {
+      toast.error(error.message);
+      if (error.status === 409) setRozOrderId(null);
+    } finally {
+      setSubmitLoading(false);
+    }
+  };
+
   // ─── ثبت درخواست اقساط (از InstallmentPage فراخوانی می‌شود) ───
   const handleInstallmentSubmit = async (installmentPayload) => {
     const data = await submitCheckout({ installment: installmentPayload });
@@ -349,6 +412,86 @@ const CheckoutPaymentPage = () => {
 
   // ─── رسید بانکی / پرداخت آنلاین ───
   const isOnline = checkout.paymentMethod === 'ONLINE' && !fullyCovered;
+  const isRoz = checkout.paymentMethod === 'ROZPARDAKHT' && !fullyCovered;
+  const inputCls = 'w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-center text-lg tracking-widest outline-none focus:border-[var(--color-primary)]';
+
+  if (isRoz) {
+    return (
+      <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+        {!rozOrderId && backLink}
+        <div className="flex flex-col md:flex-row md:flex-row-reverse">
+          <div className="md:w-1/3 md:sticky md:top-0 md:h-screen md:overflow-y-auto">
+            <OrderSummary order={pseudoOrder} />
+          </div>
+          <div className="md:w-2/3 flex flex-col gap-4 sm:gap-6 md:px-6">
+            {!rozOrderId ? (
+              <>
+                <section className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+                  <p className="text-sm leading-7 text-slate-700">
+                    کد ملی‌ای را وارد کنید که با آن در رزپرداخت ثبت‌نام کرده‌اید. اگر اعتبار کافی داشته باشید، کد تأیید به موبایل شما پیامک می‌شود.
+                  </p>
+                  <label className="block text-sm font-bold text-slate-700" htmlFor="roz-national-code">کد ملی</label>
+                  <input
+                    id="roz-national-code"
+                    dir="ltr"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    maxLength={10}
+                    value={nationalCode}
+                    onChange={(e) => setNationalCode(e.target.value.replace(/[^0-9۰-۹]/g, ''))}
+                    className={inputCls}
+                  />
+                </section>
+                <EmailBox show={!user?.email} email={email} setEmail={setEmail} />
+                <RulesAgreement checked={rulesChecked} onChange={setRulesChecked} />
+                <SubmitPaymentButton
+                  loading={submitLoading}
+                  disabled={!rulesChecked || nationalCode.length !== 10}
+                  onClick={handleRozStart}
+                  label="دریافت کد تأیید"
+                  loadingLabel="در حال بررسی اعتبار..."
+                />
+              </>
+            ) : (
+              <>
+                <section className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+                  <p className="text-sm leading-7 text-slate-700">
+                    کد تأییدی را که رزپرداخت به موبایل شما پیامک کرد وارد کنید. با تأیید، مبلغ سفارش از اعتبار رزپرداخت شما کسر می‌شود.
+                  </p>
+                  <label className="block text-sm font-bold text-slate-700" htmlFor="roz-otp">کد تأیید</label>
+                  <input
+                    id="roz-otp"
+                    dir="ltr"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={10}
+                    value={otp}
+                    onChange={(e) => setOtp(e.target.value.replace(/[^0-9۰-۹]/g, ''))}
+                    className={inputCls}
+                  />
+                  <button
+                    type="button"
+                    disabled={submitLoading}
+                    onClick={handleRozResend}
+                    className="text-sm font-bold text-[var(--color-primary)] disabled:opacity-50"
+                  >
+                    کد را دریافت نکردم، دوباره بفرست
+                  </button>
+                </section>
+                <SubmitPaymentButton
+                  loading={submitLoading}
+                  disabled={!otp}
+                  onClick={handleRozConfirm}
+                  label="تأیید و پرداخت"
+                  loadingLabel="در حال تأیید پرداخت..."
+                />
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
       {backLink}

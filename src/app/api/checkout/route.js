@@ -62,6 +62,8 @@ import { InventoryError, releaseOrderStock, reserveOrderStock } from "base/servi
 import { checkMahakStock, shortageMessage } from "base/services/mahak/sync.service";
 import { expireUnpaidOnlineOrders, startOnlinePayment } from "base/services/onlinePayment.service";
 import { zarinpalConfigured } from "base/services/payments/zarinpal";
+import { isValidNationalCode, normalizeNationalCode, rozpardakhtConfigured } from "base/services/payments/rozpardakht";
+import { startRozPayment } from "base/services/rozPayment.service";
 
 const COMMERCE = storeConfig.commerce || {};
 const NEEDS_ADDRESS = (COMMERCE.delivery?.mode || "shipping") === "shipping";
@@ -219,7 +221,14 @@ export async function POST(req) {
       if (walletAmount > 0) return badRequest("پرداخت آنلاین همراه با کیف پول ممکن نیست");
     }
 
-    if (!["BANK_RECEIPT", "INSTALLMENT", "ONLINE"].includes(paymentMethod) || !allowedPaymentMethods().includes(paymentMethod)) {
+    const nationalCode = normalizeNationalCode(body.nationalCode);
+    if (paymentMethod === "ROZPARDAKHT") {
+      if (!rozpardakhtConfigured()) return badRequest("پرداخت با رزپرداخت در حال حاضر در دسترس نیست؛ از روش دیگری استفاده کنید", 503);
+      if (walletAmount > 0) return badRequest("پرداخت با رزپرداخت همراه با کیف پول ممکن نیست");
+      if (!isValidNationalCode(nationalCode)) return badRequest("کد ملی معتبر نیست");
+    }
+
+    if (!["BANK_RECEIPT", "INSTALLMENT", "ONLINE", "ROZPARDAKHT"].includes(paymentMethod) || !allowedPaymentMethods().includes(paymentMethod)) {
       return badRequest("روش پرداخت معتبر نیست");
     }
 
@@ -357,8 +366,8 @@ export async function POST(req) {
     if (walletAmount > orderTotal) return badRequest("مبلغ کیف پول بیشتر از مبلغ سفارش است؛ آن را اصلاح کنید");
     const totalPrice = orderTotal - walletAmount; // external amount after wallet
     const fullyWalletPaid = totalPrice === 0 && (walletAmount > 0 || !!priceResult.coupon?.createdByCoach);
-    if (paymentMethod === "ONLINE" && priceResult.coupon?.createdByCoach) {
-      return badRequest("با این کد تخفیف پرداخت آنلاین ممکن نیست؛ از پرداخت بانکی استفاده کنید");
+    if (["ONLINE", "ROZPARDAKHT"].includes(paymentMethod) && priceResult.coupon?.createdByCoach) {
+      return badRequest("با این کد تخفیف پرداخت آنلاین یا رزپرداخت ممکن نیست؛ از پرداخت بانکی استفاده کنید");
     }
     if (priceResult.coupon?.createdByCoach && !walletIdentity) walletIdentity = walletCheckoutIdentity(user.userId, checkoutKey, body);
 
@@ -602,6 +611,8 @@ export async function POST(req) {
         } else if (paymentMethod === "ONLINE") {
           const buyer = await User.findById(user.userId).select("phone email").lean();
           ({ url: paymentUrl, payment } = await startOnlinePayment(order, { mobile: buyer?.phone, email: buyer?.email }));
+        } else if (paymentMethod === "ROZPARDAKHT") {
+          payment = await startRozPayment(order, nationalCode);
         } else {
           // INSTALLMENT — پیش‌پرداخت + سند اقساط
           payment = await Payment.create({
@@ -655,6 +666,13 @@ export async function POST(req) {
     if (paymentMethod === "ONLINE") {
       return NextResponse.json(
         { message: "در حال انتقال به درگاه پرداخت", orderId: order._id, trackingCode: order.trackingCode, totalPrice: order.totalPrice, paymentUrl },
+        { status: 201 },
+      );
+    }
+    // رزپرداخت: کد پیامکی برای مشتری رفت؛ تأیید در /api/payments/rozpardakht
+    if (paymentMethod === "ROZPARDAKHT") {
+      return NextResponse.json(
+        { message: "کد تأیید رزپرداخت برای شما پیامک شد", orderId: order._id, trackingCode: order.trackingCode, totalPrice: order.totalPrice, otpRequired: true },
         { status: 201 },
       );
     }

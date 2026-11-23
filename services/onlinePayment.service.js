@@ -20,6 +20,7 @@ import { sendOrderConfirmationEmail } from "@/lib/emailService";
 import { markOrderUsedProductsSold } from "@/lib/usedProductOrderStatus";
 import { requestPayment, verifyPayment } from "base/services/payments/zarinpal";
 import { isFeatureEnabled } from "@/lib/features";
+import { inquire as inquireRoz } from "base/services/payments/rozpardakht";
 
 // The gateway's own authority expires well before this.
 export const ONLINE_ORDER_TTL_MIN = 30;
@@ -142,13 +143,17 @@ export async function handleGatewayReturn({ orderId, authority, status }) {
 }
 
 /**
- * Online orders nobody paid for: cancel them and give their stock and used
- * products back. Safe to run often (checkout calls it, and the hourly cron).
+ * Online / RozPardakht orders nobody paid for: cancel them and give their stock
+ * and used products back. Safe to run often (checkout calls it, and the hourly cron).
+ *
+ * A RozPardakht order whose confirm call was sent (its answer may have been
+ * lost) is asked about first — at most one inquiry per run, since RozPardakht
+ * allows one every 30 s — and kept if it was paid.
  */
 export async function expireUnpaidOnlineOrders({ olderThanMin = ONLINE_ORDER_TTL_MIN } = {}) {
   const before = new Date(Date.now() - olderThanMin * 60000);
   const stale = await Order.find({
-    paymentMethod: "ONLINE",
+    paymentMethod: { $in: ["ONLINE", "ROZPARDAKHT"] },
     paymentStatus: "UNPAID",
     fulfillmentStatus: "WAITING",
     createdAt: { $lt: before },
@@ -157,19 +162,48 @@ export async function expireUnpaidOnlineOrders({ olderThanMin = ONLINE_ORDER_TTL
     .limit(100)
     .lean();
   let expired = 0;
+  let inquired = false;
   for (const { _id } of stale) {
     // a payment verified in the meantime keeps the order
     if (await Payment.exists({ order: _id, status: "PAID" })) continue;
-    const order = await Order.findOneAndUpdate(
-      { _id, paymentStatus: "UNPAID", fulfillmentStatus: "WAITING" },
-      { $set: { fulfillmentStatus: "CANCELED", inventoryReserved: false } },
-      { returnDocument: "before" },
-    ).lean();
-    if (!order) continue;
-    if (order.inventoryReserved) await releaseOrderStock(order.items);
-    await UsedProduct.updateMany({ order: _id, status: "reserved" }, { $set: { status: "available", order: null } });
-    await Payment.updateMany({ order: _id, status: "PENDING" }, { $set: { status: "FAILED" } });
-    expired++;
+    const uncertain = await Payment.findOne({
+      order: _id, method: "ROZPARDAKHT", status: "PENDING", "meta.roz.confirmAttemptedAt": { $ne: null },
+    }).lean();
+    if (uncertain) {
+      if (inquired) continue; // next run
+      inquired = true;
+      try {
+        await inquireRoz(uncertain.meta.roz);
+        await markRozPaid(uncertain._id, null);
+        await confirmOrderPaid(_id);
+        continue;
+      } catch (err) {
+        if (err?.code !== "-32") continue; // unknown: never cancel a payment that may have gone through
+      }
+    }
+    if (await cancelUnpaidOrder(_id)) expired++;
   }
   return expired;
+}
+
+/** RozPardakht confirmed the payment: PAID with its invoice number. */
+export async function markRozPaid(paymentId, invoice) {
+  await Payment.updateOne(
+    { _id: paymentId, status: "PENDING" },
+    { $set: { status: "PAID", "onlinePayment.refId": invoice, "onlinePayment.paidAt": new Date() } },
+  );
+}
+
+/** Cancel an unpaid order, give its stock and used products back. false if it was no longer unpaid. */
+export async function cancelUnpaidOrder(_id) {
+  const order = await Order.findOneAndUpdate(
+    { _id, paymentStatus: "UNPAID", fulfillmentStatus: "WAITING" },
+    { $set: { fulfillmentStatus: "CANCELED", inventoryReserved: false } },
+    { returnDocument: "before" },
+  ).lean();
+  if (!order) return false;
+  if (order.inventoryReserved) await releaseOrderStock(order.items);
+  await UsedProduct.updateMany({ order: _id, status: "reserved" }, { $set: { status: "available", order: null } });
+  await Payment.updateMany({ order: _id, status: "PENDING" }, { $set: { status: "FAILED" } });
+  return true;
 }

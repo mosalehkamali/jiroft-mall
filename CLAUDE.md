@@ -1580,6 +1580,22 @@ Rules that are load-bearing:
 npm test -- onlinePayment   # real mongo, fake gateway: verify-only, repeats, expiry, late payment
 ```
 
+### RozPardakht installment credit (`"ROZPARDAKHT"`)
+
+Not a redirect gateway: the customer enters their national id at checkout, RozPardakht texts them a code,
+they type it on our page. `services/payments/rozpardakht.js` (API 3.2.6 client, needs `ROZPARDAKHT_USERNAME`,
+`_PASSWORD`, `_SHOP_ID`) and `services/rozPayment.service.js`; the code goes to `POST /api/payments/rozpardakht`.
+
+- Every call is a GET whose path is `user-pass-orderId-nationalCode-priceRial-shopId-datetime` — the **key holds the
+  shop password**, so only its parts are stored (`Payment.meta.roz`) and it is rebuilt per call. The datetime is
+  Jalali Tehran time, fixed at the first call, so every later call rebuilds the same key. orderId = `trackingCode`.
+- Same order lifecycle as ONLINE (unpaid + reserved, `confirmOrderPaid`, 30-min expiry). `-16`/`-17` (wrong/expired
+  code) are retryable; any other refusal cancels the order at once. A confirm whose answer was lost sets
+  `confirmAttemptedAt`, and expiry **inquires before cancelling** such an order (one inquiry per run — 30 s limit).
+- Admin cancel or delete of a paid order calls `cancelpayment` first; if RozPardakht refuses, nothing changes (409).
+- Open with RozPardakht: Rial vs Toman and the calendar are assumed (Rial, Jalali); no sandbox exists.
+  `npm test -- rozPayment`.
+
 ### Google login and post-login redirects
 
 `features.googleAuth` shows the button; without `GOOGLE_CLIENT_ID/SECRET` the start route sends the visitor back
