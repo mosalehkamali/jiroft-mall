@@ -14,8 +14,9 @@ import "swiper/css/pagination";
 import "swiper/css/navigation";
 
 export default function Hero({ slides = [] }) {
+  // Below md a slide takes its image's own height, so phones see the whole picture; md+ keeps the fixed cover frame.
   return (
-    <section className="relative w-full h-[450px] md:h-[550px] lg:h-[650px] overflow-hidden bg-[var(--color-text)] group">
+    <section className="relative w-full md:h-[550px] lg:h-[650px] overflow-hidden bg-[var(--color-text)] group">
       <Swiper
         modules={[Autoplay, Pagination, Navigation]}
         spaceBetween={0}
@@ -45,7 +46,7 @@ export default function Hero({ slides = [] }) {
                 className="block relative w-full h-full"
               >
                 {/* Background Image */}
-                <div className="absolute inset-0 z-0">
+                <div className="relative md:absolute md:inset-0 z-0">
                   <div className="absolute inset-0 bg-gradient-to-t from-[var(--color-text)]/60 via-transparent to-transparent z-10" />
                   <ResponsiveImage
                     src={slide.image}
@@ -53,13 +54,13 @@ export default function Hero({ slides = [] }) {
                     loading={index === 0 ? "eager" : "lazy"}
                     fetchPriority={index === 0 ? "high" : "auto"}
                     alt={slide.title}
-                    className="w-full h-full object-cover object-center transition-transform duration-[6000ms] ease-out"
+                    className="block w-full h-auto md:h-full object-cover object-center transition-transform duration-[6000ms] ease-out"
                     style={{ transform: isActive ? "scale(1.08)" : "scale(1)" }}
                   />
                 </div>
 
                 {/* Content Overlay */}
-                <div className="site-container relative z-20 h-full flex items-center justify-center">
+                <div className="site-container absolute inset-0 md:relative z-20 h-full flex items-center justify-center">
                   <motion.div
                     initial={{ opacity: 0, y: 24 }}
                     animate={isActive ? { opacity: 1, y: 0 } : {}}
@@ -67,7 +68,7 @@ export default function Hero({ slides = [] }) {
                     className="max-w-4xl text-center"
                   >
                     <h2
-                      className="text-4xl md:text-4xl lg:text-7xl font-bold text-white mb-6 leading-tight"
+                      className="text-2xl md:text-4xl lg:text-7xl font-bold text-white mb-2 md:mb-6 leading-tight"
                       style={{
                         textShadow:
                           "2px 2px 10px rgba(0,0,0,0.4), 0 0 20px rgba(0,0,0,0.2)",
@@ -76,7 +77,7 @@ export default function Hero({ slides = [] }) {
                       {slide.title}
                     </h2>
                     <p
-                      className="text-base md:text-xl lg:text-2xl text-gray-100 mx-auto max-w-2xl leading-relaxed line-clamp-2 md:line-clamp-none mb-6"
+                      className="text-sm md:text-xl lg:text-2xl text-gray-100 mx-auto max-w-2xl leading-relaxed line-clamp-1 md:line-clamp-none mb-3 md:mb-6"
                       style={{ textShadow: "1px 1px 5px rgba(0,0,0,0.5)" }}
                     >
                       {slide.subtitle}
@@ -84,9 +85,9 @@ export default function Hero({ slides = [] }) {
                     <Link
                       href={slide.link || "#"}
                       className="group inline-flex items-center justify-center gap-2 
-                      w-40 h-11 sm:w-48 sm:h-12 
+                      w-32 h-9 md:w-48 md:h-12 
                       bg-transparent border-double border-2 border-white text-white rounded-[6px]
-                      font-bold text-sm sm:text-base whitespace-nowrap select-none
+                      font-bold text-xs md:text-base whitespace-nowrap select-none
                       transition-all duration-300 ease-in-out 
                       hover:bg-white hover:text-[var(--color-primary)] 
                       hover:shadow-[0_0_20px_rgba(255,255,255,0.6)] hover:scale-[1.02]"
@@ -118,7 +119,7 @@ export default function Hero({ slides = [] }) {
       </button>
 
       {/* Bottom Pagination - Center Aligned */}
-      <div className="absolute bottom-10 inset-x-0 z-30 flex justify-center items-center">
+      <div className="absolute bottom-3 md:bottom-10 inset-x-0 z-30 flex justify-center items-center">
         <div className="hero-custom-pagination flex items-center justify-center gap-3 pointer-events-auto" />
       </div>
     </section>

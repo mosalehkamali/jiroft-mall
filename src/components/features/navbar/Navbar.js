@@ -831,8 +831,9 @@ useEffect(() => {
 
   return (
     <>
-      {topBanner && <TopBanner key={JSON.stringify(topBanner)} banner={topBanner} height={NAV_HEIGHT} />}
-      <div className={topBanner ? "sticky top-0 z-50 h-0" : "contents"}>
+      <div className={topBanner ? "sticky top-0 z-50" : "contents"}>
+      {topBanner && <TopBanner key={JSON.stringify(topBanner)} banner={topBanner} />}
+      <div className={topBanner ? "h-0" : "contents"}>
       <nav
         onMouseLeave={() => setIsCategoryOpen(false)}
         className={`${topBanner ? "relative" : "fixed top-0 right-0 left-0"} z-50 bg-[#20232ae6] border-b border-white/10 ${NAV_HEIGHT}`}
@@ -1234,8 +1235,10 @@ useEffect(() => {
         </div>
       </nav>
       </div>
+      </div>
 
-      {!isHomePage && <div className={NAV_HEIGHT} />}
+      {/* Home: the desktop hero sits under the bar; on phones it is image-height, so it starts below it. */}
+      <div className={isHomePage ? `${NAV_HEIGHT} md:hidden` : NAV_HEIGHT} />
       {CART_ON && <CartDrawer isOpen={openCart} onClose={() => setOpenCart(false)} />}
     </>
   );
