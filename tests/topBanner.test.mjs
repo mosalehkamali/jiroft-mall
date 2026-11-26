@@ -6,13 +6,13 @@ import { resolveSiteSettingPermission } from "../src/lib/apiPermissions.js";
 const banner = { enabled: true, image: "https://images.example/banner.gif", href: "/محصولات" };
 
 test("top banner accepts animated media, internal routes and HTTPS destinations", () => {
-  for (const value of [EMPTY_TOP_BANNER, banner, { ...banner, href: "https://example.com/sale" }, { ...banner, enabled: false }])
+  for (const value of [EMPTY_TOP_BANNER, banner, { ...banner, href: "https://example.com/sale" }, { ...banner, enabled: false }, { ...banner, mobileImage: "" }, { ...banner, mobileImage: "https://images.example/m.webp" }])
     assert.equal(validateTopBanner(value), "");
 });
 
 test("an active banner needs an image and a safe destination", () => {
   for (const value of [null, { ...banner, image: "" }, { ...banner, href: "" }, { ...banner, href: "//example.com" },
-    { ...banner, image: "data:image/png;base64,AAAA" }, { ...banner, href: "javascript:void(0)" }, { ...banner, enabled: "true" }])
+    { ...banner, image: "data:image/png;base64,AAAA" }, { ...banner, href: "javascript:void(0)" }, { ...banner, enabled: "true" }, { ...banner, mobileImage: 5 }, { ...banner, mobileImage: "javascript:alert(1)" }])
     assert.ok(validateTopBanner(value));
 });
 

@@ -14,9 +14,9 @@ import "swiper/css/pagination";
 import "swiper/css/navigation";
 
 export default function Hero({ slides = [] }) {
-  // Below md a slide takes its image's own height, so phones see the whole picture; md+ keeps the fixed cover frame.
+  // Phones: a 4:3 frame (taller than a wide slide's own shape; the edges crop slightly). md+: the fixed cover frame.
   return (
-    <section className="relative w-full md:h-[550px] lg:h-[650px] overflow-hidden bg-[var(--color-text)] group">
+    <section className="relative w-full aspect-[4/3] md:aspect-auto md:h-[550px] lg:h-[650px] overflow-hidden bg-[var(--color-text)] group">
       <Swiper
         modules={[Autoplay, Pagination, Navigation]}
         spaceBetween={0}
@@ -46,7 +46,7 @@ export default function Hero({ slides = [] }) {
                 className="block relative w-full h-full"
               >
                 {/* Background Image */}
-                <div className="relative md:absolute md:inset-0 z-0">
+                <div className="absolute inset-0 z-0">
                   <div className="absolute inset-0 bg-gradient-to-t from-[var(--color-text)]/60 via-transparent to-transparent z-10" />
                   <ResponsiveImage
                     src={slide.image}
@@ -54,13 +54,13 @@ export default function Hero({ slides = [] }) {
                     loading={index === 0 ? "eager" : "lazy"}
                     fetchPriority={index === 0 ? "high" : "auto"}
                     alt={slide.title}
-                    className="block w-full h-auto md:h-full object-cover object-center transition-transform duration-[6000ms] ease-out"
+                    className="w-full h-full object-cover object-center transition-transform duration-[6000ms] ease-out"
                     style={{ transform: isActive ? "scale(1.08)" : "scale(1)" }}
                   />
                 </div>
 
                 {/* Content Overlay */}
-                <div className="site-container absolute inset-0 md:relative z-20 h-full flex items-center justify-center">
+                <div className="site-container relative z-20 h-full flex items-center justify-center">
                   <motion.div
                     initial={{ opacity: 0, y: 24 }}
                     animate={isActive ? { opacity: 1, y: 0 } : {}}
@@ -84,21 +84,14 @@ export default function Hero({ slides = [] }) {
                     </p>
                     <Link
                       href={slide.link || "#"}
-                      className="group inline-flex items-center justify-center gap-2 
-                      w-32 h-9 md:w-48 md:h-12 
-                      bg-transparent border-double border-2 border-white text-white rounded-[6px]
-                      font-bold text-xs md:text-base whitespace-nowrap select-none
-                      transition-all duration-300 ease-in-out 
-                      hover:bg-white hover:text-[var(--color-primary)] 
-                      hover:shadow-[0_0_20px_rgba(255,255,255,0.6)] hover:scale-[1.02]"
+                      className="group inline-flex items-center justify-center gap-2 w-32 h-9 md:w-48 md:h-12 bg-transparent border-double border-2 border-white text-white rounded-[6px] font-bold text-xs md:text-base whitespace-nowrap select-none transition-all duration-300 ease-in-out hover:bg-white hover:text-[var(--color-primary)] hover:shadow-[0_0_20px_rgba(255,255,255,0.6)] hover:scale-[1.02]"
                     >
                       {/* متن دکمه */}
                       <span>مشاهده بیشتر</span>
 
                       {/* آیکون با حرکت نرم به سمت چپ در حالت هاور */}
                       <FiArrowLeft
-                        className="text-lg sm:text-xl transition-transform duration-300 ease-in-out 
-                        group-hover:-translate-x-1.5"
+                        className="text-lg sm:text-xl transition-transform duration-300 ease-in-out group-hover:-translate-x-1.5"
                       />
                     </Link>
                   </motion.div>

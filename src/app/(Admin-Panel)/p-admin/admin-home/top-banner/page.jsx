@@ -9,7 +9,9 @@ import { EMPTY_TOP_BANNER, TOP_BANNER_KEY, validateTopBanner } from "@/lib/topBa
 export default function TopBannerPage() {
   const { can } = useAdminPermissions();
   const [form, setForm] = useState(null);
-  const [uploading, setUploading] = useState(false);
+  const [uploadingMain, setUploadingMain] = useState(false);
+  const [uploadingMobile, setUploadingMobile] = useState(false);
+  const uploading = uploadingMain || uploadingMobile;
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
   const [attempt, setAttempt] = useState(0);
@@ -22,7 +24,7 @@ export default function TopBannerPage() {
         const response = await fetch(`/api/admin/site-settings?key=${TOP_BANNER_KEY}`, { signal: controller.signal, cache: "no-store" });
         if (!response.ok) throw new Error();
         const { value } = await response.json();
-        if (!controller.signal.aborted) setForm(value ?? EMPTY_TOP_BANNER);
+        if (!controller.signal.aborted) setForm({ ...EMPTY_TOP_BANNER, ...value });
       } catch {
         if (!controller.signal.aborted) setNotice("دریافت تنظیمات بنر ناموفق بود.");
       }
@@ -52,7 +54,7 @@ export default function TopBannerPage() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || data.message || "ذخیره تنظیمات ناموفق بود.");
-      setForm(data.value);
+      setForm({ ...EMPTY_TOP_BANNER, ...data.value });
       setNotice("تنظیمات بنر ذخیره شد.");
     } catch (err) {
       setNotice(err instanceof TypeError ? "ارتباط با سرور برقرار نشد." : err.message);
@@ -72,10 +74,14 @@ export default function TopBannerPage() {
               <input type="checkbox" checked={form.enabled} onChange={e => change("enabled", e.target.checked)} />
               نمایش بنر در فروشگاه
             </label>
-            <p className="text-sm">یک تصویر افقی یا GIF متحرک تا ۵ مگابایت انتخاب کنید. متن مهم را در مرکز تصویر قرار دهید تا در موبایل دیده شود.</p>
-            <ImageUpload label="تصویر بنر" value={form.image} folder="store-top-banner"
+            <p className="text-sm">تصویر یا GIF متحرک تا ۵ مگابایت. تصویر کامل و بدون برش نمایش داده می‌شود و ارتفاعش از نسبت خودِ تصویر می‌آید.</p>
+            <ImageUpload label="تصویر بنر (دسکتاپ و تبلت) — پیشنهاد: ۱۹۲۰×۹۰ پیکسل" value={form.image} folder="store-top-banner"
               accept="image/jpeg,image/png,image/webp,image/avif,image/gif"
-              onChange={image => change("image", image)} onUploadingChange={setUploading} />
+              onChange={image => change("image", image)} onUploadingChange={setUploadingMain} />
+            <ImageUpload label="تصویر بنر موبایل (اختیاری) — پیشنهاد: ۱۰۸۰×۱۸۰ پیکسل" value={form.mobileImage} folder="store-top-banner"
+              accept="image/jpeg,image/png,image/webp,image/avif,image/gif"
+              onChange={image => change("mobileImage", image)} onUploadingChange={setUploadingMobile} />
+            <p className="text-xs text-[var(--admin-muted,#6b7280)]">تصویر موبایل روی صفحه‌های کوچک‌تر از ۷۶۸ پیکسل نمایش داده می‌شود؛ اگر خالی باشد همان تصویر دسکتاپ نشان داده می‌شود.</p>
             <label className="block space-y-2">
               <span>لینک مقصد</span>
               <input dir="ltr" type="text" required={form.enabled} maxLength={2000} placeholder="/products"

@@ -134,7 +134,7 @@ const storeConfig = {
     series: false, // product lines inside a brand            (needs brands)
     limitedEditions: false, // brand capsule collections           (needs brands)
     departments: false, // top-level catalog sections, e.g. sports
-    targetAudience: false, // men / women / kids / unisex
+    targetAudience: true, // men / women / kids / unisex
     technicalStats: false, // per-category numeric stats + radar chart
     compare: true,
     collections: true, // campaign / collection landing pages

@@ -8,7 +8,7 @@ const readActiveTopBanner = unstable_cache(async () => {
   const setting = await SiteSetting.findOne({ key: TOP_BANNER_KEY }, "value").lean();
   const banner = setting?.value;
   if (!banner?.enabled || validateTopBanner(banner)) return null;
-  return { image: banner.image, href: banner.href };
+  return { image: banner.image, mobileImage: banner.mobileImage || "", href: banner.href };
 }, [TOP_BANNER_KEY], { tags: [TOP_BANNER_KEY], revalidate: 3600 });
 
 export async function getActiveTopBanner() {
