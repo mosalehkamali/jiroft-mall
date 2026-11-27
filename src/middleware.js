@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getAdminContext } from "@/lib/adminContext";
 import { canAccessAdminRoute } from "@/lib/permissions";
 import { disabledFeatureForPath } from "@/lib/features";
+import { siteUrl } from "@/lib/safeRedirect";
 
 /**
  * نگهبانِ سمت‌سرور: قابلیت‌های خاموش + پنل مدیریت + داشبورد کاربر.
@@ -48,7 +49,7 @@ export async function middleware(request) {
   const token = request.cookies.get("accessToken")?.value;
 
   if (!token) {
-    const loginUrl = new URL("/login-register", request.url);
+    const loginUrl = siteUrl("/login-register", request);
     loginUrl.searchParams.set("callbackUrl", pathname + search);
     return NextResponse.redirect(loginUrl);
   }

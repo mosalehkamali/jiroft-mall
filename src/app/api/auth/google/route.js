@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
+import { siteUrl } from '@/lib/safeRedirect';
 import { randomBytes } from 'node:crypto';
 import { OAuth2Client } from 'google-auth-library';
 
 // GET /api/auth/google — sends the visitor to Google's consent screen.
 export async function GET(request) {
   if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
-    return NextResponse.redirect(new URL('/login-register?error=oauth_unavailable', request.url));
+    return NextResponse.redirect(siteUrl('/login-register?error=oauth_unavailable', request));
   }
   const client = new OAuth2Client(
     process.env.GOOGLE_CLIENT_ID,

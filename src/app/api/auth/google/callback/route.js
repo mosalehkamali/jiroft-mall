@@ -5,7 +5,7 @@ import User from 'base/models/User';
 import { tokenGenrator, generateRefreshToken } from 'base/utils/auth';
 import { splitFullName } from 'base/utils/userName';
 import recordAdminLogin from '@/lib/recordAdminLogin';
-import { safeRedirectPath } from '@/lib/safeRedirect';
+import { safeRedirectPath, siteUrl } from '@/lib/safeRedirect';
 import { grantFirstAdmin } from 'base/services/adminBootstrap.service';
 
 function getGoogleProfileNames({ name, givenName, familyName }) {
@@ -117,7 +117,7 @@ export async function GET(request) {
 
     // ← به جای redirect مستقیم، از صفحه intermediate رد میشیم
     const response = NextResponse.redirect(
-      new URL(`/auth/success?next=${encodeURIComponent(finalUrl)}`, request.url)
+      siteUrl(`/auth/success?next=${encodeURIComponent(finalUrl)}`, request)
     );
 
     response.cookies.set('accessToken', accessToken, {
@@ -142,7 +142,7 @@ export async function GET(request) {
   } catch (error) {
     console.error('Google OAuth callback error:', error);
     return NextResponse.redirect(
-      new URL('/login-register?error=oauth_failed', request.url)
+      siteUrl('/login-register?error=oauth_failed', request)
     );
   }
 }
