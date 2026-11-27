@@ -8,9 +8,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ToastContainer } from "react-toastify";
-import "react-toastify/dist/ReactToastify.css";
-import { FiShoppingCart, FiArrowRight } from "react-icons/fi";
+import AppHeading from "@/components/modules/dashboard/AppHeading";
+import { FiShoppingCart } from "react-icons/fi";
 import Link from "next/link";
 
 import CartItems from "@/components/order/CartItems";
@@ -73,14 +72,7 @@ const OrderPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50" dir="rtl">
-      <ToastContainer
-        position="top-center"
-        autoClose={3000}
-        rtl
-        theme="light"
-        toastClassName="font-vazir"
-      />
+    <div className="space-y-5" dir="rtl">
 
       {NEEDS_ADDRESS && <AddressModal
         isOpen={isAddressModalOpen}
@@ -93,35 +85,10 @@ const OrderPage = () => {
       />}
 
       {/* Header */}
-      <header className="sticky top-0 z-40 bg-white border-b border-gray-200">
-        <div className="container py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Link
-                href="/p-user"
-                className="p-2 rounded-md hover:bg-gray-100 transition-colors"
-                aria-label="بازگشت"
-              >
-                <FiArrowRight className="w-5 h-5 text-[var(--color-text)]" />
-              </Link>
-
-              <h1 className="absolute flex items-center px-13 gap-2 text-lg md:text-xl font-bold text-[var(--color-text)]">
-                <FiShoppingCart className="w-5 h-5 md:w-6 md:h-6 text-[var(--color-primary)]" />
-                ثبت سفارش
-              </h1>
-
-              {totalItems > 0 && (
-                <div className="relative bottom-3 left-4 px-3 py-1 rounded-full text-sm font-medium bg-[var(--color-secondary)]/20 text-[var(--color-primary)]">
-                  {totalItems}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </header>
+      <AppHeading icon={FiShoppingCart} title="ثبت سفارش" description="بررسی سبد خرید و انتخاب روش پرداخت" count={totalItems} />
 
       {/* Main */}
-      <main className="container py-6 md:py-10 md:px-6">
+      <div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8">
 
           {/* ─── ستون چپ ─── */}
@@ -201,7 +168,7 @@ const OrderPage = () => {
           </div>
 
         </div>
-      </main>
+      </div>
 
       {/* Footer */}
       <footer className="border-t border-gray-200 bg-white mt-12">

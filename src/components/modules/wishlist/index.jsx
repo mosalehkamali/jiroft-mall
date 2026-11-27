@@ -1,5 +1,6 @@
 "use client";
 
+import AppHeading from "@/components/modules/dashboard/AppHeading"
 import { useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
@@ -51,13 +52,7 @@ export default function WishlistModule() {
       dir="rtl"
     >
       <div>
-        <h1 className="flex items-center gap-2 text-lg font-bold text-slate-800 sm:text-xl">
-          <Heart size={20} className="text-[var(--color-primary)]" fill="currentColor" />
-          علاقه‌مندی‌های من
-        </h1>
-        <p className="mt-1 text-xs text-slate-400 sm:text-sm">
-          محصولاتی که برای مشاهده دوباره ذخیره کرده‌اید
-        </p>
+        <AppHeading icon={Heart} title="علاقه‌مندی‌های من" description="محصولاتی که برای مشاهده دوباره ذخیره کرده‌اید" count={items.length} />
       </div>
 
       {error ? (

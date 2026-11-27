@@ -15,7 +15,7 @@ import { getCachedNavbar } from "@/lib/navbarService";
  * می‌زند — نه fetch به /api/navbar. این یک رفت‌وبرگشتِ HTTP (و یک invocation)
  * را به‌ازای هر بازدید از پنل حذف می‌کند و پرشِ مگامنو بعد از hydrate را هم.
  */
-export default async function SiteNavbar() {
+export default async function SiteNavbar({ children }) {
   // مثل layout گروه (Site): اگر دیتابیس در دسترس نباشد صفحه ۵۰۰ می‌شود.
   // (catch اینجا گذاشته نشده چون خطای داخلِ unstable_cache به‌هرحال به رندر
   // نشت می‌کند و catch حسِ کاذبِ مقاومت می‌دهد.)
@@ -24,6 +24,7 @@ export default async function SiteNavbar() {
   return (
     <UserProvider>
       <Navbar navData={Array.isArray(navData) ? navData : []} />
+      {children}
     </UserProvider>
   );
 }

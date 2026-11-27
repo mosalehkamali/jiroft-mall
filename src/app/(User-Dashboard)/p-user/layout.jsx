@@ -1,4 +1,5 @@
 import "@/app/globals.css"
+import "./workspace.css"
 import StoreHead from "@/components/common/StoreHead";
 import storeConfig from "base/store.config";
 
@@ -24,7 +25,7 @@ export const metadata = {
 // بخش‌های stateful (سایدبار و ترنزیشن صفحه) در DashboardBody کلاینتی هستند.
 export default function RootLayout({ children }) {
   return (
-    <html lang={storeConfig.brand.lang} dir={storeConfig.brand.dir}>
+    <html suppressHydrationWarning lang={storeConfig.brand.lang} dir={storeConfig.brand.dir}>
       <head>
         <StoreHead />
       </head>
@@ -34,12 +35,12 @@ export default function RootLayout({ children }) {
         <ScrollToTop />
         <CartCleanup />
 
-        <div className="min-h-screen bg-[#f8fafc] text-slate-800 rtl font-sans">
+        <div className="account-workspace font-sans">
 
           {/* منوی بالایی — نوبار اصلی سایت (جایگزین نوبار قدیمی داشبورد) */}
-          <SiteNavbar />
-
-          <DashboardBody>{children}</DashboardBody>
+          <SiteNavbar>
+            <DashboardBody>{children}</DashboardBody>
+          </SiteNavbar>
         </div>
         <ToastContainer position="top-left" autoClose={3000} rtl />
       </body>

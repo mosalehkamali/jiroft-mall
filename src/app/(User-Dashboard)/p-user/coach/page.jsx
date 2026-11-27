@@ -1,5 +1,6 @@
 "use client";
 
+import AppHeading from "@/components/modules/dashboard/AppHeading";
 import storeConfig from "base/store.config";
 import CoachCouponPanel from "@/components/order/CoachCouponPanel";
 import { getUserFullName } from "base/utils/userName";
@@ -121,12 +122,9 @@ export default function CoachDashboardPage() {
   const { coach, students, totalCreditEarned } = data;
 
   return (
-    <div className="p-4 sm:p-6 max-w-2xl mx-auto space-y-6 text-right" dir="rtl">
+    <div className="space-y-6 text-right" dir="rtl">
       {/* Header */}
-      <div className="flex items-center gap-2">
-        <GraduationCap size={20} className="text-[var(--color-primary)]" />
-        <h1 className="text-base font-bold text-slate-800">داشبورد مربی</h1>
-      </div>
+      <AppHeading icon={GraduationCap} title="داشبورد مربی" description="شاگردان و اعتبار مربیگری" />
 
       {/* Coach Info Card */}
       <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-xs">

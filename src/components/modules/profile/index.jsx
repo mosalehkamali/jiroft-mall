@@ -1,4 +1,5 @@
 'use client'
+import AppHeading from "@/components/modules/dashboard/AppHeading"
 import storeConfig from "base/store.config";
 
 import { useState, useEffect } from 'react'
@@ -41,26 +42,23 @@ export default function ProfileModule() {
 
   const [savingProfile, setSavingProfile] = useState(false)
 
-  useEffect(() => {
-    fetchUserProfile()
-  }, [])
-
-  const fetchUserProfile = async () => {
-    try {
-      const res = await fetch('/api/auth/profile')
-      if (res.ok) {
+  const fetchUserProfile = (signal) =>
+    fetch('/api/auth/profile', { signal })
+      .then(async res => {
+        if (!res.ok) throw new Error()
         const data = await res.json()
+        if (signal?.aborted) return
         setUser(data.user)
         setFormData(data.user)
-      } else {
-        toast.error('خطا در بارگذاری پروفایل')
-      }
-    } catch {
-      toast.error('خطا در اتصال به سرور')
-    } finally {
-      setLoading(false)
-    }
-  }
+      })
+      .catch(() => { if (!signal?.aborted) toast.error('خطا در بارگذاری پروفایل') })
+      .finally(() => { if (!signal?.aborted) setLoading(false) })
+
+  useEffect(() => {
+    const controller = new AbortController()
+    fetchUserProfile(controller.signal)
+    return () => controller.abort()
+  }, [])
 
   const handleUpdate = async () => {
     // در حین آپلودِ مدارک، اجازه‌ی ذخیره نده تا URL ناقص ثبت نشود
@@ -87,6 +85,7 @@ export default function ProfileModule() {
 
       if (res.ok) {
         setEditing(false)
+        window.dispatchEvent(new Event('auth-changed'))
         toast.success(data?.message || 'پروفایل با موفقیت بروزرسانی شد')
         // دریافت دیتای قطعی از سرور تا کارت مربیگری/آواتار همگام شود
         fetchUserProfile()
@@ -328,10 +327,7 @@ export default function ProfileModule() {
       {/* بخش سمت راست: اطلاعات کاربری */}
       <div className="lg:col-span-2 space-y-5 print:hidden">
         <div className="flex items-center justify-between bg-white p-4 rounded-[var(--radius)] border border-[hsl(var(--border))] shadow-xs">
-          <h1 className="flex items-center gap-2 text-base font-bold text-[var(--color-text)]">
-            <User className="text-[var(--color-primary)]" size={20} />
-            پروفایل کاربری
-          </h1>
+          <AppHeading icon={User} title="پروفایل کاربری" description="مدیریت اطلاعات شخصی و تماس" />
 
           <button
             onClick={() => {
@@ -368,11 +364,12 @@ export default function ProfileModule() {
                     { label: 'شماره تلفن همراه', key: 'phone', type: 'tel', icon: Phone },
                   ].map((field) => (
                     <div key={field.key} className="space-y-1">
-                      <label className="text-xs font-medium text-slate-500 block">
+                      <label htmlFor={`profile-${field.key}`} className="text-xs font-medium text-slate-500 block">
                         {field.label}
                       </label>
                       <div className="relative">
                         <input
+                          id={`profile-${field.key}`}
                           type={field.type}
                           value={formData[field.key] || ''}
                           onChange={(e) => setFormData({ ...formData, [field.key]: e.target.value })}

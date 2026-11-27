@@ -1,5 +1,6 @@
 'use client'
 
+import AppHeading from "@/components/modules/dashboard/AppHeading"
 import storeConfig from "base/store.config";
 import { motion } from 'framer-motion'
 import { FaWallet, FaPlus, FaMinus } from 'react-icons/fa'
@@ -66,10 +67,7 @@ const WalletModule = () => {
       className="space-y-5"
     >
       {/* Header */}
-      <h1 className="flex items-center gap-2 text-lg font-semibold">
-        <FaWallet className="text-sm opacity-70" />
-        کیف پول
-      </h1>
+      <AppHeading icon={FaWallet} title="کیف پول" description="موجودی و تراکنش‌های حساب" />
 
       {/* Balance */}
       <div

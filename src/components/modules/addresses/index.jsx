@@ -1,5 +1,6 @@
 'use client'
 
+import AppHeading from "@/components/modules/dashboard/AppHeading"
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   FaMapMarkerAlt,
@@ -181,16 +182,13 @@ const AddressesModule = () => {
     setSubmitError('')
   }
 
-  if (loading) return null
+  if (loading) return <p role="status" className="desk-empty">در حال دریافت نشانی‌ها…</p>
 
   return (
     <div className="space-y-5">
       {/* Header */}
       <div className="flex justify-between">
-        <h1 className="flex items-center gap-2 font-semibold">
-          <FaMapMarkerAlt />
-          آدرس‌های من
-        </h1>
+        <AppHeading icon={FaMapMarkerAlt} title="نشانی‌های من" description="مدیریت نشانی‌های تحویل سفارش" count={addresses.length} />
         <button
           onClick={() => setIsModalOpen(true)}
           className="flex items-center gap-2 bg-[hsl(var(--primary))] text-white px-3 py-2 rounded"
@@ -199,6 +197,7 @@ const AddressesModule = () => {
         </button>
       </div>
 
+      {addresses.length === 0 && <p className="desk-empty">هنوز نشانی ثبت نکرده‌اید.</p>}
       {/* Cards */}
       <div className="grid md:grid-cols-2 gap-4">
         {addresses.map((address) => (

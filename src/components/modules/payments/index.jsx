@@ -1,5 +1,6 @@
 'use client'
 
+import AppHeading from "@/components/modules/dashboard/AppHeading"
 import storeConfig from "base/store.config";
 /**
  * PaymentsModule — بخشِ «پرداخت‌های من» در داشبوردِ کاربر
@@ -246,15 +247,7 @@ const PaymentsModule = () => {
       >
         {/* هدر */}
         <div className="flex items-center justify-between gap-3">
-          <h1 className="flex items-center gap-2 text-lg font-bold text-[var(--color-dark)] tracking-tight">
-            <Wallet className="text-[var(--color-primary)]" size={20} />
-            پرداخت‌های من
-            {hasAny && (
-              <span className="text-sm font-medium text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
-                {payments.length}
-              </span>
-            )}
-          </h1>
+          <AppHeading icon={Wallet} title="پرداخت‌های من" description="رسیدها و وضعیت پرداخت سفارش‌ها" count={payments.length} />
         </div>
 
         {error && !hasAny ? (

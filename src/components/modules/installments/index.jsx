@@ -1,5 +1,6 @@
 'use client'
 
+import AppHeading from "@/components/modules/dashboard/AppHeading"
 import storeConfig from "base/store.config";
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -69,10 +70,7 @@ const InstallmentsModule = () => {
       transition={{ duration: 0.25 }}
       className="space-y-5"
     >
-      <h1 className="flex items-center gap-2 text-lg font-semibold">
-        <FaCreditCard className="text-sm opacity-70" />
-        اقساط و چک‌ها
-      </h1>
+      <AppHeading icon={FaCreditCard} title="اقساط و چک‌ها" description="سررسید و وضعیت پرداخت اقساط" count={installments.length} />
 
       {installments.length === 0 ? (
         <div className="rounded-[var(--radius)] border border-[hsl(var(--border))] bg-white p-8 text-center text-sm opacity-60">

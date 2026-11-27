@@ -1,5 +1,6 @@
 'use client'
 
+import AppHeading from "@/components/modules/dashboard/AppHeading"
 import storeConfig from "base/store.config";
 /**
  * NewTicketForm — فرم ثبت تیکت جدید در داشبورد کاربر
@@ -235,10 +236,7 @@ const NewTicketForm = () => {
     >
       {/* هدر */}
       <div className="flex items-center justify-between gap-3">
-        <h1 className="flex items-center gap-2 text-lg font-bold text-[var(--color-dark)] tracking-tight">
-          <Ticket className="text-[var(--color-primary)]" size={20} />
-          ثبت تیکت جدید
-        </h1>
+        <AppHeading icon={Ticket} title="ثبت تیکت جدید" description="درخواست خود را برای پشتیبانی ارسال کنید." />
         <Link
           href="/p-user/tickets"
           className="text-xs font-semibold text-gray-500 hover:text-[var(--color-primary)] transition-colors"
@@ -338,11 +336,12 @@ const NewTicketForm = () => {
 
         {/* موضوع */}
         <div>
-          <label className="block text-xs font-semibold text-gray-500 mb-2">
+          <label htmlFor="ticket-subject" className="block text-xs font-semibold text-gray-500 mb-2">
             موضوع <span className="text-red-500">*</span>
           </label>
           <input
             type="text"
+            id="ticket-subject"
             value={subject}
             onChange={(e) => setSubject(e.target.value)}
             maxLength={200}
@@ -353,11 +352,12 @@ const NewTicketForm = () => {
 
         {/* متن پیام */}
         <div>
-          <label className="block text-xs font-semibold text-gray-500 mb-2">
+          <label htmlFor="ticket-body" className="block text-xs font-semibold text-gray-500 mb-2">
             متن پیام <span className="text-red-500">*</span>
           </label>
           <textarea
             rows={5}
+            id="ticket-body"
             value={body}
             onChange={(e) => setBody(e.target.value)}
             maxLength={5000}

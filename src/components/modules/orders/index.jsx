@@ -1,5 +1,6 @@
 'use client'
 
+import AppHeading from "@/components/modules/dashboard/AppHeading"
 import storeConfig from "base/store.config";
 import { couponDisplayCode } from "@/lib/couponLabel";
 import { motion, AnimatePresence } from 'framer-motion'
@@ -560,54 +561,39 @@ const OrdersModule = () => {
   const [reviewedIds,  setReviewedIds]  = useState(() => new Set())
   const [reviewTarget, setReviewTarget] = useState(null) // { order, product }
 
-  const fetchOrders = async () => {
-    try {
-      const res = await fetch('/api/orders', { credentials: 'include' })
-      if (res.ok) {
-        const data = await res.json()
-        const list = data.orders ?? []
-        setOrders(list)
-        setRole(data.role ?? 'user')
-
-        // دیپ‌لینک از بخشِ پرداخت‌ها: ?order=<trackingCode> → بازکردنِ خودکارِ جزئیات
-        try {
-          const code = new URLSearchParams(window.location.search).get('order')
-          if (code) {
-            const match = list.find((o) => o.trackingCode === code)
-            if (match) setDetailOrder(match)
-          }
-        } catch { /* بی‌صدا */ }
-      } else {
-        toast.error('خطا در بارگذاری سفارش‌ها')
-      }
-    } catch {
-      toast.error('خطا در اتصال')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  // شناسه‌ی محصولاتی که کاربر قبلاً نظر داده — برای پنهان‌کردن دکمه‌ی ثبت نظر
-  const fetchReviewed = async () => {
-    try {
-      const res = await fetch('/api/comments/mine', { credentials: 'include' })
-      if (res.ok) {
-        const data = await res.json()
-        const productKeys = (data.reviewedProductIds ?? []).map((id) => `product:${id}`)
-        const usedProductKeys = (data.reviewedUsedProductIds ?? []).map((id) => `used:${id}`)
-        setReviewedIds(new Set([...productKeys, ...usedProductKeys]))
-      }
-    } catch {
-      /* بی‌صدا — نبودِ این داده فقط یعنی دکمه‌ها نمایش داده می‌شوند */
-    }
-  }
-
   const markReviewed = (reviewKey) =>
     setReviewedIds((prev) => new Set(prev).add(reviewKey))
 
   useEffect(() => {
-    fetchOrders()
-    fetchReviewed()
+    const controller = new AbortController()
+    const options = { credentials: 'include', signal: controller.signal }
+
+    fetch('/api/orders', options)
+      .then(async res => {
+        if (!res.ok) throw new Error('خطا در بارگذاری سفارش‌ها')
+        const data = await res.json()
+        if (controller.signal.aborted) return
+        const list = data.orders ?? []
+        setOrders(list)
+        setRole(data.role ?? 'user')
+        const code = new URLSearchParams(window.location.search).get('order')
+        if (code) setDetailOrder(list.find(order => order.trackingCode === code) ?? null)
+      })
+      .catch(() => { if (!controller.signal.aborted) toast.error('خطا در بارگذاری سفارش‌ها') })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false) })
+
+    fetch('/api/comments/mine', options)
+      .then(async res => {
+        if (!res.ok) return
+        const data = await res.json()
+        if (controller.signal.aborted) return
+        const productKeys = (data.reviewedProductIds ?? []).map(id => `product:${id}`)
+        const usedProductKeys = (data.reviewedUsedProductIds ?? []).map(id => `used:${id}`)
+        setReviewedIds(new Set([...productKeys, ...usedProductKeys]))
+      })
+      .catch(() => { /* Review history is optional. */ })
+
+    return () => controller.abort()
   }, [])
 
   const handleDelete = async (orderId, trackingCode) => {
@@ -664,15 +650,7 @@ const OrdersModule = () => {
       >
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <h1 className="flex items-center gap-2 text-lg font-bold text-[var(--color-dark)] tracking-tight">
-            <FaShoppingBag className="text-[var(--color-primary)] text-base" />
-            سفارش‌های من
-            {orders.length > 0 && (
-              <span className="text-sm font-medium text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
-                {orders.length}
-              </span>
-            )}
-          </h1>
+          <AppHeading icon={FaShoppingBag} title="سفارش‌های من" description="وضعیت خریدها، ارسال و جزئیات سفارش" count={orders.length} />
 
           {/* Filters */}
           {orders.length > 0 && (

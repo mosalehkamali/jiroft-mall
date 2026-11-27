@@ -1,49 +1,35 @@
 'use client'
 
-import { useState } from 'react'
+import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { motion, AnimatePresence } from 'framer-motion'
-
+import { ChevronLeft, PanelsTopLeft } from 'lucide-react'
+import { MotionConfig } from 'framer-motion'
+import { useUser } from '@/components/features/auth/UserContext'
+import AppSwitcher from '@/components/modules/dashboard/AppSwitcher'
 import Sidebar from '@/components/modules/dashboard/Sidebar'
 import BottomTabBar from '@/components/modules/dashboard/BottomTabBar'
+import { accountApps, desktop, isCurrent } from '@/components/modules/dashboard/apps'
 
-/**
- * بخشِ کلاینتیِ داشبورد کاربر — سایدبار (state) و ترنزیشنِ صفحه (usePathname).
- *
- * فقط برای این جدا شده که layout بتواند سرور-کامپوننت بماند و <SiteNavbar /> را
- * روی سرور رندر کند؛ وگرنه نوبار مجبور بود navData را با fetch از /api/navbar
- * بگیرد (یک invocation اضافه به‌ازای هر بازدید).
- */
 export default function DashboardBody({ children }) {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false)
-  const pathname = usePathname()
-
+  const path = usePathname()
+  const { user } = useUser()
+  const apps = accountApps(user)
+  const app = apps.find(item => isCurrent(path, item.href))
+  const home = path === desktop.href
   return (
-    <>
-      <div className="flex">
-        {/* منوی کناری */}
-        <Sidebar isOpen={isSidebarOpen} setIsOpen={setIsSidebarOpen} />
-
-        {/* محتوای اصلی صفحات (در موبایل فضای تب‌بارِ پایین لحاظ شده) */}
-        <main className="flex-1 min-w-0 py-4 pb-24 lg:p-8">
-          <div className="max-w-5xl mx-auto">
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={pathname}
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -12 }}
-                transition={{ duration: 0.22, ease: 'easeOut' }}
-              >
-                {children}
-              </motion.div>
-            </AnimatePresence>
-          </div>
+    <MotionConfig reducedMotion="user">
+      <div className="desk-layout">
+        <Sidebar user={user} apps={apps} path={path} />
+        <main className="desk-main">
+          <nav className="desk-crumb" aria-label="مسیر صفحه">
+            <PanelsTopLeft size={16} /><Link href="/p-user" aria-current={home ? 'page' : undefined}>میز کار</Link>
+            {!home && <><ChevronLeft size={13}/><span>{app?.label || 'ثبت سفارش'}</span></>}
+            <AppSwitcher key={path} apps={apps} />
+          </nav>
+          <div key={path} className={home ? 'desk-page' : 'desk-page desk-window'}>{children}</div>
         </main>
+        <BottomTabBar apps={apps} path={path} />
       </div>
-
-      {/* تب‌بارِ پایینِ موبایل — جایگزینِ سایدبارِ کشویی (دسکتاپ همچنان سایدبار دارد) */}
-      <BottomTabBar />
-    </>
+    </MotionConfig>
   )
 }
