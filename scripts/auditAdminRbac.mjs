@@ -321,7 +321,7 @@ export function auditUnresolvedKeys({ roles, admins }) {
  */
 export function planMigration({ adminUsers, admins, roles, existingUserIds }) {
   // اسناد Admin ممکن است به کاربرانی وصل باشند که role !== "admin" دارند
-  // (مثلاً یک مربی که ادمین هم هست). پس مجموعه‌ی «کاربرانِ موجود» جدا از
+  // (مثلاً یک کاربر فروشگاهی که ادمین هم هست). پس مجموعه‌ی «کاربرانِ موجود» جدا از
   // «کاربرانِ نقش‌ادمین» داده می‌شود، وگرنه یتیم‌ها تشخیص داده نمی‌شوند.
   const knownUserIds = new Set([
     ...adminUsers.map((u) => id(u._id)),

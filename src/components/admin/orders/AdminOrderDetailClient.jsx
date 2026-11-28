@@ -19,7 +19,7 @@ import {
   ExternalLink, MapPin, Phone, Mail, Hash, Calendar, Tag,
   Scan, QrCode, Barcode, CheckSquare, Square,
   ShoppingBag, Warehouse, Plus, Trash2, AlertTriangle,
-  ChevronDown, ChevronUp, GraduationCap, Euro, Wallet,
+  ChevronDown, ChevronUp, Euro, Wallet,
   Search, Minus, Pencil, Printer,
 } from "lucide-react";
 import SenderAddressModal from "@/components/admin/orders/SenderAddressModal";
@@ -2744,19 +2744,6 @@ export default function AdminOrderDetailClient({ orderId }) {
                 {getUserFullName(order.user) && <InfoRow icon={Users} label="نام" value={getUserFullName(order.user)} />}
                 {order.user?.phone && <InfoRow icon={Phone} label="تلفن" value={order.user.phone} />}
                 {order.user?.email && <InfoRow icon={Mail} label="ایمیل" value={order.user.email} />}
-                {getUserFullName(order.user?.coach) && (
-                  <div className="flex items-center gap-2 text-xs">
-                    <GraduationCap size={12} className="text-gray-400 flex-shrink-0" />
-                    <span className="text-gray-400 w-14 flex-shrink-0">مربی:</span>
-                    <button
-                      type="button"
-                      onClick={() => router.push(`/p-admin/users/coaches/${order.user.coach._id}/credit/${order._id}`)}
-                      className="font-semibold text-[var(--color-primary)] hover:underline truncate"
-                    >
-                      {getUserFullName(order.user.coach)}
-                    </button>
-                  </div>
-                )}
               </div>
               {order.address?.snapshot && (
                 <div className="border-t border-gray-100 pt-3">

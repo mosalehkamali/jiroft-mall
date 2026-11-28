@@ -1,6 +1,7 @@
 // src/app/api/admin/discounts/[id]/route.js
 import connectToDB from "base/configs/db";
 import DiscountRule from "base/models/DiscountRule";
+import { visibleDiscountRules, adminDiscountRule } from "base/utils/discountRoles";
 import { validateDiscountDates } from "@/lib/discountDateValidation";
 import { revalidateContent } from "@/lib/revalidate";
 import { NextResponse } from "next/server";
@@ -14,9 +15,9 @@ export async function GET(req, { params }) {
 
   await connectToDB();
   const { id } = await params;
-  const rule = await DiscountRule.findById(id).lean();
+  const rule = await DiscountRule.findOne({ _id: id, ...visibleDiscountRules }).lean();
   if (!rule) return NextResponse.json({ error: "پیدا نشد" }, { status: 404 });
-  return NextResponse.json(rule);
+  return NextResponse.json(adminDiscountRule(rule.toObject ? rule.toObject() : rule));
 }
 
 // PATCH /api/admin/discounts/[id]
@@ -46,7 +47,7 @@ export async function PATCH(req, { params }) {
   );
   if (!rule) return NextResponse.json({ error: "پیدا نشد" }, { status: 404 });
   revalidateContent(["products", "events"]);
-  return NextResponse.json(rule);
+  return NextResponse.json(adminDiscountRule(rule.toObject ? rule.toObject() : rule));
 }
 
 // DELETE /api/admin/discounts/[id]

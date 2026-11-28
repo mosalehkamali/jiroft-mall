@@ -40,7 +40,7 @@ export async function POST() {
 /* ─────────────────────────────────────────────
    GET → لیست سفارش‌های کاربر
 ───────────────────────────────────────────── */
-export async function GET() {
+export async function GET(req) {
   try {
     await connectToDB();
 
@@ -50,6 +50,12 @@ export async function GET() {
         { message: "احراز هویت لازم است" },
         { status: 401 },
       );
+    }
+
+    if (req?.nextUrl?.searchParams.get("view") === "latest") {
+      const order = await Order.findOne({ user: user.userId })
+        .select("trackingCode createdAt").sort({ createdAt: -1 }).lean();
+      return NextResponse.json({ order }, { headers: { "Cache-Control": "private, no-store" } });
     }
 
     // نقش کاربر — برای نمایش بخش یورو فقط به کاربران «فروشگاه» (store).

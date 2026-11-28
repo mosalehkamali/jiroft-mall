@@ -9,10 +9,10 @@ export default function walletNotificationPlugin(schema, { source }) {
     const session = doc.$session();
     // Only actual atomic wallet operations, not legacy ledger imports/updates.
     if (!doc.$locals.walletNotificationNew || !session?.inTransaction() || !(doc.amount > 0)) return;
-    const user = source === 'coach' ? doc.coach : doc.user;
+    const user = doc.user;
     const type = source === 'wallet' ? doc.type : 'credit';
     const description = source === 'review' ? 'پاداش نظر تأییدشده'
-      : source === 'coach' ? 'واریز از کردیت خرید شاگرد' : doc.description;
+      : doc.description;
     const title = type === 'credit' ? 'واریز به کیف پول' : 'برداشت از کیف پول';
     const message = `${new Intl.NumberFormat('fa-IR').format(doc.amount)} تومان ${type === 'credit' ? 'به کیف پول شما اضافه شد' : 'از کیف پول شما کسر شد'}. ${description}${doc.trackingCode ? ` — سفارش ${doc.trackingCode}` : ''}`;
     const id = `${source}:${doc._id}`;

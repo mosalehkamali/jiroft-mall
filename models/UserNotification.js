@@ -5,7 +5,7 @@ import mongoose from "mongoose";
  * UserNotification — اعلان‌هایی که «ادمین برای کاربران ارسال می‌کند».
  *
  * ⚠️ این سیستم کاملاً جدا از models/Notification.js است:
- *   - Notification        → اعلان‌های داخلیِ خودِ پنل مدیریت (سفارش/پرداخت/مربی)
+ *   - Notification        → اعلان‌های داخلیِ خودِ پنل مدیریت (سفارش/پرداخت)
  *   - UserNotification    → پیام‌هایی که ادمین به‌صورت گروهی/تکی به کاربران می‌فرستد
  * هیچ هم‌نامی یا تداخلی بین این دو وجود ندارد.
  *
@@ -25,7 +25,6 @@ export const USER_NOTIFICATION_TARGETS = ["all", "role", "group", "single"];
 // نقش‌های معتبر برای هدف‌گذاری بر اساس نقش (هم‌ارز enum مدل User)
 export const TARGETABLE_ROLES = [
   "user",
-  "coach",
   "admin",
   "national_player",
   "store",

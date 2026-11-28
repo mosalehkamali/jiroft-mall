@@ -39,7 +39,7 @@ export async function PATCH(req) {
     }
 
     const body = await req.json();
-    const { name, lastName, email, phone, avatar, certificateImage } = body;
+    const { name, lastName, email, phone } = body;
 
     // فیلدهای عمومی پروفایل (در دسترس همه کاربران)
     if (typeof name === 'string') user.name = name.trim();
@@ -64,17 +64,6 @@ export async function PATCH(req) {
 
     if (typeof phone === 'string') user.phone = phone.trim();
 
-    // فیلدهای مخصوص مربی: فقط برای کاربر با نقش coach اعمال می‌شوند
-    if (user.role === 'coach') {
-      if (typeof avatar === 'string' && avatar) {
-        user.avatar = avatar; // عکس پرسنلی (همان عکس روی کارت مربیگری)
-      }
-      if (typeof certificateImage === 'string' && certificateImage) {
-        // اطمینان از وجود ساب‌داکیومنت پیش از مقداردهی
-        if (!user.coachApplication) user.coachApplication = { status: 'approved' };
-        user.coachApplication.certificateImage = certificateImage; // حکم/مدرک مربیگری
-      }
-    }
 
     await user.save();
 

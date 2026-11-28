@@ -1,6 +1,8 @@
 // base/models/DiscountRule.js  (نسخه جدید - جایگزین مدل قدیمی کنید)
 import mongoose from "mongoose";
 
+import { discountRoles } from "../utils/discountRoles.js";
+
 const DiscountRuleSchema = new mongoose.Schema(
   {
     title: { type: String, required: true, trim: true },
@@ -12,7 +14,7 @@ const DiscountRuleSchema = new mongoose.Schema(
      *  serie         → تخفیف روی سری
      *  brand         → تخفیف روی برند
      *  global        → تخفیف روی همه محصولات
-     *  userRole      → تخفیف بر اساس نقش کاربر (coach, national_player, ...)
+     *  userRole      → تخفیف بر اساس نقش کاربر (store, national_player, ...)
      *  userLevel     → تخفیف بر اساس سطح کاربر (silver, gold, platinum)
      *  cartValue     → تخفیف بر اساس حداقل سبد خرید
      */
@@ -44,12 +46,12 @@ const DiscountRuleSchema = new mongoose.Schema(
       { type: mongoose.Schema.Types.ObjectId, ref: "Brand", index: true },
     ],
 
-    // برای userRole: مثلاً ["coach", "national_player"]
+    // برای userRole: مثلاً ["store", "national_player"]
     // نقشِ "seller" حذف شده است (با "store" ادغام شد) — قوانینِ قدیمی که آن را
     // هدف گرفته بودند با `npm run migrate:remove-seller-role` پاک‌سازی می‌شوند.
     targetRoles: {
       type: [String],
-      enum: ["user", "coach", "national_player", "store"],
+      enum: discountRoles,
       default: [],
     },
 

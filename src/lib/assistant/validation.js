@@ -89,6 +89,8 @@ export function compileQuery(input, permissions, toId = (value) => value) {
     if (['gte', 'lt'].includes(op)) assert(['number', 'date'].includes(type));
     return { [field]: { [{ eq: '$eq', ne: '$ne', gte: '$gte', lt: '$lt' }[op]]: value } };
   });
+  if (input.dataset === 'coupons') clauses.push({ createdByCoach: null });
+  if (input.dataset === 'discountRules') clauses.push({ $or: [{ type: { $ne: 'userRole' } }, { targetRoles: { $in: ['user', 'national_player', 'store'] } }] });
   if (input.dataset === 'articles') clauses.push({ deletedAt: null });
   const filter = clauses.length ? { $and: clauses } : {};
   const limit = input.limit ?? LIMITS.rows;

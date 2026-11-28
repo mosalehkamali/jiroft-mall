@@ -11,7 +11,6 @@
 import Order from "base/models/Order";
 import Payment from "base/models/Payment";
 import UsedProduct from "base/models/UsedProduct";
-import { grantAutomaticCoachCredit } from "base/services/coachWallet.service";
 import { runWithOptionalTransaction } from "base/utils/mongoTransactions";
 import { notifyNewOrder, notifyNewPayment } from "base/services/notificationService";
 import { releaseOrderStock } from "base/services/inventory.service";
@@ -50,7 +49,7 @@ export async function startOnlinePayment(order, { mobile = "", email = "" } = {}
 
 /**
  * The order's money is in: mark it paid, start processing, and everything that
- * follows a confirmed payment (coach credit, used products, notifications,
+ * follows a confirmed payment (used products, notifications,
  * email, Mahak invoice). Idempotent.
  */
 export async function confirmOrderPaid(orderId) {
@@ -62,8 +61,6 @@ export async function confirmOrderPaid(orderId) {
     if (paid.reduce((sum, p) => sum + p.amount, 0) < order.totalPrice) return;
     order.paymentStatus = "PAID";
     if (["WAITING", "NEEDS_PURCHASE"].includes(order.fulfillmentStatus)) order.fulfillmentStatus = "PROCESSING";
-    order.coachCreditEligible = true;
-    if (isFeatureEnabled("coach")) await grantAutomaticCoachCredit(order, session);
     await order.save({ session });
     changed = true;
   });

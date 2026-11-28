@@ -163,21 +163,6 @@ export const FEATURES = {
     paths: ["/api/admin/comments/*/reward"],
     modules: ["reviewCredit"],
   },
-  coach: {
-    label: "مربیان",
-    requires: ["wallet", "discounts"],
-    paths: [
-      "/p-user/coach",
-      "/api/coach",
-      "/api/profile/coach-apply",
-      "/api/profile/coach-lookup",
-      "/api/profile/link-coach",
-      "/api/admin/coaches",
-      "/api/admin/coach-applications",
-      "/api/admin/coach-credits",
-    ],
-    modules: ["coaches"],
-  },
   installments: {
     label: "فروش اقساطی",
     paths: [

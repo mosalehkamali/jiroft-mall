@@ -589,10 +589,10 @@ test("هدرِ تمام‌عرض هیچ ظرفی ندارد و فاصله‌ی �
   for (const wrapper of ["blockSection", "container", "max-w-"]) assert.ok(!fn.includes(wrapper), wrapper);
   // فاصله‌ی نوارِ بالا سراسری است و اینجا تکرار نمی‌شود.
   const navbar = await read("../src/components/features/navbar/Navbar.js");
-  // The spacer's height is the bar's: 64px, or 104px on phones with the category row.
-  assert.ok(navbar.includes('{!isHomePage && <div className={NAV_HEIGHT} />}'));
-  assert.ok(navbar.includes('const NAV_HEIGHT = `lg:h-[75px] ${DEPARTMENTS_ON ? "h-[64px]" : "h-[104px]"}`;'));
-  assert.ok(navbar.includes('height={NAV_HEIGHT}'));
+  // Article routes share the bar's height. Only the desktop home hero sits under it.
+  assert.ok(navbar.includes('const NAV_HEIGHT = "h-[64px] lg:h-[75px]";'));
+  assert.match(navbar, /<nav[\s\S]{0,250}\$\{NAV_HEIGHT\}/);
+  assert.ok(navbar.includes('<div className={isHomePage ? `${NAV_HEIGHT} md:hidden` : NAV_HEIGHT} />'));
   for (const spacing of ["64px", "104px", "75px", "pt-"]) assert.ok(!fn.includes(spacing), spacing);
 });
 

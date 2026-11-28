@@ -29,7 +29,7 @@ export async function calculateDiscount({ product, user, cartTotal = 0, isFirstO
 
   if (user) {
     if (user.role) {
-      orConditions.push({ type: "userRole", targetRoles: user.role });
+      orConditions.push({ type: "userRole", targetRoles: user.role === "coach" ? "user" : user.role });
     }
     if (user.level > 0) {
       orConditions.push({ type: "userLevel", targetLevels: user.level });
@@ -82,68 +82,4 @@ export async function calculateDiscount({ product, user, cartTotal = 0, isFirstO
   }
 
   return { discountAmount: bestDiscount, appliedRule };
-}
-
-/**
- * محاسبه کردیت مربی به ازای خرید شاگرد
- * @param {Object} params
- * @param {Object} params.product    - آبجکت محصول
- * @param {Object} params.coach      - آبجکت مربی { _id }
- * @param {number} params.purchaseAmount - مبلغ پرداختی توسط شاگرد
- * @param {boolean} params.isNewStudent  - آیا شاگرد جدید است
- * @returns {{ creditAmount: number, appliedRule: Object|null }}
- */
-export async function calculateCoachCredit({ product, coach, purchaseAmount, isNewStudent = false }) {
-  if (!coach) return { creditAmount: 0, appliedRule: null };
-
-  const now = new Date();
-
-  const CoachCredit = (await import("base/models/CoachCredit")).default;
-
-  const rules = await CoachCredit.find({
-    active: true,
-    $or: [
-      { startAt: null },
-      { startAt: { $lte: now } },
-    ],
-    $or: [
-      { endAt: null },
-      { endAt: { $gte: now } },
-    ],
-    $or: [
-      { scope: "all_coaches" },
-      { scope: "specific_coach", coach: coach._id },
-    ],
-  })
-    .sort({ priority: 1 })
-    .lean();
-
-  for (const rule of rules) {
-    // بررسی targetType
-    let matched = false;
-    if (rule.targetType === "all") {
-      matched = true;
-    } else if (rule.targetType === "product" && rule.targets.some((t) => t.toString() === product._id.toString())) {
-      matched = true;
-    } else if (rule.targetType === "category" && rule.targets.some((t) => t.toString() === product.category?.toString())) {
-      matched = true;
-    } else if (rule.targetType === "serie" && product.serie && rule.targets.some((t) => t.toString() === product.serie.toString())) {
-      matched = true;
-    }
-
-    if (!matched) continue;
-    if (rule.conditions?.onlyNewStudents && !isNewStudent) continue;
-    if (rule.conditions?.minPurchaseAmount && purchaseAmount < rule.conditions.minPurchaseAmount) continue;
-
-    let credit = 0;
-    if (rule.credit.kind === "percent") {
-      credit = (purchaseAmount * rule.credit.value) / 100;
-    } else {
-      credit = rule.credit.value;
-    }
-
-    return { creditAmount: Math.floor(credit), appliedRule: rule };
-  }
-
-  return { creditAmount: 0, appliedRule: null };
 }

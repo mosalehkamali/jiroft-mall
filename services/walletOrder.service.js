@@ -1,7 +1,6 @@
 import storeConfig from "base/store.config";
 import { createHash } from "node:crypto";
 import "base/models/registerModels";
-import { consumeCoachCoupon, grantAutomaticCoachCredit, reverseAutomaticCoachCredit } from "base/services/coachWallet.service";
 import Order from "base/models/Order";
 import User from "base/models/User";
 import Payment from "base/models/Payment";
@@ -45,7 +44,7 @@ export async function findWalletCheckout(identity, session = null) {
 
 export async function createWalletOrder({ identity, draft, amount, bankImages = [], installmentData = null }) {
   validateWalletAmount(amount);
-  if ((!draft.coupon?.createdByCoach && amount <= 0) || !Number.isSafeInteger(draft.totalPrice) || draft.totalPrice < 0 || amount > draft.totalPrice) throw walletError("مبلغ کیف پول بیشتر از مبلغ سفارش یا نامعتبر است", 400);
+  if (amount <= 0 || !Number.isSafeInteger(draft.totalPrice) || draft.totalPrice < 0 || amount > draft.totalPrice) throw walletError("مبلغ کیف پول بیشتر از مبلغ سفارش یا نامعتبر است", 400);
   const work = async (session) => {
     requireTransaction(session);
     const existing = await findWalletCheckout(identity, session);
@@ -63,7 +62,6 @@ export async function createWalletOrder({ identity, draft, amount, bankImages = 
     if (debit.modifiedCount !== 1) throw walletError("موجودی کیف پول کافی نیست یا حساب غیرفعال است؛ موجودی را دوباره بررسی کنید");
     } else if (!await User.exists({ _id: draft.user, isBanned: { $ne: true } }).session(session)) { throw walletError("حساب کاربری غیرفعال است", 403); }
     await order.save({ session });
-    await consumeCoachCoupon(order, session);
     for (const id of new Set(order.items.filter((i) => i.itemType === "used_product").map((i) => String(i.usedProduct)))) {
       const reserved = await UsedProduct.updateOne({ _id: id, status: "available" },
         { $set: { status: amount === draft.totalPrice ? "sold" : "reserved", order: order._id } }, { session });
@@ -93,7 +91,6 @@ export async function createWalletOrder({ identity, draft, amount, bankImages = 
           })) }], { session });
       }
     }
-    await grantAutomaticCoachCredit(order, session);
     await order.save({ session });
     const receipt = { ...identity, orderId: order._id, trackingCode: order.trackingCode, totalPrice: order.totalPrice, walletPaid: amount };
     await WalletCheckout.updateOne({ _id: identity._id }, { $set: receipt }, { session });
@@ -138,9 +135,7 @@ export async function updateOrderWithWallet(orderId, update) {
     const order = await Order.findById(orderId).session(session);
     if (!order) return null;
     const hadWallet = order.walletPaid > 0;
-    const wasPaid = order.paymentStatus === "PAID";
     if (update.fulfillmentStatus === "CANCELED") {
-      await reverseAutomaticCoachCredit(order, session);
       await refundOrderWallet(order, 0, session);
     }
     Object.assign(order, update);
@@ -149,8 +144,6 @@ export async function updateOrderWithWallet(orderId, update) {
       const total = paid.reduce((sum, p) => sum + p.amount, 0);
       order.paymentStatus = total >= order.totalPrice ? "PAID" : total > 0 ? "PARTIALLY_PAID" : "UNPAID";
     }
-    if (!wasPaid && order.paymentStatus === "PAID") order.coachCreditEligible = true;
-    await grantAutomaticCoachCredit(order, session);
     await order.save({ session });
     return order;
   });

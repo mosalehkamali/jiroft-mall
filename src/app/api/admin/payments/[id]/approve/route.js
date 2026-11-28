@@ -1,4 +1,3 @@
-import { grantAutomaticCoachCredit } from "base/services/coachWallet.service";
 import "base/models/registerModels";
 import { NextResponse } from "next/server";
 import connectToDB from "base/configs/db";
@@ -104,8 +103,6 @@ export async function POST(req, { params }) {
       }
       order.reviewedBy = admin.userId;
       order.reviewedAt = new Date();
-      order.coachCreditEligible = true;
-      await grantAutomaticCoachCredit(order, session);
       await order.save({ session });
 
       await session.commitTransaction();

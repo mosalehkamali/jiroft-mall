@@ -24,8 +24,6 @@
  *   فقط پیوندش باز می‌شود (سندِ مقصد خودش رکوردِ مستقلی است و باید بماند)
  *     • Comment.order            — نظر می‌ماند، فقط نشانِ «خرید تأییدشده» می‌رود
  *     • Ticket.relatedOrder/relatedPayment — تیکت و گفتگویش دست‌نخورده
- *     • CoachWalletTransaction.order — دفترِ پول است؛ حذفش موجودیِ مربی را
- *       بی‌صدا عوض می‌کند. ردیف می‌ماند، فقط لینکِ مرده‌اش برداشته می‌شود.
  *
  *   Notification.order/payment حذف می‌شود: اعلانِ زنگوله چیزی جز یک لینک نیست
  *   و لینکش به ۴۰۴ می‌خورد.
@@ -40,7 +38,6 @@
 
 import mongoose from "mongoose";
 import { refundOrderWallet } from "base/services/walletOrder.service";
-import { reverseAutomaticCoachCredit } from "base/services/coachWallet.service";
 
 import Order from "base/models/Order";
 import Payment from "base/models/Payment";
@@ -49,7 +46,6 @@ import Notification from "base/models/Notification";
 import Comment from "base/models/Comment";
 import Ticket from "base/models/Ticket";
 import UsedProduct from "base/models/UsedProduct";
-import CoachWalletTransaction from "base/models/CoachWalletTransaction";
 import ReviewCreditTransaction from "base/models/ReviewCreditTransaction";
 import {
   connectWarehouseDB,
@@ -111,7 +107,6 @@ export async function deleteOrderCascade(
 
   const _id = order._id;
   if (order.inventoryReserved) await releaseOrderStock(order.items, { session });
-  await reverseAutomaticCoachCredit(order, session);
   await refundOrderWallet(order, 0, session);
 
   // پرداخت‌ها از *دو* طرف پیدا می‌شوند: هم Payment.order و هم order.payments.
@@ -157,11 +152,9 @@ export async function deleteOrderCascade(
     { $set: { relatedPayment: null } },
     { session }
   );
-  const coachWallet = await CoachWalletTransaction.updateMany(
-    { order: _id },
-    { $set: { order: null } },
-    { session }
-  );
+
+  // Keep legacy ledger amounts and detach their references to the deleted order.
+  await Order.db.collection("coachwallettransactions").updateMany({ order: _id }, { $set: { order: null } }, { session });
 
   await Order.deleteOne({ _id }, { session });
 
@@ -173,7 +166,6 @@ export async function deleteOrderCascade(
     notifications: notifications.deletedCount || 0,
     usedProductsReleased: usedProducts.modifiedCount || 0,
     commentsDetached: comments.modifiedCount || 0,
-    coachWalletDetached: coachWallet.modifiedCount || 0,
     tracking,
   };
 }

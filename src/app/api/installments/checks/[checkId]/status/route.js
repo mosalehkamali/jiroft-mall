@@ -1,4 +1,3 @@
-import { grantAutomaticCoachCredit } from "base/services/coachWallet.service";
 /**
  * PATCH /api/installments/checks/[checkId]/status
  *
@@ -143,8 +142,6 @@ export async function PATCH(req, { params }) {
             { session: dbSession }
           );
           order.paymentStatus = "PAID";
-          order.coachCreditEligible = true;
-          await grantAutomaticCoachCredit(order, dbSession);
           await order.save({ session: dbSession });
         }
       }

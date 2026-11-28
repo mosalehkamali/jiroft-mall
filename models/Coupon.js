@@ -4,7 +4,6 @@ import mongoose from "mongoose";
 const CouponSchema = new mongoose.Schema({
   code: { type: String, required: true, unique: true, index: true },
   createdByCoach: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null, index: true },
-  coachName: { type: String, default: null },
   usedAt: { type: Date, default: null },
   usedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
   usedByName: { type: String, default: null },

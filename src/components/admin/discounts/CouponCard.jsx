@@ -73,7 +73,6 @@ export default function CouponCard({ coupon, onEdit, onDelete, onToggle }) {
             >
               {coupon.code}
             </button>
-            {coupon.coachName && <span className="text-xs text-gray-600">{coupon.coachName}</span>}
 
             <span
               className={`text-xs px-2 py-0.5 rounded-full border font-medium ${
@@ -142,7 +141,7 @@ export default function CouponCard({ coupon, onEdit, onDelete, onToggle }) {
         {/* Actions */}
         {(canEdit || canDelete) && (
         <div className="flex flex-col gap-1.5 shrink-0">
-          {canEdit && !coupon.createdByCoach && (
+          {canEdit && (
           <button
             onClick={() => onEdit(coupon)}
             className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
@@ -150,7 +149,7 @@ export default function CouponCard({ coupon, onEdit, onDelete, onToggle }) {
             ویرایش
           </button>
           )}
-          {canEdit && !coupon.createdByCoach && (
+          {canEdit && (
           <button
             onClick={() => onToggle(coupon._id, coupon.active)}
             className={`text-xs px-3 py-1.5 rounded-lg transition-colors ${
@@ -162,7 +161,7 @@ export default function CouponCard({ coupon, onEdit, onDelete, onToggle }) {
             {coupon.active ? "غیرفعال" : "فعال"}
           </button>
           )}
-          {canDelete && !coupon.createdByCoach && (
+          {canDelete && (
           <button
             onClick={() => onDelete(coupon._id)}
             className="text-xs px-3 py-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition-colors"

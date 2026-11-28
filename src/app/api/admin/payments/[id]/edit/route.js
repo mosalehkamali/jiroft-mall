@@ -1,4 +1,3 @@
-import { grantAutomaticCoachCredit } from "base/services/coachWallet.service";
 /**
  * src/app/api/admin/payments/[id]/edit/route.js
  *
@@ -100,12 +99,9 @@ export async function PATCH(req, { params }) {
         .lean();
       const totalPaid = paidPayments.reduce((s, p) => s + (p.amount || 0), 0);
 
-      const wasPaid = order.paymentStatus === "PAID";
       order.paymentStatus = derivePaymentStatus(totalPaid, order.totalPrice);
       order.reviewedBy = new mongoose.Types.ObjectId(admin.userId);
       order.reviewedAt = new Date();
-      if (!wasPaid) order.coachCreditEligible = true;
-      await grantAutomaticCoachCredit(order, session);
       await order.save({ session });
 
       await session.commitTransaction();

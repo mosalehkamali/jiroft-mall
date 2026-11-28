@@ -9,7 +9,6 @@ import storeConfig from "base/store.config";
  *  2. اعمال FlashSale
  *  3. اعمال DiscountRule (product / category / serie / brand / global / userRole / userLevel / cartValue)
  *  4. اعمال کوپن (با بررسی محدودیت استفاده)
- *  5. محاسبه کردیت مربی بر اساس CoachCredit
  *
  * ⚠️  این فایل فقط سمت سرور اجرا می‌شود. هرگز در client import نشود.
  */
@@ -92,7 +91,7 @@ export async function loadActiveRules(product, user = null, cartValueToman = 0) 
 
   // قوانین مرتبط با نقش کاربر
   if (user?.role) {
-    typeQueries.push({ type: "userRole", targetRoles: { $in: [user.role] } });
+    typeQueries.push({ type: "userRole", targetRoles: { $in: [user.role === "coach" ? "user" : user.role] } });
   }
 
   // قوانین مرتبط با سطح کاربر
@@ -458,13 +457,13 @@ export async function validateCoupon(couponCode, userId, cartTotalToman, cartIte
   const now = new Date();
   const coupon = await Coupon.findOne({
     code: couponCode.trim().toUpperCase(),
+    createdByCoach: null, // Exclude retired, wallet-funded coupons.
     active: true,
     ...discountWindowFilter(now),
   }).lean();
 
   if (!coupon) return { valid: false, discount: 0, coupon: null, reason: "کد تخفیف معتبر نیست" };
 
-  if (coupon.createdByCoach && coupon.usedAt) return { valid: false, discount: 0, coupon: null, reason: "این کد تخفیف قبلاً استفاده شده است" };
 
   // بررسی حداقل سبد خرید
   if ((coupon.minCartValue || 0) > cartTotalToman) {
@@ -521,18 +520,6 @@ export async function validateCoupon(couponCode, userId, cartTotalToman, cartIte
   return { valid: true, discount: discountAmount, coupon, reason: "" };
 }
 
-// ---------------------------------------------------------------------------
-// 5. محاسبه کردیت مربی
-// ---------------------------------------------------------------------------
-
-/**
- * محاسبه مبلغ کردیتی که باید به مربی پرداخت شود
- *
- * @param {string} coachId
- * @param {Object[]} items  - [{ productId, categoryId, serieId, lineTotalToman }]
- * @returns {Promise<number>} مبلغ کردیت به تومان
- */
-export { computeCoachCredit } from "base/services/coachCreditCalculation";
 
 // ---------------------------------------------------------------------------
 // 5.5 افزوده‌ی قیمتِ فرایند سفارش (خدمات + محصولات انتخاب‌شده)
@@ -928,7 +915,7 @@ export async function computeCartPrice(cartItems, user = null, couponCode = null
     );
     if (couponResult.valid) {
       couponDiscount = couponResult.discount;
-      appliedCoupon  = { code: couponResult.coupon.code, _id: couponResult.coupon._id, createdByCoach: couponResult.coupon.createdByCoach, coachName: couponResult.coupon.coachName };
+      appliedCoupon  = { code: couponResult.coupon.code, _id: couponResult.coupon._id };
     } else {
       couponError = couponResult.reason;
     }

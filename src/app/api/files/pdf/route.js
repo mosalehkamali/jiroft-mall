@@ -9,7 +9,7 @@ const IMAGEKIT_ENDPOINT = (process.env.IMAGEKIT_URL_ENDPOINT || "").replace(/\/$
 /**
  * پراکسی نمایش PDF.
  *
- * چرا لازم است: مدارک/احکامِ مربیگری روی ImageKit به‌صورت private آپلود می‌شوند
+ * چرا لازم است: فایل‌های PDF روی ImageKit به‌صورت private آپلود می‌شوند
  * (isPrivateFile: true در روتِ آپلود)، پس آدرسِ مستقیمشان بدون امضا قابلِ دسترسی
  * نیست. این روت یک URL امضاشده‌ی موقت (signed URL) با کلیدِ خصوصیِ ImageKit
  * می‌سازد، بایت‌های فایل را سمت سرور می‌گیرد و با Content-Type صحیح و به‌صورت

@@ -74,7 +74,7 @@ export async function GET() {
   try {
     await connectToDB();
 
-    const coupons = await Coupon.find({}).sort({ createdAt: -1 }).lean();
+    const coupons = await Coupon.find({ createdByCoach: null }).sort({ createdAt: -1 }).lean();
 
     // تعداد استفاده هر کد از روی سفارش‌های ثبت‌شده
     const usage = await Order.aggregate([
@@ -85,7 +85,7 @@ export async function GET() {
 
     const couponsWithUsage = coupons.map((c) => ({
       ...c,
-      usedCount: c.createdByCoach ? (c.usedAt ? 1 : 0) : usageMap.get(c.code) || 0,
+      usedCount: usageMap.get(c.code) || 0,
     }));
 
     return NextResponse.json({ coupons: couponsWithUsage }, { status: 200 });

@@ -1,7 +1,7 @@
 /**
  * src/app/api/admin/users/[userId]/route.js
  *
- * GET   → جزئیات کامل یک کاربر (پروفایل، آدرس‌ها، سفارش‌ها، پرداخت‌ها، مربی، شاگردان)
+ * GET   → جزئیات کامل یک کاربر (پروفایل، آدرس‌ها، سفارش‌ها، پرداخت‌ها)
  * PATCH → ویرایش اطلاعات کاربر توسط ادمین
  */
 
@@ -22,17 +22,6 @@ import {
 } from "@/lib/superAdminInvariant";
 
 import User from "base/models/User";
-async function generateUniqueCoachCode() {
-  let code = "";
-  let isUnique = false;
-  while (!isUnique) {
-    const randomDigits = Math.floor(1000 + Math.random() * 9000);
-    code = `TR${randomDigits}`;
-    const exists = await User.findOne({ coachCode: code });
-    if (!exists) isUnique = true;
-  }
-  return code;
-}
 
 /** فقط فیلدهای ممیزی‌شده، به شکلِ ساده و قابل مقایسه. */
 function snapshotUser(user, fields) {
@@ -70,8 +59,7 @@ export async function GET(req, { params }) {
     }
 
     const user = await User.findById(userId)
-      .select("-password -otp")
-      .populate("coach", "name lastName coachCode avatar phone email")
+      .select("-password -otp -coach -coachCode -coachApplication -students")
       .lean();
 
     if (!user) {
@@ -114,22 +102,13 @@ export async function GET(req, { params }) {
       orderInfo: orderTrackingMap[p.order?.toString()] || null,
     }));
 
-    // شاگردان (در صورتی که کاربر مربی است)
-    let students = [];
-    if (user.role === "coach") {
-      students = await User.find({ coach: userId })
-        .select("name lastName phone email avatar createdAt isBanned")
-        .sort({ createdAt: -1 })
-        .lean();
-    }
 
     return NextResponse.json(
       {
-        user,
+        user: { ...user, role: user.role === "coach" ? "user" : user.role },
         addresses,
         orders,
         payments: paymentsWithOrder,
-        students,
       },
       { status: 200 }
     );
@@ -197,7 +176,7 @@ export async function PATCH(req, { params }) {
     }
 
     // عکسِ پیش از تغییر برای دفترِ فعالیت — پس از save دیگر در دسترس نیست.
-    const AUDITED_FIELDS = ["name","lastName","email","phone","avatar","level","walletBalance","isBanned","role","coach"];
+    const AUDITED_FIELDS = ["name","lastName","email","phone","avatar","level","walletBalance","isBanned","role"];
     const beforeSnapshot = snapshotUser(user, AUDITED_FIELDS);
 
     const editableFields = ["name", "lastName", "email", "phone", "avatar"];
@@ -217,27 +196,13 @@ export async function PATCH(req, { params }) {
       // می‌کند؛ این لایه‌ی دومِ همان قاعده است.
       // "seller" عمداً حذف شده است (با "store" ادغام شد) — تلاش برای ست‌کردنش
       // اکنون ۴۰۰ می‌گیرد، دقیقاً مثل هر نقشِ ناشناخته‌ی دیگر.
-      const validRoles = ["user", "coach", "national_player", "store"];
+      const validRoles = ["user", "national_player", "store"];
       if (!validRoles.includes(body.role)) {
         return NextResponse.json({ message: "نقش نامعتبر است" }, { status: 400 });
       }
       user.role = body.role;
-      // اگر کاربر مربی شد و هنوز کد مربیگری ندارد، یک کد جدید بساز
-      if (body.role === "coach" && !user.coachCode) {
-        user.coachCode = await generateUniqueCoachCode();
-      }
     }
 
-    // امکان ویرایش/پاک کردن مربی متصل به کاربر
-    if (body.coach !== undefined) {
-      if (body.coach && !isValidObjectId(body.coach)) {
-        return NextResponse.json(
-          { message: "شناسه‌ی مربی نامعتبر است" },
-          { status: 422 }
-        );
-      }
-      user.coach = body.coach || null;
-    }
 
     // مسدودسازی می‌تواند آخرین سوپرادمینِ قابل‌استفاده را از کار بیندازد بدون
     // اینکه هیچ سند Admin ای تغییر کند — پس همان تراکنشِ محافظت‌شده‌ای که
@@ -257,8 +222,7 @@ export async function PATCH(req, { params }) {
     }
 
     const updated = await User.findById(userId)
-      .select("-password -otp")
-      .populate("coach", "name lastName coachCode avatar phone email")
+      .select("-password -otp -coach -coachCode -coachApplication -students")
       .lean();
 
     // نامِ اقدام از روی چیزی که *واقعاً* عوض شده انتخاب می‌شود، نه از روی

@@ -172,7 +172,7 @@ test("comment notifications are gated behind comments.view", () => {
     items: [{ type: "new_comment" }, { type: "new_ticket" }],
     counts: {
       byType: { new_comment: 3, new_ticket: 2 },
-      sections: { orders: 0, coachCredits: 0, coachApplications: 0, support: 5 },
+      sections: { orders: 0, support: 5 },
     },
     contactNew: 0,
   };

@@ -7,12 +7,11 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'react-toastify'
 import AdminLoader from '@/components/admin/AdminLoader'
 import { getUserFullName } from 'base/utils/userName'
-import { useNotifications } from '@/components/admin/NotificationProvider'
 import { useAdminPermissions } from '@/components/admin/AdminPermissionProvider'
 import {
   Users, UserCheck, UserX, ShieldAlert, Search, Filter,
   MoreVertical, Shield, Ban, CheckCircle, ArrowLeftRight,
-  GraduationCap, Award, Eye, Megaphone
+  Eye, Megaphone
 } from 'lucide-react'
 
 // نقشِ «فروشنده» (seller) حذف شده — با «فروشگاه» (store) اضافی بود. کاربرانِ
@@ -20,7 +19,6 @@ import {
 // seller را می‌شناسد؛ فقط دیگر جایی به‌عنوان گزینه پیشنهاد نمی‌شود.
 const roleLabels = {
   admin: 'مدیر کل',
-  coach: 'مربی',
   national_player: 'ورزشکار ملی',
   store: 'فروشگاه',
   user: 'کاربر عادی',
@@ -31,15 +29,13 @@ export default function AdminUsersManagement() {
   const { can, canRoute } = useAdminPermissions()
   const canBan = can('users.ban')
   const router = useRouter()
-  const { sections } = useNotifications()
-  const coachBadge = (sections?.coachApplications || 0) + (sections?.coachCredits || 0)
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [roleFilter, setRoleFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
   const [activeMenu, setActiveMenu] = useState(null)
-  const [stats, setStats] = useState({ total: 0, active: 0, coaches: 0, banned: 0 })
+  const [stats, setStats] = useState({ total: 0, active: 0, banned: 0 })
 
   const fetchUsersData = async () => {
     try {
@@ -47,7 +43,7 @@ export default function AdminUsersManagement() {
       const data = await res.json()
       if (res.ok) {
         setUsers(data.users || [])
-        setStats(data.stats || { total: 0, active: 0, coaches: 0, banned: 0 })
+        setStats(data.stats || { total: 0, active: 0, banned: 0 })
       } else {
         toast.error(data.message || 'خطا در دریافت کاربران')
       }
@@ -101,12 +97,10 @@ export default function AdminUsersManagement() {
       getUserFullName(user),
       user.email,
       user.phone,
-      user.coachCode
     )
     const matchesRole =
       roleFilter === 'all' ||
       (roleFilter === 'admin' && user.role === 'admin') ||
-      (roleFilter === 'coach' && user.role === 'coach') ||
       (roleFilter === 'user' && user.role === 'user')
     const status = user.isBanned ? 'banned' : 'active'
     const matchesStatus = statusFilter === 'all' || status === statusFilter
@@ -116,7 +110,6 @@ export default function AdminUsersManagement() {
   const kpiCards = [
     { label: 'کل کاربران', value: stats.total, icon: Users, bg: 'bg-blue-50', color: 'text-blue-600' },
     { label: 'کاربران فعال', value: stats.active, icon: UserCheck, bg: 'bg-emerald-50', color: 'text-emerald-600' },
-    { label: 'مربیان رسمی', value: stats.coaches, icon: Award, bg: 'bg-amber-50', color: 'text-amber-600' },
     { label: 'حساب‌های مسدود', value: stats.banned, icon: UserX, bg: 'bg-red-50', color: 'text-red-500' },
   ]
 
@@ -158,28 +151,11 @@ export default function AdminUsersManagement() {
             <ArrowLeftRight size={13} className="opacity-50" />
           </button>
           )}
-          {canRoute('/p-admin/users/coaches') && (
-          <button
-            onClick={() => router.push('/p-admin/users/coaches')}
-            className="relative inline-flex items-center gap-2 text-white text-xs font-bold px-4 py-2.5 rounded-[var(--radius)] transition-all hover:shadow-lg hover:-translate-y-0.5 active:scale-95"
-            style={{ background: 'var(--color-text)' }}
-          >
-            <GraduationCap size={15} style={{ color: 'var(--color-secondary)' }} />
-            مدیریت مربیان
-            <ArrowLeftRight size={13} className="opacity-50" />
-            {coachBadge > 0 && (
-              <span className="absolute -top-2 -left-2 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full text-[9.5px] font-bold tabular-nums text-[var(--color-dark)] ring-2 ring-white"
-                style={{ background: 'var(--color-secondary)' }}>
-                {coachBadge > 99 ? '۹۹+' : coachBadge.toLocaleString('fa-IR')}
-              </span>
-            )}
-          </button>
-          )}
         </div>
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
         {kpiCards.map((card, idx) => (
           <motion.div
             key={idx}
@@ -209,7 +185,7 @@ export default function AdminUsersManagement() {
           <div className="relative flex-1 max-w-sm">
             <input
               type="text"
-              placeholder="جستجوی نام، ایمیل، تلفن یا کد مربی..."
+              placeholder="جستجوی نام، ایمیل یا تلفن..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full text-right rounded-[var(--radius)] border-2 border-gray-200 bg-white px-4 py-2 pr-9 text-xs font-bold focus:border-[var(--color-primary)] focus:outline-none focus:ring-4 focus:ring-[var(--color-primary)]/10 transition-all"
@@ -223,7 +199,6 @@ export default function AdminUsersManagement() {
               <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} className="bg-transparent border-none focus:outline-none font-bold text-gray-800 cursor-pointer">
                 <option value="all">همه</option>
                 <option value="admin">مدیران</option>
-                <option value="coach">مربیان</option>
                 <option value="user">کاربران</option>
               </select>
             </div>
@@ -273,11 +248,6 @@ export default function AdminUsersManagement() {
                       )}
                       <div>
                         <span className="font-bold text-gray-800 text-xs block">{getUserFullName(user, "\u0628\u062f\u0648\u0646 \u0646\u0627\u0645")}</span>
-                        {user.role === 'coach' && user.coachCode && (
-                          <span className="inline-flex items-center gap-1 text-[9px] bg-amber-50 border border-amber-200 text-amber-700 px-1.5 py-0.5 rounded-lg font-bold font-mono mt-0.5">
-                            {user.coachCode}
-                          </span>
-                        )}
                       </div>
                     </div>
                   </td>
@@ -289,10 +259,6 @@ export default function AdminUsersManagement() {
                     {user.role === 'admin' ? (
                       <span className="inline-flex items-center gap-1 text-xs font-bold text-purple-700 bg-purple-50 px-2.5 py-1 rounded-[var(--radius)] border border-purple-100">
                         <Shield size={11} /> مدیر کل
-                      </span>
-                    ) : user.role === 'coach' ? (
-                      <span className="inline-flex items-center gap-1 text-xs font-bold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-[var(--radius)] border border-amber-100">
-                        <GraduationCap size={11} /> مربی
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-1 text-xs font-bold text-gray-600 bg-gray-100 px-2.5 py-1 rounded-[var(--radius)]">
@@ -400,10 +366,6 @@ export default function AdminUsersManagement() {
                 {user.role === 'admin' ? (
                   <span className="inline-flex items-center gap-1 text-[11px] font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-[var(--radius)] border border-purple-100">
                     <Shield size={10} /> مدیر کل
-                  </span>
-                ) : user.role === 'coach' ? (
-                  <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-[var(--radius)] border border-amber-100">
-                    <GraduationCap size={10} /> مربی {user.coachCode ? `· ${user.coachCode}` : ''}
                   </span>
                 ) : (
                   <span className="inline-flex items-center gap-1 text-[11px] font-bold text-gray-600 bg-gray-100 px-2 py-0.5 rounded-[var(--radius)]">

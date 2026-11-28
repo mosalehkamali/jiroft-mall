@@ -1,11 +1,9 @@
 "use client";
 // components/admin/discounts/DiscountManager.jsx
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
 import { toast } from "react-toastify";
 import DiscountRuleForm from "./DiscountRuleForm";
-import CoachCreditForm from "./CoachCreditForm";
 import DiscountRuleCard from "./DiscountRuleCard";
-import CoachCreditCard from "./CoachCreditCard";
 import CouponForm from "./CouponForm";
 import CouponCard from "./CouponCard";
 import QuantityDiscountForm from "./QuantityDiscountForm";
@@ -20,19 +18,10 @@ import useSWR from "swr";
 // پنجره را دور می‌زند.
 const DISCOUNT_TTL = { dedupingInterval: 10_000 };
 
-// 🔴 «کردیت مربیان» (کیف‌پول/پول) عمداً با SWR کش نمی‌شود و همان fetch مستقیم
-// را نگه می‌دارد.
-
-/**
- * تب‌ها به دو ماژولِ متفاوت تعلق دارند و همان تفکیکی را دارند که روت‌های
- * API دارند: سه تبِ اول زیرِ «تخفیف‌ها» و «کردیت مربیان» زیرِ ماژولِ «مربیان»
- * (/api/admin/coach-credits با coaches.* گیت شده است، نه discounts.*).
- */
 const TABS = [
   { id: "discounts", label: "قوانین تخفیف", view: "discounts.view", create: "discounts.create" },
   { id: "quantity", label: "تخفیف تعدادی", view: "discounts.view", create: "discounts.create" },
   { id: "coupons", label: "کدهای تخفیف", view: "discounts.view", create: "discounts.create" },
-  { id: "coachCredits", label: "کردیت مربیان", view: "coaches.view", create: "coaches.manageCredits" },
 ];
 
 const TYPE_LABELS = {
@@ -50,14 +39,10 @@ const TYPE_LABELS = {
 export default function DiscountManager() {
   const { can } = useAdminPermissions();
 
-  // آرایه قبل از رندر کوتاه می‌شود و تبِ پیش‌فرض از همان فهرست می‌آید، وگرنه
-  // ادمینی که فقط «کردیت مربیان» را دارد داخل تبِ قوانین تخفیف می‌افتاد.
   const visibleTabs = TABS.filter((tab) => can(tab.view));
   const [activeTab, setActiveTab] = useState(() => visibleTabs[0]?.id || null);
   const activeTabMeta = TABS.find((tab) => tab.id === activeTab);
 
-  const [coachCredits, setCoachCredits] = useState([]);
-  const [manualLoading, setManualLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editItem, setEditItem] = useState(null);
   const [filterType, setFilterType] = useState("");
@@ -98,35 +83,8 @@ export default function DiscountManager() {
 
   const coupons = couponsData?.coupons || [];
 
-  // ─── 🔴 کردیت مربیان (کیف‌پول/پول): بدون کش، دقیقاً مثل قبل ───
-  const fetchCoachCredits = useCallback(async () => {
-    setManualLoading(true);
-    try {
-      const res = await fetch("/api/admin/coach-credits");
-      const data = await res.json();
-      setCoachCredits(data.rules || []);
-    } catch {
-      toast.error("خطا در دریافت کردیت‌ها");
-    } finally {
-      setManualLoading(false);
-    }
-  }, []);
-
-  // یک microtask تأخیر تا setManualLoading(true) مستقیماً در بدنه‌ی effect اجرا
-  // نشود (همان الگویی که EventList قبلاً برای این هشدار داشت).
-  useEffect(() => {
-    let cancelled = false;
-    Promise.resolve().then(() => {
-      if (cancelled) return;
-      if (activeTab === "coachCredits") fetchCoachCredits();
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [activeTab, fetchCoachCredits]);
 
   const loading =
-    manualLoading ||
     (activeTab === "discounts" && discountsLoading) ||
     (activeTab === "quantity" && quantityLoading) ||
     (activeTab === "coupons" && couponsLoading);
@@ -135,7 +93,6 @@ export default function DiscountManager() {
     discount: "/api/admin/discounts",
     quantity: "/api/admin/quantity-discounts",
     coupon: "/api/admin/coupons",
-    credit: "/api/admin/coach-credits",
   };
 
   // بعد از هر ساخت/ویرایش/حذف: mutate() بدونِ توجه به dedupingInterval
@@ -144,7 +101,6 @@ export default function DiscountManager() {
     if (type === "discount") mutateDiscounts();
     else if (type === "quantity") mutateQuantity();
     else if (type === "coupon") mutateCoupons();
-    else fetchCoachCredits();
   };
 
   const handleDelete = async (id, type) => {
@@ -176,16 +132,15 @@ export default function DiscountManager() {
     if (activeTab === "discounts") mutateDiscounts();
     else if (activeTab === "quantity") mutateQuantity();
     else if (activeTab === "coupons") mutateCoupons();
-    else fetchCoachCredits();
   };
 
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-6" dir="rtl">
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-800">مدیریت تخفیف‌ها و کردیت</h1>
+        <h1 className="text-2xl font-bold text-gray-800">مدیریت تخفیف‌ها</h1>
         <p className="text-gray-500 text-sm mt-1">
-          تعریف قوانین تخفیف و سیستم کردیت مربیان
+          مدیریت قوانین و کدهای تخفیف
         </p>
       </div>
 
@@ -247,9 +202,7 @@ export default function DiscountManager() {
             ? "تخفیف جدید"
             : activeTab === "quantity"
               ? "تخفیف تعدادی جدید"
-              : activeTab === "coupons"
-                ? "کد تخفیف جدید"
-                : "کردیت جدید"}
+                : "کد تخفیف جدید"}
         </button>
         )}
       </div>
@@ -265,9 +218,7 @@ export default function DiscountManager() {
                   ? "قانون تخفیف"
                   : activeTab === "quantity"
                     ? "تخفیف تعدادی"
-                    : activeTab === "coupons"
-                      ? "کد تخفیف"
-                      : "قانون کردیت مربی"}
+                      : "کد تخفیف"}
               </h2>
               <button
                 onClick={() => { setShowForm(false); setEditItem(null); }}
@@ -289,14 +240,8 @@ export default function DiscountManager() {
                   onSuccess={handleFormSuccess}
                   onCancel={() => { setShowForm(false); setEditItem(null); }}
                 />
-              ) : activeTab === "coupons" ? (
-                <CouponForm
-                  initial={editItem}
-                  onSuccess={handleFormSuccess}
-                  onCancel={() => { setShowForm(false); setEditItem(null); }}
-                />
               ) : (
-                <CoachCreditForm
+                <CouponForm
                   initial={editItem}
                   onSuccess={handleFormSuccess}
                   onCancel={() => { setShowForm(false); setEditItem(null); }}
@@ -343,7 +288,7 @@ export default function DiscountManager() {
             ))
           )}
         </div>
-      ) : activeTab === "coupons" ? (
+      ) : (
         <div className="grid gap-3">
           {coupons.length === 0 ? (
             <EmptyState text="هیچ کد تخفیفی تعریف نشده است — کاربر این کد را هنگام ثبت سفارش وارد می‌کند" />
@@ -355,22 +300,6 @@ export default function DiscountManager() {
                 onEdit={(item) => { setEditItem(item); setShowForm(true); }}
                 onDelete={(id) => handleDelete(id, "coupon")}
                 onToggle={(id, current) => handleToggleActive(id, current, "coupon")}
-              />
-            ))
-          )}
-        </div>
-      ) : (
-        <div className="grid gap-3">
-          {coachCredits.length === 0 ? (
-            <EmptyState text="هیچ قانون کردیتی تعریف نشده است" />
-          ) : (
-            coachCredits.map((rule) => (
-              <CoachCreditCard
-                key={rule._id}
-                rule={rule}
-                onEdit={(item) => { setEditItem(item); setShowForm(true); }}
-                onDelete={(id) => handleDelete(id, "credit")}
-                onToggle={(id, current) => handleToggleActive(id, current, "credit")}
               />
             ))
           )}

@@ -4,6 +4,7 @@ import StoreHead from "@/components/common/StoreHead";
 import storeConfig from "base/store.config";
 
 import SiteNavbar from '@/components/features/navbar/SiteNavbar'
+import { UserProvider } from '@/components/features/auth/UserContext'
 import CartCleanup from '@/components/features/cart/CartCleanup'
 import ScrollToTop from '@/components/common/ScrollToTop'
 import NavigationLoader from '@/components/common/NavigationLoader'
@@ -38,9 +39,9 @@ export default function RootLayout({ children }) {
         <div className="account-workspace font-sans">
 
           {/* منوی بالایی — نوبار اصلی سایت (جایگزین نوبار قدیمی داشبورد) */}
-          <SiteNavbar>
-            <DashboardBody>{children}</DashboardBody>
-          </SiteNavbar>
+          <UserProvider>
+            <DashboardBody shopMenu={<SiteNavbar />}>{children}</DashboardBody>
+          </UserProvider>
         </div>
         <ToastContainer position="top-left" autoClose={3000} rtl />
       </body>

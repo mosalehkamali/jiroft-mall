@@ -38,8 +38,6 @@ const ENTITY_CATEGORY = {
   payment: "orders",
   installment: "finance",
   exchangeRate: "finance",
-  coachCredit: "finance",
-  coachWallet: "finance",
   setting: "finance",
 
   admin: "admins",

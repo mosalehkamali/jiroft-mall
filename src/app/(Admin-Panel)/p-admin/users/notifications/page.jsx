@@ -15,7 +15,6 @@ import {
 // نقشِ «فروشنده» (seller) حذف شده — با «فروشگاه» (store) اضافی بود.
 const ROLE_OPTIONS = [
   { value: 'user', label: 'کاربر عادی' },
-  { value: 'coach', label: 'مربی' },
   { value: 'national_player', label: 'ورزشکار ملی' },
   { value: 'store', label: 'فروشگاه' },
   { value: 'admin', label: 'مدیر کل' },
@@ -331,7 +330,7 @@ export default function SendUserNotificationPage() {
                   <input
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
-                    placeholder="جستجوی نام، تلفن، ایمیل یا کد مربی…"
+                    placeholder="جستجوی نام، تلفن یا ایمیل…"
                     className="w-full text-right rounded-[var(--radius)] border-2 border-gray-200 bg-white px-4 py-2.5 pr-9 text-xs font-bold focus:border-[var(--color-primary)] focus:outline-none focus:ring-4 focus:ring-[var(--color-primary)]/10 transition-all"
                   />
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">

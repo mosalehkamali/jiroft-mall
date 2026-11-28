@@ -23,7 +23,6 @@ const TYPES = [
 // قدیمیِ هدف‌گرفته‌ی seller با `npm run migrate:remove-seller-role` به store منتقل
 // می‌شوند تا هدف‌گیری‌شان از دست نرود.
 const USER_ROLES = [
-  { value: "coach",           label: "مربی" },
   { value: "national_player", label: "ملی‌پوش" },
   { value: "store",           label: "فروشگاه" },
   { value: "user",            label: "کاربر عادی" },
@@ -357,7 +356,7 @@ export default function DiscountRuleForm({ initial, onSuccess, onCancel }) {
     <form onSubmit={handleSubmit} className="space-y-4">
       {/* عنوان */}
       <Field label="عنوان قانون *">
-        <input value={form.title} onChange={(e) => set("title", e.target.value)} required className={inputCls} placeholder="مثلاً: تخفیف ویژه مربیان" />
+        <input value={form.title} onChange={(e) => set("title", e.target.value)} required className={inputCls} placeholder="مثلاً: تخفیف ویژه فروشگاه" />
       </Field>
 
       {/* نوع */}

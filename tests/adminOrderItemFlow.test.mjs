@@ -66,9 +66,7 @@ before(async () => {
     "base/utils/discountWindow": discountWindow,
     "base/utils/discountMatch": discountMatch,
     "@/lib/Exchangerate": { getCachedRate: async () => 1000, eurToToman: (price, rate) => price * rate },
-    "base/services/coachCreditCalculation": { computeCoachCredit() {} },
     "base/services/walletOrder.service": { refundOrderWallet: async () => 0 },
-    "base/services/coachWallet.service": { grantAutomaticCoachCredit: async () => {} },
     "base/models/Payment": { default: { find: () => ({ session: () => ({ lean: async () => [] }) }) } },
     "@/lib/variantImages": { buildVariantSnapshot: (variant) => Object.entries(variant.attributes || {}).map(([name, value]) => ({ name, value })) },
     "@/lib/manualTracking": await import("../src/lib/manualTracking.js"),
@@ -162,8 +160,8 @@ test("required services without a submitted row still get their server defaults 
 
 test("buyer-specific discounts apply to the main item without discounting flow additions again", async () => {
   const data = await seed();
-  await mongoose.models.User.create({ _id: data.order.user, role: "coach", level: 2 });
-  await mongoose.models.DiscountRule.create({ active: true, type: "userRole", targetRoles: ["coach"], discount: { kind: "percent", value: 10 } });
+  await mongoose.models.User.create({ _id: data.order.user, role: "store", level: 2 });
+  await mongoose.models.DiscountRule.create({ active: true, type: "userRole", targetRoles: ["store"], discount: { kind: "percent", value: 10 } });
   const response = await post(data);
   assert.equal(response.status, 200, JSON.stringify(response.body));
   const saved = await Order.findById(data.order._id);

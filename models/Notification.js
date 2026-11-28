@@ -5,13 +5,11 @@ import mongoose from "mongoose";
  * Notification: اعلان‌های پنل مدیریت.
  *
  * هر اعلان به‌صورت side-effect در جریان‌های موجود ساخته می‌شود (سفارش، پرداخت،
- * درخواست مربیگری) و در زنگوله‌ی هدر و بَج‌های سایدبار نمایش داده می‌شود.
+ * تیکت پشتیبانی) و در زنگوله‌ی هدر و بَج‌های سایدبار نمایش داده می‌شود.
  *
  * انواع:
  *  - new_order           → سفارش جدید ثبت شد
  *  - new_payment         → پرداخت جدیدی برای یک سفارش ثبت یا تأیید شد
- *  - coach_student_order → شاگردِ یک مربی سفارش ثبت کرده (نیاز به ثبت کردیت دستی)
- *  - coach_application   → درخواست مربیگری جدید
  *  - new_ticket          → تیکت پشتیبانی جدید یا پاسخ کاربر روی تیکت
  *  - new_comment         → نظر/دیدگاه جدید کاربر (در صف بازبینی)
  */
@@ -19,8 +17,6 @@ import mongoose from "mongoose";
 export const NOTIFICATION_TYPES = [
   "new_order",
   "new_payment",
-  "coach_student_order",
-  "coach_application",
   "new_ticket",
   "new_comment",
 ];
@@ -40,9 +36,7 @@ const NotificationSchema = new mongoose.Schema(
     // ارجاع به موجودیت مرتبط — فقط موارد مربوط به هر نوع پر می‌شوند
     order: { type: mongoose.Schema.Types.ObjectId, ref: "Order", default: null },
     payment: { type: mongoose.Schema.Types.ObjectId, ref: "Payment", default: null },
-    coach: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     ticket: { type: mongoose.Schema.Types.ObjectId, ref: "Ticket", default: null },
-    // برای coach_application و coach_student_order: کاربری که اقدام را انجام داده
     actor: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
 
     // مسیر مقصد هنگام کلیک روی اعلان (از پیش محاسبه‌شده هنگام ساخت)
@@ -60,7 +54,6 @@ NotificationSchema.index({ type: 1, isRead: 1 });
 // علامت‌گذاری «خوانده‌شده» هنگام مشاهده‌ی موجودیت مرتبط
 NotificationSchema.index({ order: 1, isRead: 1 });
 NotificationSchema.index({ ticket: 1, isRead: 1 });
-NotificationSchema.index({ coach: 1, isRead: 1 });
 
 export default mongoose.models.Notification ||
   mongoose.model("Notification", NotificationSchema);

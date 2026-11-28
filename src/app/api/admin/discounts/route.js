@@ -1,6 +1,7 @@
 // app/api/admin/discounts/route.js
 import connectToDB from "base/configs/db";
 import DiscountRule from "base/models/DiscountRule";
+import { visibleDiscountRules, adminDiscountRule } from "base/utils/discountRoles";
 import { validateDiscountDates } from "@/lib/discountDateValidation";
 import { revalidateContent } from "@/lib/revalidate";
 import { NextResponse } from "next/server";
@@ -19,7 +20,7 @@ export async function GET(req) {
   const type = searchParams.get("type");
   const active = searchParams.get("active");
 
-  const filter = {};
+  const filter = { ...visibleDiscountRules };
   if (type) filter.type = type;
   if (active !== null && active !== "") filter.active = active === "true";
 
@@ -32,7 +33,7 @@ export async function GET(req) {
     DiscountRule.countDocuments(filter),
   ]);
 
-  return NextResponse.json({ rules, total, page, pages: Math.ceil(total / limit) });
+  return NextResponse.json({ rules: rules.map(adminDiscountRule), total, page, pages: Math.ceil(total / limit) });
 }
 
 // POST /api/admin/discounts  → ساخت قانون جدید

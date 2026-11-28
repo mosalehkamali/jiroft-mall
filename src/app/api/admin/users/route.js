@@ -2,7 +2,7 @@
  * src/app/api/admin/users/route.js
  *
  * GET → لیست کاربران برای پنل ادمین به همراه آمار کلی
- *        query params: search, role (all|admin|coach|user|store|national_player), status (all|active|banned)
+ *        query params: search, role (all|admin|user|store|national_player), status (all|active|banned)
  */
 
 import { withSearch } from "@/lib/search";
@@ -26,14 +26,12 @@ export async function GET(req) {
     // هر توکن باید در یکی از این فیلدها بیاید. `$expr`ِ قبلی برای «نام +
     // نام‌خانوادگی» دیگر لازم نیست: توکن‌ها جدا تطبیق می‌خورند، پس «رضایی رضا»
     // هم پیدا می‌شود.
-    const filter = withSearch({}, search, ["name", "lastName", "email", "phone", "coachCode"]);
+    const filter = withSearch({}, search, ["name", "lastName", "email", "phone"]);
 
-    if (role === "coach") {
-      filter.role = "coach";
-    } else if (role === "admin") {
+    if (role === "admin") {
       filter.role = "admin";
     } else if (role === "user") {
-      filter.role = "user";
+      filter.role = { $in: ["user", "coach"] };
     } else if (role === "store") {
       filter.role = "store";
     } else if (role === "national_player") {
@@ -44,7 +42,7 @@ export async function GET(req) {
     else if (status === "banned") filter.isBanned = true;
 
     const users = await User.find(filter)
-      .select("name lastName email phone role coachCode isBanned avatar level walletBalance createdAt")
+      .select("name lastName email phone role isBanned avatar level walletBalance createdAt")
       .sort({ createdAt: -1 })
       .limit(500)
       .lean();
@@ -56,7 +54,6 @@ export async function GET(req) {
           _id: null,
           total: { $sum: 1 },
           active: { $sum: { $cond: [{ $eq: ["$isBanned", true] }, 0, 1] } },
-          coaches: { $sum: { $cond: [{ $eq: ["$role", "coach"] }, 1, 0] } },
           banned: { $sum: { $cond: [{ $eq: ["$isBanned", true] }, 1, 0] } },
         },
       },
@@ -64,8 +61,8 @@ export async function GET(req) {
 
     return NextResponse.json(
       {
-        users,
-        stats: stats || { total: 0, active: 0, coaches: 0, banned: 0 },
+        users: users.map(user => user.role === "coach" ? { ...user, role: "user" } : user),
+        stats: stats || { total: 0, active: 0, banned: 0 },
       },
       { status: 200 }
     );

@@ -8,9 +8,9 @@ import storeConfig from "../store.config.js";
 const { resolveFlags, matches } = __test;
 
 test("a feature is on only when it and every dependency are on", () => {
-  const on = resolveFlags({ features: { coach: true, wallet: true, discounts: true } });
-  assert.ok(on.has("coach"));
-  assert.ok(!resolveFlags({ features: { coach: true, wallet: true, discounts: false } }).has("coach"));
+  const on = resolveFlags({ features: { reviewCredit: true, wallet: true, reviews: true } });
+  assert.ok(on.has("reviewCredit"));
+  assert.ok(!resolveFlags({ features: { reviewCredit: true, wallet: true, reviews: false } }).has("reviewCredit"));
   assert.ok(!resolveFlags({ features: { athletes: true } }).has("athletes"), "athletes needs departments");
   assert.ok(!resolveFlags({ features: { reviewCredit: true, reviews: true } }).has("reviewCredit"), "needs wallet too");
 });

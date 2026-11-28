@@ -24,7 +24,7 @@ import useVisiblePoll from "@/hooks/useVisiblePoll";
 const EMPTY_COUNTS = {
   total: 0,
   byType: {},
-  sections: { orders: 0, coachCredits: 0, coachApplications: 0, support: 0 },
+  sections: { orders: 0, support: 0 },
 };
 
 const NotificationContext = createContext(null);
@@ -70,7 +70,7 @@ export function NotificationProvider({ children }) {
 
   /**
    * علامت‌گذاری خوانده‌شده — خوش‌بینانه (فوری در UI) سپس سرور.
-   * filter: { order } | { coach } | { ticket } | { type } | { ids } | { all }
+   * filter: { order } | { ticket } | { type } | { ids } | { all }
    */
   const markRead = useCallback(
     async (filter) => {
@@ -82,7 +82,6 @@ export function NotificationProvider({ children }) {
           if (n.isRead) return n;
           const hit =
             (filter.order && String(n.order) === String(filter.order)) ||
-            (filter.coach && String(n.coach) === String(filter.coach)) ||
             (filter.ticket && String(n.ticket) === String(filter.ticket)) ||
             (filter.ids && filter.ids.map(String).includes(String(n._id))) ||
             (filter.type &&
@@ -113,8 +112,6 @@ export function NotificationProvider({ children }) {
     (href) => {
       const s = counts.sections || {};
       if (href === "/p-admin/admin-orders") return s.orders || 0;
-      if (href === "/p-admin/users")
-        return (s.coachApplications || 0) + (s.coachCredits || 0);
       if (href === "/p-admin/support") return (s.support || 0) + (contactNew || 0);
       return 0;
     },

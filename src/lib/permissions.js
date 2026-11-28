@@ -605,22 +605,6 @@ const SECTION_DEFINITIONS = [
         ],
       },
       {
-        key: "coaches",
-        title: "مربیان",
-        description: "درخواست‌های مربیگری، کدها، اعتبار و کیف پول مربیان",
-        path: "/p-admin/users/coaches",
-        api: [
-          "/api/admin/coaches",
-          "/api/admin/coach-applications",
-          "/api/admin/coach-credits",
-        ],
-        permissions: [
-          { key: "view", title: "مشاهده مربیان" },
-          { key: "manage", title: "مدیریت مربیان و درخواست‌ها" },
-          { key: "manageCredits", title: "مدیریت اعتبار و کیف پول مربیان" },
-        ],
-      },
-      {
         key: "admins",
         title: "ادمین‌های پنل",
         description: "عضویت ادمین‌ها در پنل، فعال‌سازی و لغو دسترسی",
@@ -781,6 +765,9 @@ const SECTION_DEFINITIONS = [
 export const RETIRED_PERMISSIONS = {
   // ماژول انبار هیچ‌گاه صفحه/مدل/API نداشت؛ رهگیری اقلامِ سفارش قابلیتِ
   // دیگری است و معادل بودنشان تأیید نشده → حذف، نه نگاشت.
+  ...Object.fromEntries(["users.manageCoaches", "coaches.view", "coaches.manage", "coaches.manageCredits"].map(key => [
+    key, { action: "drop", replacement: [], reason: "این قابلیت از فروشگاه حذف شده است." },
+  ])),
   "inventory.view": {
     action: "drop",
     replacement: [],
@@ -812,12 +799,6 @@ export const RETIRED_PERMISSIONS = {
     reason: "صفحات CMS حذف نمی‌شوند؛ فقط محتوایشان ویرایش و انتشارشان قطع می‌شود.",
   },
 
-  // عنوان کلید قدیمی دقیقاً «مدیریت مربیان» بود → نگاشت قطعی.
-  "users.manageCoaches": {
-    action: "rewrite",
-    replacement: ["coaches.manage"],
-    reason: "مدیریت مربیان به ماژول مستقل coaches منتقل شد (عنوان قدیمی عیناً همین بود).",
-  },
 
   // تنها اکشنِ ویرایشیِ بخش «صفحه اصلی» بود و آن بخش دقیقاً همین پنج صفحه است.
   "home.edit": {
@@ -1161,9 +1142,6 @@ export const ADMIN_ROUTE_PERMISSIONS = {
   // admins.viewActivity گیت می‌شود، پس بازکردنِ صفحه فقط admins.view می‌خواهد.
   "/p-admin/users/admins/[adminId]": ["admins.view"],
   "/p-admin/users/admins/edit/[adminId]": ["admins.edit"],
-  "/p-admin/users/coaches": ["coaches.view"],
-  "/p-admin/users/coaches/[coachId]": ["coaches.view"],
-  "/p-admin/users/coaches/[coachId]/credit/[orderId]": ["coaches.manageCredits"],
   "/p-admin/users/notifications": ["userNotifications.view"],
 };
 

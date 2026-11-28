@@ -13,7 +13,7 @@ const { getWalletHistory } = await import('../services/walletHistory.service.js'
 const User = mongoose.model('User');
 const Ledger = mongoose.model('WalletTransaction');
 const Receipt = mongoose.model('WalletAdjustment');
-const models = [User, Ledger, Receipt, mongoose.model('ReviewCreditTransaction'), mongoose.model('CoachWalletTransaction')];
+const models = [User, Ledger, Receipt, mongoose.model('ReviewCreditTransaction')];
 let replica, user, admin;
 before(async () => {
   replica = await MongoMemoryReplSet.create({ replSet: { count: 1 } });

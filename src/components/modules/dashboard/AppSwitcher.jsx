@@ -23,7 +23,7 @@ export default function AppSwitcher({ apps }) {
   }, [])
 
   return <>
-    <button className="desk-switch-trigger" aria-haspopup="dialog" onClick={() => dialog.current.showModal()}>
+    <button className="desk-switch-trigger" aria-label="جستجوی برنامه‌ها" title="جستجوی برنامه‌ها (Ctrl K)" aria-haspopup="dialog" onClick={() => dialog.current.showModal()}>
       <Grid2X2 size={15}/> برنامه‌ها <kbd dir="ltr">Ctrl K</kbd>
     </button>
     <dialog ref={dialog} aria-label="رفتن به برنامه" className="desk-switcher" onClose={() => setQuery('')}
@@ -31,7 +31,12 @@ export default function AppSwitcher({ apps }) {
       <div>
         <div className="desk-switch-search">
           <Search size={18}/><input autoFocus aria-label="نام برنامه" placeholder="رفتن به برنامه…" value={query} onChange={event => setQuery(event.target.value)}
-            onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) dialog.current.querySelector('a')?.click() }}/>
+            onKeyDown={event => {
+              if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+                event.preventDefault()
+                dialog.current.querySelector('a')?.click()
+              }
+            }}/>
           <button aria-label="بستن" onClick={() => dialog.current.close()}><X size={18}/></button>
         </div>
         <nav aria-label="نتایج جستجوی برنامه">

@@ -105,17 +105,10 @@ export const AUDIT_ENUMS = {
   // برچسب، رشته‌ی خام نمایش می‌داد.
   userRole: {
     user: "کاربر",
-    coach: "مربی",
     admin: "مدیر",
     seller: "فروشنده (حذف‌شده)",
     national_player: "ملی‌پوش",
     store: "فروشگاه",
-  },
-  coachApplicationStatus: {
-    none: "بدون درخواست",
-    pending: "در انتظار بررسی",
-    approved: "تأییدشده",
-    rejected: "ردشده",
   },
   checkStatus: {
     PENDING: "در انتظار",
@@ -399,9 +392,6 @@ export const AUDIT_ENTITIES = {
       level: { label: "سطح", type: "number" },
       walletBalance: { label: "موجودی کیف پول", type: "price" },
       vipExpiresAt: { label: "انقضای ویژه", type: "date" },
-      coachCode: { label: "کد مربی" },
-      "coachApplication.status": { label: "وضعیت درخواست مربیگری", enum: "coachApplicationStatus" },
-      "coachApplication.rejectionReason": { label: "دلیل رد مربیگری" },
     },
     refine: ({ changes, name }) => {
       if (changes?.isBanned) {
@@ -412,12 +402,6 @@ export const AUDIT_ENTITIES = {
       if (changes?.role) return { action: "user.role.change", description: `تغییر نقش کاربر ${name}` };
       if (changes?.walletBalance) {
         return { action: "user.wallet.adjust", description: `تغییر موجودی کیف پول ${name}` };
-      }
-      if (changes?.["coachApplication.status"]) {
-        return {
-          action: "user.coach.review",
-          description: `بررسی درخواست مربیگری ${name}`,
-        };
       }
       return { action: "user.profile.update", description: `ویرایش کاربر ${name}` };
     },
@@ -664,7 +648,6 @@ export const AUDIT_ENTITIES = {
   TicketMessage: { key: "ticketMessage", label: "پیام تیکت", priority: 61 },
   ContactMessage: { key: "contactMessage", label: "پیام تماس", priority: 50 },
   UserNotification: { key: "userNotification", label: "اطلاعیه کاربران", priority: 57 },
-  CoachCredit: { key: "coachCredit", label: "اعتبار مربی", priority: 82 },
   WalletTransaction: {
     key: "walletTransaction", label: "تراکنش کیف پول کاربر", priority: 85,
     fields: {
@@ -678,7 +661,6 @@ export const AUDIT_ENTITIES = {
     },
   },
   WalletAdjustment: { key: "walletAdjustment", label: "افزایش یا کاهش کیف پول توسط ادمین", priority: 84 },
-  CoachWalletTransaction: { key: "coachWallet", label: "تراکنش کیف پول مربی", priority: 82 },
   ReviewCreditTransaction: { key: "reviewCredit", label: "اعتبار نظر", priority: 50 },
   ProductPromptConfig: {
     key: "productPrompts",
@@ -852,7 +834,6 @@ export const REFINED_ACTIONS = {
   "user.unban": "رفع مسدودیت کاربر",
   "user.role.change": "تغییر نقش کاربر",
   "user.wallet.adjust": "تغییر موجودی کیف پول",
-  "user.coach.review": "بررسی درخواست مربیگری",
   "user.profile.update": "ویرایش پروفایل کاربر",
   "admin.create": "افزودن ادمین",
   "admin.revoke": "لغو دسترسی ادمین",

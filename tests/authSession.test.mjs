@@ -24,7 +24,7 @@ function profileHarness(token, decoded, account) {
     'base/utils/auth': { verifyToken: () => decoded },
     'base/models/User': { default: { findById: id => {
       assert.equal(id, decoded.userId);
-      return { select: fields => { assert.equal(fields, '-password'); return { populate: async () => account }; } };
+      return { select: async fields => { assert.ok(!fields.split(' ').includes('password')); return account; } };
     } } },
   });
   return { readAuthProfile, connections: () => connections };
@@ -36,7 +36,7 @@ for (const [name, token, decoded] of [['guest', null, null], ['expired token', '
     assert.equal(h.connections(), 0);
   });
 }
-test('verified user retains profile fields and coach referral without exposing password', async () => {
+test('verified user retains profile fields after role retirement without exposing password', async () => {
   const h = profileHarness('valid', { userId: 'a' }, {
     _id: 'a', name: 'Name', role: 'coach', coachCode: 'CODE', password: 'secret',
     walletBalance: 123, coachApplication: { certificateImage: 'cert', status: 'approved' },
@@ -44,9 +44,10 @@ test('verified user retains profile fields and coach referral without exposing p
   const { user, status } = await h.readAuthProfile('https://tenador.com');
   assert.equal(status, 200);
   assert.equal(user.id, 'a');
-  assert.equal(user.coachCertificate, 'cert');
+  assert.equal(user.role, 'user');
+  assert.equal(user.coachCertificate, undefined);
   assert.equal(user.walletBalance, 123);
-  assert.equal(user.referralLink, 'https://tenador.com/register?ref=CODE');
+  assert.equal(user.referralLink, undefined);
   assert.equal(user.password, undefined);
 });
 test('deleted account is a missing profile', async () => {

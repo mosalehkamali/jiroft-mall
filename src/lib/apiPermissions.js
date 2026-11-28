@@ -101,20 +101,6 @@ export const ADMIN_API_PERMISSIONS = {
     DELETE: "articleTaxonomy.manage",
   },
 
-  // ── مربیان ─────────────────────────────────────────────────────────
-  "/admin/coaches": { GET: "coaches.view" },
-  "/admin/coaches/[coachId]/orders": { GET: "coaches.view" },
-  "/admin/coaches/[coachId]/wallet": { POST: "coaches.manageCredits" },
-  "/admin/coach-applications": { GET: "coaches.view" },
-  "/admin/coach-applications/[id]/review": { PUT: "coaches.manage" },
-  "/admin/coach-credits": {
-    GET: "coaches.view",
-    POST: "coaches.manageCredits",
-  },
-  "/admin/coach-credits/[id]": {
-    PATCH: "coaches.manageCredits",
-    DELETE: "coaches.manageCredits",
-  },
 
   // ── پشتیبانی ───────────────────────────────────────────────────────
   "/admin/users/[userId]/wallet": { GET: "users.view", POST: "users.adjustWallet" },
@@ -446,8 +432,6 @@ export function resolveSiteSettingPermission(key, action) {
 export const NOTIFICATION_TYPE_PERMISSIONS = {
   new_order: "orders.view",
   new_payment: "payments.view",
-  coach_student_order: "coaches.view",
-  coach_application: "coaches.view",
   new_ticket: "tickets.view",
   new_comment: "comments.view",
 };
@@ -535,7 +519,8 @@ export function constrainReadFilterToPermissions(filter, permissions) {
   // «هیچ‌چیز» تبدیل می‌شود (`$in: []`).
   const NOTHING = { type: [] };
 
-  for (const ref of ["order", "coach", "ticket"]) {
+  if (Object.keys(safe).some(key => !["order", "ticket", "type", "ids", "all"].includes(key))) return NOTHING;
+  for (const ref of ["order", "ticket"]) {
     if (safe[ref] !== undefined && !isObjectIdLike(safe[ref])) return NOTHING;
   }
   if (safe.ids !== undefined) {
@@ -691,7 +676,6 @@ const USER_EDIT_FIELDS = [
   "phone",
   "avatar",
   "level",
-  "coach",
 ];
 
 /**

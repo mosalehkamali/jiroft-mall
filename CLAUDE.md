@@ -1384,7 +1384,6 @@ Beyond the storefront, several self-contained subsystems each span a model + ser
 | Reviews / comments | `services/comment.service.js`, `models/Comment.js` | Moderated, one-per-product, "verified purchase" badge, buyer photos and one level of replies — see **Comment photos and replies** below |
 | Support tickets | `models/Ticket.js`, `models/TicketMessage.js`, `api/tickets`, `api/admin/tickets` | Department/priority ticket system with per-ticket chat (user dashboard + admin panel), attachments via `/api/upload`, email notice on admin reply |
 | CMS info pages | `services/pageContent.service.js`, `src/lib/pageDefaults.js`, `models/PageContent.js` | Block-based editor; `SectionRenderer` renders blocks; `ContactMessage` inbox |
-| Coach system | `models/CoachCredit.js`, `models/CoachWalletTransaction.js`, `api/admin/coach-*` | Coach applications, codes, credits/wallet |
 | Second-hand / used | `models/UsedProduct.js`, `api/admin/used-products` | Used-product listings with health scale |
 | Installments | `models/Installment.js`, `api/installments`, `workers/installmentReminderWorker.js` | Check-based installment payments + due-date reminder worker |
 | Order flows | `src/lib/flowTraversal.js`, `p-admin/admin-order-flows`, `models/OrderFlow*` | Admin-defined DAG of order stages; traversal turns the graph into a customer-facing step sequence |
@@ -1573,7 +1572,7 @@ Rules that are load-bearing:
   this request comes from zarinpal.com, so a redirect chain reached `/p-user/*` without them and the customer
   landed on the login form. A navigation started by our own page is same-site.
 - A re-opened callback of an already-PAID payment re-runs `confirmOrderPaid` (idempotent) — the recovery path if
-  the first attempt crashed after verify. Coach credit runs only with `features.coach`.
+  the first attempt crashed after verify.
 - ZarinPal binds a terminal to the server's outbound IP (`Terminal ip not valid`), so the host needs a static IP.
 
 ```bash
@@ -1622,7 +1621,7 @@ login, Google client credentials) without writing anything; `docs/DEPLOY.md` is 
 ### Key Conventions
 
 - **RTL/Persian first:** The app is fully right-to-left. UI components use Vazirmatn font (loaded in `src/app/globals.css`). Always consider RTL layout when building new UI. Farsi inline comments are common throughout the codebase.
-- **Images via ImageKit (migrated from Cloudinary):** Uploads go through `POST /api/upload` using the ImageKit SDK; coach-document PDFs are uploaded as private files and served through the signed-URL proxy at `src/app/api/files/pdf/route.js`. `next/image` uses a custom loader (`src/lib/imagekitLoader.js`) so Vercel image optimization is bypassed entirely; the loader also passes through `res.cloudinary.com` URLs unchanged, and skips transforms for SVGs (adds `tr=orig-true` to stop ImageKit rasterizing them). Never use local `/public` for user-uploaded content.
+- **Images via ImageKit (migrated from Cloudinary):** Uploads go through `POST /api/upload` using the ImageKit SDK; PDF uploads are uploaded as private files and served through the signed-URL proxy at `src/app/api/files/pdf/route.js`. `next/image` uses a custom loader (`src/lib/imagekitLoader.js`) so Vercel image optimization is bypassed entirely; the loader also passes through `res.cloudinary.com` URLs unchanged, and skips transforms for SVGs (adds `tr=orig-true` to stop ImageKit rasterizing them). Never use local `/public` for user-uploaded content.
 - **React Compiler is enabled** (`reactCompiler: true` in `next.config.mjs`) — don't add manual `useMemo`/`useCallback` for plain render memoization.
 - **Tailwind v4:** No `tailwind.config.js` — configuration is done via CSS variables in `globals.css`; the values come from `store.config.js` → `theme` (emitted by `StoreHead`). Use `var(--color-primary)` etc., never hex literals.
 - **Mixed JS/JSX:** Most files are `.js` or `.jsx`, not TypeScript. `tsconfig.json` exists but `strict` is off.

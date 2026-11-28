@@ -12,8 +12,8 @@ import { useAdminPermissions } from '@/components/admin/AdminPermissionProvider'
 import { getUserFullName } from 'base/utils/userName'
 import {
   ArrowRight, User, Mail, Phone, Calendar, Save, Edit3, X,
-  Shield, GraduationCap, Wallet, Ban, CheckCircle2, MapPin,
-  Package, CreditCard, Users as UsersIcon, Award, Star, ChevronLeft,
+  Shield, Wallet, Ban, CheckCircle2, MapPin,
+  Package, CreditCard, Star, ChevronLeft,
   Loader2, Hash
 } from 'lucide-react'
 
@@ -38,7 +38,6 @@ const FIELD_PERMISSION = {
 // نقشِ «فروشنده» (seller) حذف شده — با «فروشگاه» (store) اضافی بود.
 const roleOptions = [
   { value: 'user', label: 'کاربر عادی' },
-  { value: 'coach', label: 'مربی' },
   { value: 'national_player', label: 'ورزشکار ملی' },
   { value: 'store', label: 'فروشگاه' },
 ]
@@ -211,7 +210,7 @@ export default function AdminUserDetailsPage() {
     )
   }
 
-  const { user, addresses, orders, payments, students } = data
+  const { user, addresses, orders, payments } = data
 
   return (
     <div className="space-y-5" dir="rtl">
@@ -325,7 +324,7 @@ export default function AdminUserDetailsPage() {
                   </select>
                 ) : (
                   <div className="flex items-center gap-2 text-xs font-bold text-gray-700 bg-gray-50/60 border border-gray-100 rounded-[var(--radius)] px-3 py-2">
-                    {user.role === 'admin' ? <Shield size={14} className="text-purple-500" /> : user.role === 'coach' ? <GraduationCap size={14} className="text-amber-500" /> : <User size={14} className="text-gray-400" />}
+                    {user.role === 'admin' ? <Shield size={14} className="text-purple-500" /> : <User size={14} className="text-gray-400" />}
                     {roleOptions.find(r => r.value === user.role)?.label || 'کاربر عادی'}
                   </div>
                 )}
@@ -382,7 +381,6 @@ export default function AdminUserDetailsPage() {
 
             <div className="mt-4 pt-4 border-t flex flex-wrap gap-x-6 gap-y-2 text-[11px] font-bold text-gray-400" style={{ borderColor: 'var(--color-surface)' }}>
               <span className="flex items-center gap-1"><Calendar size={12} /> عضویت: {fmtDate(user.createdAt)}</span>
-              {user.coachCode && <span className="flex items-center gap-1"><Hash size={12} /> کد مربی: <span className="font-mono text-amber-600">{user.coachCode}</span></span>}
               <span className="flex items-center gap-1"><Hash size={12} /> شناسه: <span className="font-mono">{user._id}</span></span>
             </div>
           </Card>
@@ -473,64 +471,11 @@ export default function AdminUserDetailsPage() {
             )}
           </Card>
 
-          {/* Students (coach only) */}
-          {user.role === 'coach' && (
-            <Card>
-              <SectionTitle icon={UsersIcon} title="شاگردان تحت پوشش" count={students.length} />
-              {students.length > 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {students.map((s) => (
-                    <div
-                      key={s._id}
-                      onClick={() => router.push(`/p-admin/users/${s._id}`)}
-                      className="flex items-center gap-3 p-3 rounded-[var(--radius)] border border-gray-100 bg-gray-50/50 hover:bg-gray-100/60 cursor-pointer transition-colors"
-                    >
-                      {s.avatar ? (
-                        <img src={s.avatar} alt={s.name} className="w-9 h-9 rounded-full object-cover" />
-                      ) : (
-                        <div className="w-9 h-9 rounded-full bg-slate-900 text-[var(--color-primary)] flex items-center justify-center font-bold text-xs">
-                          {(s.name || '؟').charAt(0)}
-                        </div>
-                      )}
-                      <div className="min-w-0">
-                        <span className="text-xs font-bold text-gray-800 block truncate">{getUserFullName(s, "\u0628\u062f\u0648\u0646 \u0646\u0627\u0645")}</span>
-                        <span className="text-[10px] font-mono text-gray-400 block">{s.phone || '—'} · {fmtDate(s.createdAt)}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-xs font-bold text-gray-400 text-center py-6">این مربی هنوز هیچ شاگردی ندارد.</p>
-              )}
-            </Card>
-          )}
         </div>
 
         {/* Right column */}
         <div className="space-y-5">
 
-          {/* Assigned coach */}
-          {user.coach && (
-            <Card>
-              <SectionTitle icon={Award} title="مربی اختصاصی" />
-              <div
-                onClick={() => router.push(`/p-admin/users/${user.coach._id}`)}
-                className="flex items-center gap-3 p-3 rounded-[var(--radius)] border border-amber-100 bg-amber-50/40 hover:bg-amber-50 cursor-pointer transition-colors"
-              >
-                {user.coach.avatar ? (
-                  <img src={user.coach.avatar} alt={getUserFullName(user.coach)} className="w-11 h-11 rounded-full object-cover" />
-                ) : (
-                  <div className="w-11 h-11 rounded-full bg-slate-900 text-[var(--color-primary)] flex items-center justify-center font-bold">
-                    {(user.coach.name || 'م').charAt(0)}
-                  </div>
-                )}
-                <div>
-                  <span className="text-xs font-bold text-gray-800 block">{getUserFullName(user.coach)}</span>
-                  <span className="text-[10px] font-mono text-amber-600 block mt-0.5">{user.coach.coachCode}</span>
-                </div>
-              </div>
-            </Card>
-          )}
 
           {/* Addresses */}
           <Card>

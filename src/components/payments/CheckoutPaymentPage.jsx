@@ -81,7 +81,6 @@ const CheckoutPaymentPage = () => {
   const walletAmount = Number(checkout?.walletAmount || 0);
   const payable = Math.max(0, totalPrice - walletAmount);
   const fullyWalletPaid = walletAmount > 0 && payable === 0;
-  const fullyCovered = payable === 0 && (walletAmount > 0 || !!appliedCoupon?.createdByCoach);
 
   // ─── بارگذاری اطلاعات مرحله ثبت سفارش ───
   useEffect(() => {
@@ -191,7 +190,7 @@ const CheckoutPaymentPage = () => {
 
   // ─── ثبت رسید بانکی ───
   const handleBankReceiptSubmit = async () => {
-    if (receiptUrls.length === 0 && !fullyCovered) {
+    if (receiptUrls.length === 0 && !fullyWalletPaid) {
       toast.error('لطفاً حداقل یک تصویر فیش واریزی بارگذاری کنید.');
       return;
     }
@@ -215,7 +214,7 @@ const CheckoutPaymentPage = () => {
 
       await handleCheckoutSuccess(
         data.trackingCode,
-        fullyCovered ? 'سفارش شما بدون مانده پرداخت ثبت شد.' : 'سفارش شما ثبت شد؛ اطلاعات پرداخت در حال بررسی است و نتیجه تا ساعاتی دیگر اعلام خواهد شد.',
+        fullyWalletPaid ? 'سفارش شما بدون مانده پرداخت ثبت شد.' : 'سفارش شما ثبت شد؛ اطلاعات پرداخت در حال بررسی است و نتیجه تا ساعاتی دیگر اعلام خواهد شد.',
       );
     } catch (error) {
       console.error(error);
@@ -354,7 +353,7 @@ const CheckoutPaymentPage = () => {
   // ─── سفارش مجازی (هنوز در دیتابیس ساخته نشده) برای کامپوننت‌های نمایش ───
   const pseudoOrder = {
     trackingCode:  null, // پس از تکمیل پرداخت صادر می‌شود
-    paymentMethod: fullyCovered ? (fullyWalletPaid ? 'WALLET' : 'BANK_RECEIPT') : checkout.paymentMethod,
+    paymentMethod: fullyWalletPaid ? 'WALLET' : checkout.paymentMethod,
     walletPaid: walletAmount,
     payments: walletAmount > 0 ? [{ method: 'WALLET', status: 'PAID', amount: walletAmount }] : [],
     items: cartItems.map((item) => ({
@@ -397,7 +396,7 @@ const CheckoutPaymentPage = () => {
   );
 
   // ─── اقساط ───
-  if (checkout.paymentMethod === 'INSTALLMENT' && !fullyCovered) {
+  if (checkout.paymentMethod === 'INSTALLMENT' && !fullyWalletPaid) {
     return (
       <div>
         {backLink}
@@ -411,8 +410,8 @@ const CheckoutPaymentPage = () => {
   }
 
   // ─── رسید بانکی / پرداخت آنلاین ───
-  const isOnline = checkout.paymentMethod === 'ONLINE' && !fullyCovered;
-  const isRoz = checkout.paymentMethod === 'ROZPARDAKHT' && !fullyCovered;
+  const isOnline = checkout.paymentMethod === 'ONLINE' && !fullyWalletPaid;
+  const isRoz = checkout.paymentMethod === 'ROZPARDAKHT' && !fullyWalletPaid;
   const inputCls = 'w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-center text-lg tracking-widest outline-none focus:border-[var(--color-primary)]';
 
   if (isRoz) {
@@ -502,15 +501,15 @@ const CheckoutPaymentPage = () => {
         </div>
 
         <div className="md:w-2/3 flex flex-col gap-4 sm:gap-6 md:px-6">
-          {!fullyCovered && !isOnline && <BankInfoBox />}
+          {!fullyWalletPaid && !isOnline && <BankInfoBox />}
 
-          {!fullyCovered && !isOnline && <ReceiptUploader onFileChange={setReceiptUrls} />}
+          {!fullyWalletPaid && !isOnline && <ReceiptUploader onFileChange={setReceiptUrls} />}
           {isOnline && (
             <p className="rounded-xl border border-slate-200 bg-white p-4 text-sm leading-7 text-slate-700">
               با زدن دکمه‌ی زیر به درگاه امن زرین‌پال منتقل می‌شوید. سفارش شما پس از پرداخت موفق ثبت نهایی می‌شود.
             </p>
           )}
-          {fullyCovered && <p className="rounded-xl bg-emerald-50 p-4 text-sm text-emerald-800">مبلغ سفارش با اعتبار انتخاب‌شده پوشش داده می‌شود و نیازی به فیش بانکی نیست.</p>}
+          {fullyWalletPaid && <p className="rounded-xl bg-emerald-50 p-4 text-sm text-emerald-800">مبلغ سفارش با اعتبار انتخاب‌شده پوشش داده می‌شود و نیازی به فیش بانکی نیست.</p>}
 
           <EmailBox
             show={!user?.email}
@@ -534,7 +533,7 @@ const CheckoutPaymentPage = () => {
           ) : (
             <SubmitPaymentButton
               loading={submitLoading}
-              disabled={(!fullyCovered && receiptUrls.length === 0) || !rulesChecked}
+              disabled={(!fullyWalletPaid && receiptUrls.length === 0) || !rulesChecked}
               onClick={handleBankReceiptSubmit}
             />
           )}

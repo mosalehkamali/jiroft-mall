@@ -6,26 +6,23 @@ import storeConfig from "base/store.config";
  *
  * ── ساخت اعلان (triggerها) ──
  * توابع notify* هرگز استثنا پرتاب نمی‌کنند؛ هر خطایی فقط لاگ می‌شود تا جریان
- * اصلی (ثبت سفارش / تأیید پرداخت / درخواست مربیگری) هیچ‌وقت به‌خاطر اعلان نشکند.
+ * اصلی (ثبت سفارش / تأیید پرداخت) هیچ‌وقت به‌خاطر اعلان نشکند.
  * نوشتن یک insert تکی زیر-میلی‌ثانیه است، بنابراین await می‌شود تا روی
  * سرورلِس (Vercel) قبل از فریز شدن تابع، واقعاً ذخیره شود.
  */
 
 import Notification, { NOTIFICATION_TYPES } from "base/models/Notification";
-import { getUserFullName } from "base/utils/userName";
 import { isFeatureEnabled } from "@/lib/features";
 
 /** نگاشت نوع → بخش سایدبار (برای بَج‌ها) */
 export const SECTION_BY_TYPE = {
   new_order: "orders",
   new_payment: "orders",
-  coach_student_order: "coachCredits",
-  coach_application: "coachApplications",
   new_ticket: "support",
   new_comment: "support",
 };
 
-const SECTIONS = ["orders", "coachCredits", "coachApplications", "support"];
+const SECTIONS = ["orders", "support"];
 
 /* ─────────────────────────  ساخت اعلان  ───────────────────────── */
 
@@ -92,36 +89,6 @@ export async function notifyNewPayment(order, payment = null, { confirmed = true
   await safeCreate(doc, dedupeFilter);
 }
 
-/**
- * شاگردِ یک مربی سفارش ثبت کرده — ادمین باید برای مربی کردیت ثبت کند.
- * @param order  سند سفارش (حداقل _id)
- * @param coach  سند مربی ({ _id, name })
- */
-export async function notifyCoachStudentOrder(order, coach) {
-  if (!isFeatureEnabled("coach") || !order?._id || !coach?._id) return;
-  const coachName = getUserFullName(coach, "\u0645\u0631\u0628\u06cc");
-  await safeCreate({
-    type: "coach_student_order",
-    message: `شاگرد ${coachName} سفارش ثبت کرده، برای او کردیت ثبت کنید`,
-    order: order._id,
-    coach: coach._id,
-    actor: order.user || null,
-    // صفحه‌ی ثبت کردیت مربی برای همین سفارش
-    link: `/p-admin/users/coaches/${coach._id}/credit/${order._id}`,
-  });
-}
-
-/** درخواست مربیگری جدید */
-export async function notifyCoachApplication(applicant) {
-  if (!isFeatureEnabled("coach") || !applicant?._id) return;
-  const name = applicant.coachApplication?.fullName || getUserFullName(applicant, "\u06cc\u06a9 \u06a9\u0627\u0631\u0628\u0631");
-  await safeCreate({
-    type: "coach_application",
-    message: `${name} درخواست مربیگری ثبت کرده است`,
-    actor: applicant._id,
-    link: `/p-admin/users/coaches?tab=applications`,
-  });
-}
 
 /** تیکت پشتیبانی جدید یا پاسخ کاربر روی تیکت — نیاز به رسیدگی ادمین */
 export async function notifyNewTicket(ticket, { reply = false } = {}) {
@@ -175,7 +142,6 @@ export function buildReadQuery(filter = {}) {
   const query = { isRead: false };
 
   if (filter.order) query.order = filter.order;
-  if (filter.coach) query.coach = filter.coach;
   if (filter.ticket) query.ticket = filter.ticket;
   if (filter.type) {
     const types = Array.isArray(filter.type) ? filter.type : [filter.type];
@@ -190,7 +156,7 @@ export function buildReadQuery(filter = {}) {
 
 /**
  * علامت‌گذاری متمرکز اعلان‌ها به‌عنوان خوانده‌شده.
- * فیلتر بر اساس یکی از: entity ref (order/coach/ticket)، type، ids، یا all.
+ * فیلتر بر اساس یکی از: entity ref (order/ticket)، type، ids، یا all.
  * فقط اعلان‌های خوانده‌نشده آپدیت می‌شوند و شمارشِ به‌روز برمی‌گردد.
  */
 export async function markNotificationsRead(filter = {}) {
@@ -237,7 +203,7 @@ export async function getRecentNotifications(limit = 20) {
   const safeLimit = Math.min(Math.max(Number(limit) || 20, 1), 50);
 
   const [items, counts] = await Promise.all([
-    Notification.find({})
+    Notification.find({ type: { $in: NOTIFICATION_TYPES } })
       .sort({ createdAt: -1 })
       .limit(safeLimit)
       .lean(),

@@ -65,8 +65,9 @@ test('checkout forwards authoritative gross total and requested wallet debit to 
 });
 test('full wallet payment skips bank receipt and installment prerequisites', async () => {
   for (const paymentMethod of ['BANK_RECEIPT', 'INSTALLMENT']) {
-    const { response } = await checkout(requestBody({ walletAmount: 1000, paymentMethod, receiptImageUrls: [] }));
+    const { response, calls } = await checkout(requestBody({ walletAmount: 1000, paymentMethod, receiptImageUrls: [] }));
     assert.equal(response.status, 201);
+    assert.equal(calls.find(c => c[0] === 'create')[1].amount, 1000);
   }
 });
 test('installment principal excludes wallet and bank downpayment exactly once', async () => {
@@ -109,21 +110,12 @@ test('zero-wallet checkout retains ordinary bank receipt totals and does not cal
 });
 
 
-test('coach coupon checkout uses atomic persistence even when wallet debit is zero', async () => {
-  const coupon = { _id: 'gift', code: 'GIFT', createdByCoach: 'coach', coachName: 'Coach Name' };
-  const { response, calls } = await checkout(requestBody({ walletAmount: 0, couponCode: 'GIFT' }), { coupon });
-  assert.equal(response.status, 201);
-  const args = calls.find(c => c[0] === 'create')[1];
-  assert.equal(args.amount, 0);
-  assert.equal(args.draft.coupon.createdByCoach, 'coach');
-  assert.equal(args.draft.coupon.coachName, 'Coach Name');
-});
 
-test('full coach coupon permits zero payable without receipt or installment data', async () => {
+test('retired coupon cannot bypass checkout at zero payable', async () => {
   const coupon = { _id: 'gift', code: 'GIFT', createdByCoach: 'coach', coachName: 'Coach Name' };
   for (const paymentMethod of ['BANK_RECEIPT', 'INSTALLMENT']) {
     const { response, calls } = await checkout(requestBody({ walletAmount: 0, couponCode: 'GIFT', paymentMethod, expectedTotal: 0, receiptImageUrls: [] }), { coupon, price: 0 });
-    assert.equal(response.status, 201);
-    assert.equal(calls.find(c => c[0] === 'create')[1].draft.totalPrice, 0);
+    assert.equal(response.status, 400);
+    assert.ok(!calls.some(c => c[0] === "create"));
   }
 });

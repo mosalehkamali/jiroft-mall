@@ -7,8 +7,6 @@ import { FiBell } from "react-icons/fi";
 import {
   ShoppingCart,
   BadgeDollarSign,
-  GraduationCap,
-  UserPlus,
   LifeBuoy,
   MessageSquare,
   CheckCheck,
@@ -27,16 +25,6 @@ const TYPE_CONFIG = {
     Icon: BadgeDollarSign,
     color: "#16a34a",
     label: "پرداخت جدید",
-  },
-  coach_student_order: {
-    Icon: GraduationCap,
-    color: "var(--color-secondary)",
-    label: "کردیت مربی",
-  },
-  coach_application: {
-    Icon: UserPlus,
-    color: "#6366f1",
-    label: "درخواست مربیگری",
   },
   new_ticket: {
     Icon: LifeBuoy,

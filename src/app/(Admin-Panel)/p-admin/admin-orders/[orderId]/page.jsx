@@ -10,7 +10,7 @@ export default async function AdminOrderDetailPage({ params }) {
 
   return (
     <>
-      {/* مشاهده‌ی سفارش → اعلان‌های مرتبط (سفارش/پرداخت/کردیت مربی) خوانده می‌شوند */}
+      {/* مشاهده‌ی سفارش → اعلان‌های مرتبط (سفارش/پرداخت) خوانده می‌شوند */}
       <MarkNotificationsRead filter={{ order: orderId }} />
       <AdminOrderDetailClient orderId={orderId} />
     </>

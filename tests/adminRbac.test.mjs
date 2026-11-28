@@ -1174,8 +1174,6 @@ test("the notification bell only exposes modules the admin can reach", () => {
   const sectionByType = {
     new_order: "orders",
     new_payment: "orders",
-    coach_student_order: "coachCredits",
-    coach_application: "coachApplications",
     new_ticket: "support",
   };
   const payload = {
@@ -1189,11 +1187,9 @@ test("the notification bell only exposes modules the admin can reach", () => {
       byType: {
         new_order: 5,
         new_payment: 2,
-        coach_student_order: 1,
-        coach_application: 1,
         new_ticket: 3,
       },
-      sections: { orders: 7, coachCredits: 1, coachApplications: 1, support: 3 },
+      sections: { orders: 7, support: 3 },
     },
     contactNew: 4,
   };
@@ -1212,7 +1208,7 @@ test("the notification bell only exposes modules the admin can reach", () => {
   const none = filterNotificationPayload(payload, ["articles.view"], sectionByType);
   assert.deepEqual(none.items, []);
   assert.equal(none.counts.total, 0);
-  assert.deepEqual(Object.values(none.counts.sections), [0, 0, 0, 0]);
+  assert.deepEqual(Object.values(none.counts.sections), [0, 0]);
 
   // با contactMessages.view شمارنده برمی‌گردد
   assert.equal(
@@ -1274,7 +1270,7 @@ test("a malformed id narrows the read filter to nothing, never widens it", () =>
     constrainReadFilterToPermissions({ order: { $ne: null } }, perms),
     { type: [] }
   );
-  for (const ref of ["order", "coach", "ticket"]) {
+  for (const ref of ["order", "ticket"]) {
     assert.deepEqual(
       constrainReadFilterToPermissions({ [ref]: "nope" }, perms),
       { type: [] },
@@ -1707,11 +1703,10 @@ test("legacy snapshot backfill rewrites, drops and preserves deterministically",
   });
 
   const backfill = plan.grantBackfills[0];
-  assert.deepEqual(backfill.grants.sort(), ["coaches.manage", "products.view"]);
+  assert.deepEqual(backfill.grants.sort(), ["products.view"]);
   assert.deepEqual(backfill.rewritten, [
-    { from: "users.manageCoaches", to: ["coaches.manage"] },
   ]);
-  assert.deepEqual(backfill.dropped.map((d) => d.key), ["inventory.view"]);
+  assert.deepEqual(backfill.dropped.map((d) => d.key).sort(), ["inventory.view", "users.manageCoaches"]);
   assert.deepEqual(backfill.ambiguous.map((a) => a.key), ["events.edit"]);
   assert.deepEqual(backfill.unknown, ["bogus.key"]);
 
@@ -2622,14 +2617,9 @@ test("content and taxonomy keep view separate from write", () => {
   assert.notEqual(m["/admin/events/[id]"].PUT, m["/admin/events/[id]/status"].PUT);
 });
 
-test("support and coach money paths are not folded into a single view key", () => {
+test("support reply and status paths are not folded into a single view key", () => {
   const m = ADMIN_API_PERMISSIONS;
 
-  // شارژِ کیف پول مربی پول واقعی جابه‌جا می‌کند
-  assert.equal(m["/admin/coaches/[coachId]/wallet"].POST, "coaches.manageCredits");
-  assert.notEqual(m["/admin/coaches"].GET, m["/admin/coaches/[coachId]/wallet"].POST);
-  // تأییدِ درخواستِ مربیگری نقشِ کاربر را ارتقا می‌دهد
-  assert.equal(m["/admin/coach-applications/[id]/review"].PUT, "coaches.manage");
   // پاسخ به تیکت با بستنِ تیکت یکی نیست
   assert.notEqual(m["/admin/tickets/[id]"].PATCH, m["/admin/tickets/[id]/messages"].POST);
   assert.equal(m["/admin/tickets/[id]/messages"].POST, "tickets.reply");
@@ -3382,10 +3372,7 @@ test("discount tabs carry the module they actually belong to", () => {
     "utf8"
   );
 
-  // کردیت مربیان زیرِ ماژول «مربیان» است، نه «تخفیف‌ها» — همان‌طور که API هست.
-  assert.match(source, /id: "coachCredits".*view: "coaches\.view", create: "coaches\.manageCredits"/);
   assert.match(source, /id: "discounts".*view: "discounts\.view", create: "discounts\.create"/);
-  assert.equal(ADMIN_API_PERMISSIONS["/admin/coach-credits"].POST, "coaches.manageCredits");
   assert.equal(ADMIN_API_PERMISSIONS["/admin/coupons"].POST, "discounts.create");
 
   // آرایه قبل از رندر کوتاه می‌شود و تبِ پیش‌فرض هم از همان فهرست می‌آید
@@ -3401,7 +3388,6 @@ test("every discount card gates its own row actions", () => {
     "DiscountRuleCard.jsx": ["discounts.edit", "discounts.delete"],
     "QuantityDiscountCard.jsx": ["discounts.edit", "discounts.delete"],
     "CouponCard.jsx": ["discounts.edit", "discounts.delete"],
-    "CoachCreditCard.jsx": ["coaches.manageCredits"],
   };
 
   for (const [file, keys] of Object.entries(expected)) {
@@ -3732,7 +3718,6 @@ test("the users list gates banning and its cross-module shortcuts", () => {
   for (const route of [
     "/p-admin/users/notifications",
     "/p-admin/users/admins",
-    "/p-admin/users/coaches",
   ]) {
     assert.ok(source.includes(`canRoute('${route}')`), `میان‌برِ ${route} گیت ندارد`);
   }
@@ -3838,22 +3823,6 @@ test("support actions split view from reply, close, moderate and delete", () => 
   assert.match(inbox, /const canManage = can\("contactMessages\.manage"\)/);
 });
 
-test("coach review and credit links use their own keys", () => {
-  assert.equal(ADMIN_API_PERMISSIONS["/admin/coach-applications/[id]/review"].PUT, "coaches.manage");
-  assert.equal(ADMIN_API_PERMISSIONS["/admin/coaches/[coachId]/wallet"].POST, "coaches.manageCredits");
-
-  const list = readNormalized("src/app/(Admin-Panel)/p-admin/users/coaches/page.jsx");
-  assert.match(list, /const canReview = can\("coaches\.manage"\)/);
-  assert.match(list, /\{canReview && \(/);
-
-  // ردیفِ سفارش در صفحه‌ی مربی به صفحه‌ی کردیت می‌رود؛ بدون دسترسی، لینک نمی‌شود
-  const detail = readNormalized("src/app/(Admin-Panel)/p-admin/users/coaches/[coachId]/page.jsx");
-  assert.match(detail, /const Row = canRoute\(creditHref\) \? Link : "div"/);
-  assert.deepEqual(
-    ADMIN_ROUTE_PERMISSIONS["/p-admin/users/coaches/[coachId]/credit/[orderId]"],
-    ["coaches.manageCredits"]
-  );
-});
 
 test("sending a user broadcast needs send, not view", () => {
   assert.equal(ADMIN_API_PERMISSIONS["/admin/user-notifications"].GET, "userNotifications.view");

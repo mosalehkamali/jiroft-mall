@@ -10,10 +10,8 @@ register('./reviewCreditHooks.mjs', import.meta.url);
 register('./walletNotificationHooks.mjs', import.meta.url);
 const { adjustUserWallet } = await import('../services/adminWallet.service.js');
 const { deliverWalletNotification: deliver, deliverPendingWalletNotifications: drain } = await import('../services/walletNotificationDelivery.js');
-await import('../models/CoachWalletTransaction.js');
 const User = mongoose.model('User');
 const Wallet = mongoose.model('WalletTransaction');
-const Coach = mongoose.model('CoachWalletTransaction');
 const Review = mongoose.model('ReviewCreditTransaction');
 const Inbox = mongoose.model('UserNotification');
 const Outbox = mongoose.model('WalletNotification');
@@ -23,11 +21,11 @@ const oid = () => new mongoose.Types.ObjectId();
 before(async () => {
   replica = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
   await mongoose.connect(replica.getUri(), { dbName: 'wallet-notification-test' });
-  for (const model of [User, Wallet, Coach, Review, Inbox, Outbox, Receipt]) await model.init();
+  for (const model of [User, Wallet, Review, Inbox, Outbox, Receipt]) await model.init();
 });
 after(async () => { await mongoose.disconnect(); await replica?.stop(); });
 beforeEach(async () => {
-  for (const model of [User, Wallet, Coach, Review, Inbox, Outbox, Receipt]) await model.deleteMany({});
+  for (const model of [User, Wallet, Review, Inbox, Outbox, Receipt]) await model.deleteMany({});
   user = await User.create({ provider: 'local', password: 'unused', walletBalance: 1000, email: 'wallet-test@example.invalid' });
   emailCalls = []; pushCalls = [];
   globalThis.walletTestEmail = async (tx, email) => { emailCalls.push({ id: tx._id, type: tx.type, description: tx.description, email }); };
@@ -50,22 +48,17 @@ test('admin credit/debit create a targeted inbox atomically and deliver each ema
   assert.ok(pushCalls.every(c => c.url === '/p-user/wallet' && c.id === String(user._id)));
 });
 
-test('every ledger source gets a receipt, and editing an existing coach entry does not notify again', async () => {
+test('each active ledger source gets a receipt', async () => {
   const session = await mongoose.startSession();
-  let coach;
   try {
     await session.withTransaction(async () => {
-      [coach] = await Coach.create([{ coach: user._id, amount: 250 }], { session });
       await Review.create([{ user: user._id, order: oid(), item: oid(), itemType: 'product', comment: oid(), amount: 100, granularity: 'per-item', kind: 'amount', value: 100 }], { session });
       await Wallet.create([{ user: user._id, amount: 300, type: 'debit', description: 'پرداخت با کیف پول', trackingCode: 'ORDER-123' }], { session });
     });
-    assert.equal(await Outbox.countDocuments(), 3);
-    await session.withTransaction(async () => { const doc = await Coach.findById(coach._id).session(session); doc.reversedAmount = 250; await doc.save({ session }); });
-    assert.equal(await Outbox.countDocuments(), 3);
+    assert.equal(await Outbox.countDocuments(), 2);
     await drain();
-    assert.equal(emailCalls.length, 3);
+    assert.equal(emailCalls.length, 2);
     assert.ok(emailCalls.some(c => c.description === 'پاداش نظر تأییدشده'));
-    assert.ok(emailCalls.some(c => c.description === 'واریز از کردیت خرید شاگرد'));
     assert.ok((await Inbox.findOne({ message: /ORDER-123/ })).message.includes('کسر شد'));
   } finally { await session.endSession(); }
 });

@@ -17,6 +17,7 @@ async function walletRoute({ token = 'valid', user = { _id: 'me', walletBalance:
         select() { return this; },
         sort() { return this; },
         limit(value) { limit = value; return this; },
+        async toArray() { return this.lean(); },
         async lean() {
           if (fail) throw new Error('Database unavailable');
           return rows.filter((row) => Object.entries(filter).every(([key, value]) => row[key] === value))
@@ -35,8 +36,7 @@ async function walletRoute({ token = 'valid', user = { _id: 'me', walletBalance:
       return { select() { return this; }, lean: async () => user };
     } } },
     'base/models/ReviewCreditTransaction': { default: ledger('reviews', reviews) },
-    'base/models/CoachWalletTransaction': { default: ledger('coaches', coaches) },
-    'base/models/WalletTransaction': { default: ledger('wallet', wallet) },
+    'base/models/WalletTransaction': { default: { ...ledger('wallet', wallet), db: { collection: () => ledger('historical', coaches) } } },
     'base/utils/auth': { verifyToken: (value) => value === 'valid' ? { userId: 'me' } : false },
   };
   const mod = new vm.SourceTextModule(source, { context });

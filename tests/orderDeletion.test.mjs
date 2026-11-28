@@ -32,7 +32,6 @@ const { default: Notification } = await import("../models/Notification.js");
 const { default: Comment } = await import("../models/Comment.js");
 const { default: Ticket } = await import("../models/Ticket.js");
 const { default: UsedProduct } = await import("../models/UsedProduct.js");
-const { default: CoachWalletTransaction } = await import("../models/CoachWalletTransaction.js");
 const { default: ReviewCreditTransaction } = await import("../models/ReviewCreditTransaction.js");
 
 const { deleteOrderPermanently } = await import("../services/orderDeletion.js");
@@ -43,7 +42,7 @@ let replSet;
 
 const MODELS = [
   Order, Payment, Installment, Notification, Comment,
-  Ticket, UsedProduct, CoachWalletTransaction, ReviewCreditTransaction,
+  Ticket, UsedProduct, ReviewCreditTransaction,
 ];
 
 before(async () => {
@@ -172,7 +171,9 @@ async function seed() {
     relatedPayment: byRefOnly._id,
   });
 
-  const wallet = await CoachWalletTransaction.create({
+  const legacyLedger = mongoose.connection.collection("coachwallettransactions");
+  const wallet = { _id: oid() };
+  await legacyLedger.insertOne({ _id: wallet._id,
     coach,
     student: user,
     order: order._id,
@@ -265,7 +266,7 @@ test("ارجاع‌های required حذف و ارجاع‌های اختیاری 
   assert.equal(ticket.relatedOrder, null);
   assert.equal(ticket.relatedPayment, null);
 
-  const wallet = await CoachWalletTransaction.findById(s.wallet._id).lean();
+  const wallet = await mongoose.connection.collection("coachwallettransactions").findOne({ _id: s.wallet._id });
   assert.ok(wallet, "دفترِ کیف پول مربی نباید حذف شود");
   assert.equal(wallet.amount, 25000, "مبلغ نباید تغییر کند");
   assert.equal(wallet.order, null);

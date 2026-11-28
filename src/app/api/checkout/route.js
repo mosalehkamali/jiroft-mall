@@ -44,7 +44,6 @@ import User from "base/models/User";
 import { computeCartPrice } from "base/services/priceEngine";
 import {
   notifyNewOrder,
-  notifyCoachStudentOrder,
 } from "base/services/notificationService";
 import { autoAssignUsedProductTracking } from "@/lib/usedTrackingAuto";
 import { sendOrderConfirmationEmail } from "@/lib/emailService";
@@ -345,7 +344,7 @@ export async function POST(req) {
       );
     }
 
-    if (priceResult.finalTotalToman < 0 || (priceResult.finalTotalToman === 0 && !priceResult.coupon?.createdByCoach)) {
+    if (priceResult.finalTotalToman <= 0) {
       return badRequest("مبلغ سفارش نامعتبر است");
     }
 
@@ -365,11 +364,7 @@ export async function POST(req) {
     }
     if (walletAmount > orderTotal) return badRequest("مبلغ کیف پول بیشتر از مبلغ سفارش است؛ آن را اصلاح کنید");
     const totalPrice = orderTotal - walletAmount; // external amount after wallet
-    const fullyWalletPaid = totalPrice === 0 && (walletAmount > 0 || !!priceResult.coupon?.createdByCoach);
-    if (["ONLINE", "ROZPARDAKHT"].includes(paymentMethod) && priceResult.coupon?.createdByCoach) {
-      return badRequest("با این کد تخفیف پرداخت آنلاین یا رزپرداخت ممکن نیست؛ از پرداخت بانکی استفاده کنید");
-    }
-    if (priceResult.coupon?.createdByCoach && !walletIdentity) walletIdentity = walletCheckoutIdentity(user.userId, checkoutKey, body);
+    const fullyWalletPaid = totalPrice === 0 && walletAmount > 0;
 
     // ─── اعتبارسنجی داده‌های پرداخت (قبل از ساخت سفارش) ───
     let bankImageUrls = [];
@@ -522,14 +517,13 @@ export async function POST(req) {
     // ═══ ۳. ساخت سفارش + پرداخت — سفارش بدون پرداخت باقی نمی‌ماند ═══
     const orderDraft = {
       user:           user.userId,
-      coachCreditEligible: true,
       items:          orderItems,
       subtotalPrice:  priceResult.subtotalToman,
       discountAmount: priceResult.discountToman,
       couponDiscount: priceResult.couponDiscountToman,
       totalPrice: orderTotal,
       coupon: priceResult.coupon
-        ? { code: priceResult.coupon.code, _id: priceResult.coupon._id, createdByCoach: priceResult.coupon.createdByCoach, coachName: priceResult.coupon.coachName }
+        ? { code: priceResult.coupon.code, _id: priceResult.coupon._id }
         : { code: null, _id: null },
       paymentMethod,
       paymentStatus:     "UNPAID",
@@ -570,7 +564,7 @@ export async function POST(req) {
       }
     };
 
-    if (walletAmount > 0 || priceResult.coupon?.createdByCoach) {
+    if (walletAmount > 0) {
       let result;
       try {
         result = await createWalletOrder({ identity: walletIdentity, draft: orderDraft, amount: walletAmount, bankImages: bankImageUrls, installmentData });
@@ -703,16 +697,6 @@ export async function POST(req) {
     // اعلان سفارش جدید
     try { await notifyNewOrder(order); } catch (error) { console.warn("خطا در اعلان سفارش:", error?.message); }
 
-    // اگر خریدار شاگردِ یک مربی باشد → اعلان ثبت کردیت برای مربی
-    if (isFeatureEnabled("coach")) try {
-      const buyer = await User.findById(user.userId).select("coach").lean();
-      if (buyer?.coach) {
-        const coach = await User.findById(buyer.coach).select("name lastName").lean();
-        if (coach) await notifyCoachStudentOrder(order, coach);
-      }
-    } catch (notifErr) {
-      console.warn("خطا در اعلان شاگرد مربی:", notifErr?.message);
-    }
 
     return NextResponse.json(
       {

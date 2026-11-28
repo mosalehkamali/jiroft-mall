@@ -10,7 +10,7 @@ export const runtime = "nodejs";
  * این روت تا پیش از این هیچ احراز هویتی نداشت: هر کسی روی اینترنت می‌توانست
  * فایل در حسابِ ImageKit آپلود کند (و چون SVG مجاز است، عملاً HTML دلخواه روی
  * دامنهٔ ImageKit میزبانی کند). گیت عمداً «کاربرِ واردشده» است و نه «ادمین»:
- * آپلودِ مدرکِ مربیگری، رسیدِ پرداخت، پیوستِ تیکت و تصویرِ نظر همگی از همین
+ * آپلودِ رسیدِ پرداخت، پیوستِ تیکت و تصویرِ نظر همگی از همین
  * روت و توسط کاربرِ عادی انجام می‌شوند.
  */
 async function getUserFromToken() {
@@ -21,7 +21,7 @@ async function getUserFromToken() {
 }
 
 
-// فرمت‌های مجاز: تصاویر + PDF (برای حکم/مدرک مربیگری)
+// فرمت‌های مجاز: تصاویر + PDF
 const ALLOWED_MIME = [
   "image/jpeg",
   "image/jpg",
@@ -86,7 +86,7 @@ export async function POST(req) {
     const isPdf =
       file.type === "application/pdf" || /\.pdf$/i.test(file.name || "");
 
-    // مدارک/احکامِ مربیگری (PDF) به‌صورت private آپلود می‌شوند تا مستقیم و
+    // فایل‌های PDF به‌صورت private آپلود می‌شوند تا مستقیم و
     // بدون امضا قابلِ دسترسی نباشند — نمایش‌شان از طریق روتِ پراکسیِ
     // src/app/api/files/pdf/route.js (که یک URL امضاشده‌ی موقت می‌سازد) انجام می‌شود.
     const result = await getImageKit().upload({

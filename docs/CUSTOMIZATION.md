@@ -127,7 +127,6 @@ on**. When a feature is off:
 | `discounts` | discount rules, flash sales, quantity tiers, coupon codes | — |
 | `wallet` | customer wallet | — |
 | `reviewCredit` | wallet credit for reviews | reviews, wallet |
-| `coach` | coach codes and coach wallets | wallet, discounts |
 | `installments` | cheque instalment payments + reminders | — |
 | `orderEur` | manual EUR bookkeeping on orders | — |
 | `warehouse` | barcode tracking in a separate warehouse DB | — |

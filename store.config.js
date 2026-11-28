@@ -160,7 +160,6 @@ const storeConfig = {
     discounts: true, // discount rules, flash sales, quantity tiers, coupon codes
     wallet: false,
     reviewCredit: false, // wallet credit for reviews  (needs reviews, wallet)
-    coach: false, // coach codes + coach wallets          (needs wallet)
     installments: true, // cheque-based instalment payments
     orderEur: false, // manual EUR bookkeeping on orders
 
