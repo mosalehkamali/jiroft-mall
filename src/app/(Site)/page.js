@@ -1,4 +1,4 @@
-import { Fragment } from "react";
+import "./storefront.css";
 import Hero from "@/components/features/hero/Hero";
 import BannerSection from "@/components/banners/BannerSection";
 import SportsGrid from "@/components/features/sportsGrid/SportsGrid";
@@ -92,12 +92,12 @@ export default async function Home() {
   ]);
 
   return (
-    <>
+    <div className="storefront-edition">
       {enabledSections.map((key, i) => (
-        <Fragment key={key}>
+        <div key={key} data-home-section={key}>
           {SECTIONS[key].render(JSON.parse(JSON.stringify(data[i] ?? null)), rate)}
-        </Fragment>
+        </div>
       ))}
-    </>
+    </div>
   );
 }

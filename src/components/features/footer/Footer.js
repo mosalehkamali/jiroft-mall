@@ -1,13 +1,8 @@
-"use client";
-
 import storeConfig from "base/store.config";
-import { useState, useEffect } from "react";
 import { FiMail, FiPhone, FiMapPin, FiInstagram, FiTwitter, FiYoutube, FiLinkedin } from "react-icons/fi";
 import { FaTelegram, FaWhatsapp } from "react-icons/fa";
-import { isFeatureEnabled, isHrefEnabled } from "@/lib/features";
+import { isHrefEnabled } from "@/lib/features";
 import { defaultSiteFooter, renderCopyright, SOCIAL_PLATFORMS, telHref } from "@/lib/siteFooter";
-import Input from "@/components/ui/Input";
-import Button from "@/components/ui/Button";
 import Image from "next/image";
 import Link from "next/link";
 
@@ -24,75 +19,13 @@ const SOCIAL_ICONS = {
 
 const SOCIAL_LABELS = Object.fromEntries(SOCIAL_PLATFORMS.map((p) => [p.key, p.label]));
 
-// فوتر در همه‌ی صفحات است؛ sweetalert2 فقط وقتی لازم می‌شود که فرم خبرنامه نتیجه بدهد.
-const showAlert = (options) =>
-  import("sweetalert2")
-    .then(({ default: Swal }) => Swal.fire(options))
-    .catch(() => window.alert(options.text));
-
 /** `footer` comes from the (Site) layout (Admin → صفحات سایت → فوتر). */
 export default function Footer({ footer = defaultSiteFooter() }) {
-  const newsletter = isFeatureEnabled("newsletter");
-  const texts = footer.newsletter;
-  const [email, setEmail] = useState("");
-  const [isSubscribed, setIsSubscribed] = useState(false);
-  const [loading, setLoading] = useState(false);
-
   // Links into a disabled feature are dropped; an emptied column disappears.
   const sections = footer.sections
     .map((section) => ({ ...section, links: section.links.filter((l) => isHrefEnabled(l.href)) }))
     .filter((section) => section.links.length > 0);
   const socials = footer.socials.filter((s) => s.enabled && s.url && SOCIAL_ICONS[s.key]);
-
-  // بررسی وضعیت کوکی هنگام لود شدن صفحه
-  useEffect(() => {
-    const cookies = document.cookie.split("; ");
-    const hasSubscribed = cookies.find((row) => row.startsWith("newsletter_subscribed="));
-    if (hasSubscribed) {
-      setIsSubscribed(true);
-    }
-  }, []);
-
-  const handleNewsletterSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-
-    try {
-      const res = await fetch("/api/newsletter", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) throw new Error(data.error || "خطایی رخ داد");
-
-      setIsSubscribed(true);
-
-      showAlert({
-        icon: "success",
-        title: "عضویت موفق",
-        text: "از همراهی شما سپاسگزاریم!",
-        confirmButtonColor: "var(--color-primary)",
-        background: "var(--color-dark)",
-        color: "#ffffff",
-      });
-
-      setEmail("");
-    } catch (err) {
-      showAlert({
-        icon: "error",
-        title: "خطا",
-        text: err.message,
-        confirmButtonColor: "var(--color-primary)",
-        background: "var(--color-dark)",
-        color: "#ffffff",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
 
   // Phone and address sit above the email. Phone numbers and emails are LTR text inside an RTL row:
   // `dir="ltr"` isolates them, so "+98 912 …" never renders reversed.
@@ -104,46 +37,6 @@ export default function Footer({ footer = defaultSiteFooter() }) {
 
   return (
     <footer className="bg-[var(--color-dark)] text-white border-t border-white/10">
-      {newsletter ? (
-        <div className="border-b border-white/5">
-          <div className="site-container py-12">
-            <div className="max-w-4xl mx-auto">
-              <div className="grid md:grid-cols-2 gap-8 items-center">
-                <div>
-                  <h3 className="text-2xl font-bold mb-2 text-white">
-                    {isSubscribed ? texts.subscribedTitle : texts.title}
-                  </h3>
-                  <p className="text-gray-300">{isSubscribed ? texts.subscribedSubtitle : texts.subtitle}</p>
-                </div>
-
-                {!isSubscribed ? (
-                  <form onSubmit={handleNewsletterSubmit} className="flex gap-3">
-                    <Input
-                      type="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder={texts.placeholder}
-                      required
-                      className="flex-grow bg-white/5 border-white/10 text-white placeholder:text-gray-500 focus:border-[var(--color-primary)]"
-                    />
-                    <Button
-                      type="submit"
-                      disabled={loading}
-                      className="bg-[var(--color-primary)] hover:bg-[var(--color-primary-dark)] text-white px-8"
-                    >
-                      {loading ? "در حال ثبت..." : texts.button}
-                    </Button>
-                  </form>
-                ) : (
-                  <div className="flex items-center justify-center p-4 bg-green-900/20 border border-green-500/30 rounded-2xl text-green-500 font-bold">
-                    ✓ با موفقیت اشتراک فعال شد
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
 
       <div className="site-container py-16">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-12">
